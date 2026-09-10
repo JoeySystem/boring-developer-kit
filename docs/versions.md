@@ -4,7 +4,7 @@
 
 | 项目 | 版本 / 范围 |
 |---|---|
-| 开发包 | `v0.1.0-preview.1`，预发布 |
+| 开发包 | `v0.1.0-preview.2`，预发布 |
 | Python SDK | `1.0.0` |
 | 控制台本地扩展 API | `1.0` |
 | 扩展 manifest / 设备事件 schema | `1` |
@@ -16,9 +16,9 @@
 
 ## 控制台和固件的实际边界
 
-- 对齐 BORING Console `0.1.0` 的 **2026-09-10 当前源码快照**。该版本号曾被多个开发构建共用，不能仅凭 `0.1.0` 判断任意安装包兼容。
+- 对齐 BORING Console `0.1.6` 的 **2026-09-11 源码快照**；SDK 仍为 1.0.0，本地扩展 API 仍为 1.0。
 - 本次提供的是 SDK 与资料，不包含控制台安装包。现有旧 DMG 不作为本次已验证的宿主推荐。
-- 当前固件参考是 `WMP-S3-MATRIX12-POWER-V2` / `0.3.0-alpha.1` / build `20260910.05-g7989ccbf-dirty`，项目状态为 `sample-verified`。它是参考版本，不是本次扩展发布已完成实机联调的证明，也未随本包发布固件镜像。
+- 当前固件参考是 `WMP-S3-MATRIX12-POWER-V2` / `0.3.0-alpha.1` / build `20260910.07-g7989ccbf-dirty`，项目状态为 `sample-verified`。它是参考版本，不是本次扩展发布已完成实机联调的证明，也未随本包发布固件镜像。
 - 使用扩展触发需要设备提供提示词存储与 USB 提示词事件能力，槽位有内容且已有实体映射，并能建立控制台接受的设备会话。
 - SDK 本地 API 与设备 USB / BLE 传输是不同层。协议记载 BLE 配置不代表扩展已通过 BLE 实体触发验收。
 
@@ -26,9 +26,10 @@
 
 | 内容 | 本次状态 |
 |---|---|
-| 当前控制台源码 SDK / 扩展 / 协议定向回归 | 103 项通过 |
+| 上一预发布控制台源码 SDK / 扩展 / 协议定向回归 | 103 项通过；保留历史范围 |
 | 本发布 SDK wheel、独立源码测试和三个 ZIP 的导入/运行 | 见 [发布验证记录](verification.md) |
-| 新控制台安装包、干净 Mac 安装、真实设备触发全流程 | 未在本次发布验证 |
+| 0.1.6 安装包普通连接与固件更新 | 内部 Apple Silicon Mac / Power V2 已通过 USB .16→.07 升级、自动回连、配置保留及无 USB 数据连接的蓝牙启动；不等于扩展验收 |
+| 0.1.6 安装包三个示例的实体触发全流程、干净 Mac | 仍未完成 |
 | Windows、Linux、Python 3.13 | 未在本次发布验证 |
 | BLE 扩展实体触发 | 未在本次发布验证 |
 
@@ -36,6 +37,6 @@
 
 ## 下载
 
-[本次 Release](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.1) 提供完整 ZIP、SDK wheel 和三个单独的示例 ZIP。SDK wheel 不包含 Qt 运行库，安装时由 pip 按依赖解析。
+[本次 Release](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.2) 提供完整 ZIP、SDK wheel 和三个单独的示例 ZIP。SDK wheel 不包含 Qt 运行库，安装时由 pip 按依赖解析。
 
 固件需要更新时使用官方维护流程，不为开发扩展重新预置设备身份或写 eFuse。接口或兼容条件变化会随实际发布说明更新。

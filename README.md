@@ -2,9 +2,9 @@
 
 让用户通过扩展和设备协议，定义自己的 BORING 使用方式。
 
-**当前版本：`v0.1.0-preview.1`，SDK / 协议开发者预发布。** 已提供 Python SDK 1.0.0、三个扩展示例、WMP1 协议与配置 Schema、API 文档、开发包 ZIP 和源码测试。
+**当前版本：`v0.1.0-preview.2`，SDK / 协议开发者预发布。** 已提供 Python SDK 1.0.0、三个扩展示例、WMP1 协议与配置 Schema、API 文档、开发包 ZIP 和源码测试。
 
-[开始使用](START-HERE.md) · [下载预发布](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.1) · [兼容与验证边界](docs/versions.md) · [许可](LICENSING.md)
+[开始使用](START-HERE.md) · [下载预发布](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.2) · [兼容与验证边界](docs/versions.md) · [许可](LICENSING.md)
 
 ## 本次可用的内容
 
@@ -23,7 +23,7 @@
 
 SDK 是官方控制台本地 API 的客户端，**不是独立硬件驱动**。运行扩展需要具有扩展 Runner / API 1.0 的 BORING Console，以及控制台接受的设备会话。
 
-本次验证覆盖当前控制台源码的自动化接口联调；不包含新控制台安装包，也没有完成安装包到实体触发的联合验收。只有 SDK 或只有旧版号相同的控制台，不足以保证能运行扩展。请先阅读 [版本与下载](docs/versions.md)。没有合适宿主时仍可安装 SDK、阅读代码并运行本包的离线测试。
+本次对齐控制台 0.1.6 与固件 20260910.07，SDK/API 版本保持不变。控制台普通连接与固件更新已有内部安装版验收；三个扩展示例仍未完成安装包到实体触发的联合验收，本仓库不附控制台或固件二进制。只有 SDK 或只有旧版号相同的控制台，不足以保证能运行扩展。请先阅读 [版本与下载](docs/versions.md)。没有合适宿主时仍可安装 SDK、阅读代码并运行本包的离线测试。
 
 首期围绕提示词槽位事件、绑定动作和映射提案，不开放全部原始输入、屏幕绘制或固件内部行为。见 [开放范围](docs/scope.md)。
 

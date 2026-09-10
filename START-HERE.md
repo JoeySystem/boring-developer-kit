@@ -1,10 +1,10 @@
 # 从这里开始
 
-本次是 `v0.1.0-preview.1` 开发者预发布。源码、示例和协议现在可以下载；运行示例需要兼容的官方控制台，完整安装包与真实设备组合尚未由本发布验证。
+本次是 `v0.1.0-preview.2` 开发者预发布。源码、示例和协议现在可以下载；运行示例需要兼容的官方控制台，三个扩展示例的安装包与实体触发组合尚未完成验证。
 
 ## 1. 下载和许可
 
-从 [本次 Release](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.1) 下载 `BORING-Developer-Kit-v0.1.0-preview.1.zip` 并解压。阅读 [许可](LICENSING.md) 和 [兼容说明](docs/versions.md)。
+从 [本次 Release](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.2) 下载 `BORING-Developer-Kit-v0.1.0-preview.2.zip` 并解压。阅读 [许可](LICENSING.md) 和 [兼容说明](docs/versions.md)。
 
 完整开发包中的 `examples/packages/` 放有三个独立扩展 ZIP。导入控制台的是其中一个扩展 ZIP，不是整个开发包。仓库源码用户也可直接导入 `examples/extensions/` 下的单个示例目录。
 

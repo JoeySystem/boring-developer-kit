@@ -484,6 +484,22 @@ The exact v1 request objects are:
 {"base_generation":1, "confirmation":"FACTORY_DEFAULT"}
 ```
 
+`GET_STATUS.result.stack_diagnostics` is an optional, read-only runtime field:
+
+```json
+{"usb":{"task":"TinyUSB","min_free_bytes":4440,"samples":8},"ble":null}
+```
+
+Each transport is `null` until sampled. `min_free_bytes` is the callback task's
+lifetime minimum free stack reported by ESP-IDF, in **bytes**, not FreeRTOS
+words. `samples` counts completed HELLO, AUTH_GET_CERTIFICATE, AUTH_CHALLENGE,
+GET_CONFIG and GET_STATUS handlers. A status response includes observations
+through the previous completed handler; its own sample is available on the
+next request. Sampling and serialization use the existing transport mutex.
+Reconnect/configuration reset does not reset the task's lifetime watermark.
+Older firmware may omit this field; missing data does not prove safe headroom.
+This is not an interrupt-stack measurement or a worst-case static call graph.
+
 `GET_CONFIG` and `GET_STATUS` use `{}`. `FACTORY_DEFAULT` always stages the
 built-in default into the inactive slot; it does not erase the currently active
 slot before verification. `GET_STATUS.result.pending` is either `null` or an
