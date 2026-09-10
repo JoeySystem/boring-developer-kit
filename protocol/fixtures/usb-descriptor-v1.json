@@ -1,0 +1,54 @@
+{
+  "stage": "prototype-compatibility",
+  "device": {
+    "vid": 12346,
+    "pid": 33632,
+    "bcd_usb": 512,
+    "bcd_device": 256,
+    "manufacturer": "Custom Peripheral Project",
+    "product": "Wired Macro Pad V1 (Engineering)",
+    "serial_pattern": "^CP01-[0-9A-F]{12}$"
+  },
+  "configuration": {
+    "interfaces": 3,
+    "max_power_ma": 250,
+    "endpoints": [
+      {
+        "interface": 0,
+        "address": 129,
+        "direction": "in",
+        "type": "interrupt",
+        "max_packet": 8,
+        "interval_ms": 16
+      },
+      {
+        "interface": 1,
+        "address": 2,
+        "direction": "out",
+        "type": "bulk",
+        "max_packet": 64
+      },
+      {
+        "interface": 1,
+        "address": 130,
+        "direction": "in",
+        "type": "bulk",
+        "max_packet": 64
+      },
+      {
+        "interface": 2,
+        "address": 131,
+        "direction": "in",
+        "type": "interrupt",
+        "max_packet": 16,
+        "interval_ms": 1
+      }
+    ]
+  },
+  "hid_report_ids": {
+    "keyboard": 1,
+    "consumer": 2,
+    "mouse": 3
+  },
+  "production_release_allowed": false
+}

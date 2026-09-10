@@ -1,0 +1,80 @@
+{
+  "errors": [
+    {
+      "code": 1,
+      "name": "INVALID_FRAME"
+    },
+    {
+      "code": 2,
+      "name": "CRC_MISMATCH"
+    },
+    {
+      "code": 3,
+      "name": "PAYLOAD_TOO_LARGE"
+    },
+    {
+      "code": 4,
+      "name": "INVALID_JSON"
+    },
+    {
+      "code": 5,
+      "name": "UNKNOWN_COMMAND"
+    },
+    {
+      "code": 6,
+      "name": "UNSUPPORTED_PROTOCOL"
+    },
+    {
+      "code": 7,
+      "name": "UNSUPPORTED_SCHEMA"
+    },
+    {
+      "code": 8,
+      "name": "HARDWARE_MISMATCH"
+    },
+    {
+      "code": 9,
+      "name": "VALIDATION_FAILED"
+    },
+    {
+      "code": 10,
+      "name": "GENERATION_CONFLICT"
+    },
+    {
+      "code": 11,
+      "name": "BUSY"
+    },
+    {
+      "code": 12,
+      "name": "STORAGE_FAILURE"
+    },
+    {
+      "code": 13,
+      "name": "NOT_FOUND"
+    },
+    {
+      "code": 14,
+      "name": "TIMEOUT"
+    },
+    {
+      "code": 15,
+      "name": "INTERNAL"
+    },
+    {
+      "code": 16,
+      "name": "READ_ONLY"
+    },
+    {
+      "code": 17,
+      "name": "DUPLICATE_REQUEST_MISMATCH"
+    },
+    {
+      "code": 18,
+      "name": "DEVICE_IDENTITY_UNAVAILABLE"
+    },
+    {
+      "code": 19,
+      "name": "DEVICE_SIGNING_FAILED"
+    }
+  ]
+}

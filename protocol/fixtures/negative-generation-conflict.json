@@ -1,0 +1,13 @@
+{
+  "request": {
+    "command": "SET_CONFIG",
+    "base_generation": 6
+  },
+  "device": {
+    "current_generation": 8
+  },
+  "expected_error": {
+    "code": 10,
+    "name": "GENERATION_CONFLICT"
+  }
+}

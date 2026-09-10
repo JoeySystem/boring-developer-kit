@@ -1,43 +1,53 @@
 # 从这里开始
 
-本页帮助你判断 BORING 扩展是否适合自己的需求，以及后续开发包发布后从哪里入手。
+本次是 `v0.1.0-preview.1` 开发者预发布。源码、示例和协议现在可以下载；运行示例需要兼容的官方控制台，完整安装包与真实设备组合尚未由本发布验证。
 
-**现在只有文档预览。SDK、可导入示例、配套安装包下载和正式授权仍在准备，本页不代表已能完成扩展安装。** 当前状态统一记录在 [版本与下载](docs/versions.md)。
+## 1. 下载和许可
 
-## 先描述你想完成的一件事
+从 [本次 Release](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.1) 下载 `BORING-Developer-Kit-v0.1.0-preview.1.zip` 并解压。阅读 [许可](LICENSING.md) 和 [兼容说明](docs/versions.md)。
 
-建议用“触发什么 → 电脑做什么 → 怎样知道成功”的方式描述需求。例如：
+完整开发包中的 `examples/packages/` 放有三个独立扩展 ZIP。导入控制台的是其中一个扩展 ZIP，不是整个开发包。仓库源码用户也可直接导入 `examples/extensions/` 下的单个示例目录。
 
-> 我触发设备上的一个已配置提示词槽位，电脑把这次内容追加到我指定的本地文件，并显示执行结果。
+## 2. 选择你的路径
 
-这只是自定义动作的需求示例，不是仓库已经提供的功能。先从一个小动作开始，比同时改写整套设备交互更容易判断现有接口是否足够。
+### 已有兼容的控制台
 
-如果你的目标是监听每一格旋钮转动、重做设备屏幕页面或增加固件工作模式，请先看 [开放范围](docs/scope.md)。这些不属于首期扩展承诺。
+1. 打开官方控制台，连接能被当前控制台接受的设备，确认设备已就绪。
+2. 进入扩展管理，导入 `observe_prompt.zip` 或 `observe_prompt` 目录，再启用。
+3. 在控制台中确认要触发的提示词已写入设备，并且有实际的实体触发配置；不要把空槽位直接当成可用触发。
+4. 触发该槽位，查看扩展日志中的 `prompt.triggered` 和内容。观察示例不阻止默认粘贴。
+5. 再试 `claim_prompt`：在控制台将一个已配置槽位绑定到 `Use prompt` 动作，然后实体触发。示例打印调用并报告完成，不执行额外外部操作。
+6. 需要改键提案时再读 [propose_mapping 说明](examples/extensions/propose_mapping/README.md)。它建议将 `key.12` 改为 Enter，启动即提出一次建议，并保持在线等待用户审阅，仍需用户批准和确认写入。
 
-## 现在可以做的准备
+本页步骤描述源码已经实现的接口流程，具体安装包界面可能不同。当前发布没有提供新的控制台下载，未持有合适宿主的用户请走下面的离线路径。
 
-1. 阅读 [扩展如何工作](docs/extensions-overview.md)，区分观察事件与接管动作。
-2. 记下自己使用的操作系统、控制台版本和设备固件版本；无法获取的信息写“未知”即可。
-3. 看看 [开发流程](docs/development-guide.md)，了解示例导入、修改和重新导入的区别。
-4. 若现有范围不覆盖你的需求，在 [Issue](https://github.com/JoeySystem/boring-developer-kit/issues/new/choose) 中描述具体场景。提交需求不代表进入排期。
+### 尚无兼容宿主，先阅读和开发
 
-## 开发包发布后的使用顺序
+使用 Python 3.12 或 3.13，在解压后的根目录创建虚拟环境。macOS / Linux：
 
-以下是计划中的交付流程；具体按钮、接口和兼容版本以随包文档为准。
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ./sdk/python
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+```
 
-1. 在 Releases 中找到明确支持你平台的版本，安装对应的官方控制台。
-2. 连接设备，确认控制台正常识别设备；仅在版本说明要求时，通过官方维护流程升级固件。
-3. 下载并解压开发者工具包，阅读其中的许可与开始说明。
-4. 选择一个示例扩展导入控制台，启用并按示例要求设置实体触发。
-5. 操作设备，查看事件或动作日志，确认实际触发成功。
-6. 复制示例作为自己的项目，修改一个动作，再按说明重新导入。
+Windows PowerShell：
 
-开发者工具包是包含文档和示例的外层 ZIP。控制台导入的是其中的单个扩展 ZIP 或扩展目录，不是整个工具包。
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ./sdk/python
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m pytest -q
+```
 
-## 运行和开发是两件事
+Windows 命令是环境准备说明，本次未在 Windows 上验收。离线测试不连接硬件，也不启动完整官方控制台。
 
-配套控制台的目标交付方式是携带扩展 Runner 和 SDK 运行内容，用户不需要为了运行示例而编译完整控制台或固件。
+不要直接运行示例 `main.py` 来替代控制台：SDK 需要 Runner 注入的本地 API 地址和扩展 ID，缺少时会报 `missing runner environment`。
 
-修改扩展需要能编辑 Python 文件。是否需要额外安装开发依赖、使用哪个 Python 版本，将由已发布开发包说明；当前仓库没有可执行的安装或构建命令。
+## 3. 改成自己的动作
 
-遇到问题先看 [FAQ](docs/faq.md)，提交反馈前查看 [维护政策](SUPPORT.md)。
+先复制一个示例，修改显示名称和唯一扩展 ID，再更改 Python 逻辑。控制台导入的是受管副本；修改开发目录后要停用并按版本说明替换或重新导入，重启旧副本不会自动更新源码。
+
+具体方法见 [开发流程](docs/development-guide.md) 和 [API 参考](docs/api.md)。

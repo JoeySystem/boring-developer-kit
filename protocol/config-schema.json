@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://custom-peripheral.invalid/schema/wired-macro-pad-config-v1.json",
+  "title": "Wired Macro Pad V1 configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["product_id", "hardware_id", "schema_version", "created_by", "active_profile", "profiles", "macros", "lighting", "haptic", "display", "joystick"],
+  "properties": {
+    "product_id": {"const": "wired-macro-pad-v1"},
+    "hardware_id": {"enum": ["WMP-S3-REV-A", "WMP-S3-MATRIX12-V1", "WMP-S3-MATRIX12-POWER-V2"]},
+    "schema_version": {"const": 1},
+    "created_by": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[ -~]+$"},
+    "active_profile": {"type": "integer", "minimum": 0, "maximum": 7},
+    "profiles": {
+      "type": "array", "minItems": 1, "maxItems": 8,
+      "items": {"$ref": "#/$defs/profile"}
+    },
+    "macros": {
+      "type": "array", "maxItems": 32,
+      "description": "Aggregate macro size is capability-validated using the encoded step-stream definition in protocol.md: at most 256 bytes per macro and 4096 bytes total.",
+      "items": {"$ref": "#/$defs/macro"}
+    },
+    "lighting": {"$ref": "#/$defs/lighting"},
+    "haptic": {"$ref": "#/$defs/haptic"},
+    "display": {"$ref": "#/$defs/display"},
+    "joystick": {"$ref": "#/$defs/joystick"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"hardware_id": {"const": "WMP-S3-REV-A"}}},
+      "then": {"properties": {"lighting": {"properties": {"under_key": {"minItems": 7, "maxItems": 7}}}}}
+    },
+    {
+      "if": {"properties": {"hardware_id": {"enum": ["WMP-S3-MATRIX12-V1", "WMP-S3-MATRIX12-POWER-V2"]}}},
+      "then": {"properties": {"lighting": {"properties": {"under_key": {"minItems": 12, "maxItems": 12}}}}}
+    }
+  ],
+  "$defs": {
+    "control_id": {
+      "enum": ["key.1", "key.2", "key.3", "key.4", "key.5", "key.6", "key.7", "key.8", "key.9", "key.10", "key.11", "key.12", "encoder.ccw", "encoder.cw", "encoder.press", "joystick.up", "joystick.down", "joystick.left", "joystick.right", "joystick.press"]
+    },
+    "profile": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "mappings"],
+      "properties": {
+        "id": {"type": "integer", "minimum": 0, "maximum": 7},
+        "name": {"type": "string", "minLength": 1, "maxLength": 24},
+        "mappings": {
+          "type": "array", "minItems": 1, "maxItems": 20,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["control_id", "short_name", "action"],
+            "properties": {
+              "control_id": {"$ref": "#/$defs/control_id"},
+              "short_name": {"type": "string", "maxLength": 12},
+              "action": {"$ref": "#/$defs/action"}
+            }
+          }
+        }
+      }
+    },
+    "action": {
+      "oneOf": [
+        {"type": "object", "additionalProperties": false, "required": ["type", "usage"], "properties": {"type": {"const": "key"}, "usage": {"type": "integer", "minimum": 4, "maximum": 231}, "modifiers": {"type": "array", "uniqueItems": true, "maxItems": 8, "items": {"type": "integer", "minimum": 224, "maximum": 231}}}},
+        {"type": "object", "additionalProperties": false, "required": ["type", "usage"], "properties": {"type": {"const": "consumer"}, "usage": {"type": "integer", "minimum": 0, "maximum": 1023}}},
+        {"type": "object", "additionalProperties": false, "required": ["type", "button", "x", "y", "wheel", "pan"], "properties": {"type": {"const": "mouse"}, "button": {"type": "integer", "minimum": 0, "maximum": 31}, "x": {"type": "integer", "minimum": -127, "maximum": 127}, "y": {"type": "integer", "minimum": -127, "maximum": 127}, "wheel": {"type": "integer", "minimum": -127, "maximum": 127}, "pan": {"type": "integer", "minimum": -127, "maximum": 127}}},
+        {"type": "object", "additionalProperties": false, "required": ["type", "macro_id"], "properties": {"type": {"const": "macro"}, "macro_id": {"type": "integer", "minimum": 0, "maximum": 31}}},
+        {"type": "object", "additionalProperties": false, "required": ["type", "prompt_id"], "properties": {"type": {"const": "prompt"}, "prompt_id": {"type": "integer", "minimum": 1, "maximum": 12}}},
+        {"type": "object", "additionalProperties": false, "required": ["type", "profile_id"], "properties": {"type": {"const": "profile"}, "profile_id": {"type": "integer", "minimum": 0, "maximum": 7}}},
+        {"type": "object", "additionalProperties": false, "required": ["type", "name"], "properties": {"type": {"const": "device"}, "name": {"enum": ["macro_cancel", "lighting_toggle", "haptic_toggle", "display_next"]}}},
+        {"type": "object", "additionalProperties": false, "required": ["type"], "properties": {"type": {"const": "none"}}}
+      ]
+    },
+    "macro_step": {
+      "oneOf": [
+        {"type": "object", "additionalProperties": false, "required": ["op", "usage"], "properties": {"op": {"enum": ["press", "release", "tap"]}, "usage": {"type": "integer", "minimum": 4, "maximum": 231}}},
+        {"type": "object", "additionalProperties": false, "required": ["op", "text"], "properties": {"op": {"const": "text"}, "text": {"type": "string", "maxLength": 256, "pattern": "^[ -~]*$"}}},
+        {"type": "object", "additionalProperties": false, "required": ["op", "duration_ms"], "properties": {"op": {"const": "delay"}, "duration_ms": {"type": "integer", "minimum": 10, "maximum": 5000}}}
+      ]
+    },
+    "macro": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "steps"],
+      "properties": {
+        "id": {"type": "integer", "minimum": 0, "maximum": 31},
+        "name": {"type": "string", "minLength": 1, "maxLength": 24},
+        "steps": {"type": "array", "minItems": 1, "maxItems": 128, "items": {"$ref": "#/$defs/macro_step"}}
+      }
+    },
+    "rgb": {
+      "type": "object", "additionalProperties": false,
+      "required": ["r", "g", "b"],
+      "properties": {"r": {"type": "integer", "minimum": 0, "maximum": 255}, "g": {"type": "integer", "minimum": 0, "maximum": 255}, "b": {"type": "integer", "minimum": 0, "maximum": 255}}
+    },
+    "lighting": {
+      "type": "object", "additionalProperties": false,
+      "required": ["enabled", "brightness", "status", "under_key"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "brightness": {"type": "integer", "minimum": 0, "maximum": 100},
+        "status": {"type": "array", "minItems": 8, "maxItems": 8, "description": "Fixed compatibility storage. Targets reporting status_rgb_count=0 keep eight ignored placeholder entries.", "items": {"$ref": "#/$defs/rgb"}},
+        "under_key": {"type": "array", "minItems": 7, "maxItems": 12, "items": {"$ref": "#/$defs/rgb"}}
+      }
+    },
+    "haptic": {
+      "type": "object", "additionalProperties": false,
+      "required": ["enabled", "strength", "duration_ms", "on_press", "on_profile"],
+      "properties": {"enabled": {"type": "boolean"}, "strength": {"type": "integer", "minimum": 0, "maximum": 100}, "duration_ms": {"type": "integer", "minimum": 10, "maximum": 500}, "on_press": {"type": "boolean", "description": "Physical key presses, including encoder and joystick presses, and local save feedback."}, "on_profile": {"type": "boolean"}, "on_encoder": {"type": "boolean", "default": true}, "on_joystick": {"type": "boolean", "default": true}, "on_task": {"type": "boolean", "default": true}}
+    },
+    "display": {
+      "type": "object", "additionalProperties": false,
+      "required": ["brightness", "rotation", "show_control_hints"],
+      "properties": {"brightness": {"type": "integer", "minimum": 0, "maximum": 100}, "rotation": {"enum": [0, 90, 180, 270]}, "show_control_hints": {"type": "boolean"}}
+    },
+    "axis": {
+      "type": "object", "additionalProperties": false,
+      "required": ["minimum", "center", "maximum", "deadzone", "invert"],
+      "properties": {"minimum": {"type": "integer", "minimum": 0, "maximum": 4095}, "center": {"type": "integer", "minimum": 0, "maximum": 4095}, "maximum": {"type": "integer", "minimum": 0, "maximum": 4095}, "deadzone": {"type": "integer", "minimum": 0, "maximum": 1024}, "invert": {"type": "boolean"}}
+    },
+    "joystick": {
+      "type": "object", "additionalProperties": false,
+      "required": ["calibrated", "filter", "x", "y"],
+      "properties": {"calibrated": {"type": "boolean"}, "filter": {"type": "integer", "minimum": 0, "maximum": 100}, "x": {"$ref": "#/$defs/axis"}, "y": {"$ref": "#/$defs/axis"}}
+    }
+  }
+}

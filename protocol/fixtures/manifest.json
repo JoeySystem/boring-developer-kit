@@ -1,0 +1,28 @@
+{
+  "contract_version": "1.0.0",
+  "protocol": {"major": 1, "minor": 0, "magic_ascii": "WMP1", "header_bytes": 20, "max_payload_bytes": 20480},
+  "fixtures": [
+    {"path": "hello-v1.json", "kind": "handshake", "expected": "valid"},
+    {"path": "ping-v1.json", "kind": "ping", "expected": "valid"},
+    {"path": "capabilities-v1.json", "kind": "capabilities", "expected": "valid"},
+    {"path": "capabilities-matrix12-power-v2-v1.json", "kind": "capabilities", "expected": "valid"},
+    {"path": "status-matrix12-power-v2-v1.json", "kind": "status", "expected": "valid"},
+    {"path": "screen-icon-v1.json", "kind": "screen_icon", "expected": "valid"},
+    {"path": "screen-glyph-v1.json", "kind": "screen_glyph", "expected": "valid"},
+    {"path": "usb-descriptor-v1.json", "kind": "usb_descriptor", "expected": "valid"},
+    {"path": "errors-v1.json", "kind": "errors", "expected": "valid"},
+    {"path": "hello-request-frame.json", "kind": "frame", "expected": "valid"},
+    {"path": "device-auth-v1.json", "kind": "device_auth", "expected": "valid"},
+    {"path": "device-auth-invalid-certificate-serial.json", "kind": "device_auth_negative", "expected_failure": "certificate_signature"},
+    {"path": "device-auth-invalid-device-public-key.json", "kind": "device_auth_negative", "expected_failure": "certificate_signature"},
+    {"path": "device-auth-invalid-issuer-signature.json", "kind": "device_auth_negative", "expected_failure": "certificate_signature"},
+    {"path": "device-auth-invalid-nonce.json", "kind": "device_auth_negative", "expected_failure": "challenge_signature"},
+    {"path": "device-auth-invalid-domain.json", "kind": "device_auth_negative", "expected_failure": "challenge_signature"},
+    {"path": "device-auth-invalid-device-signature.json", "kind": "device_auth_negative", "expected_failure": "challenge_signature"},
+    {"path": "config-v1.json", "kind": "config", "expected": "valid", "canonical_sha256": "0da86568620a93a198e830d0960babc85fe65ec84a832ee8cc61aa63c21e8dd5"},
+    {"path": "config-matrix12-power-v2-v1.json", "kind": "config", "expected": "valid"},
+    {"path": "negative-generation-conflict.json", "kind": "negative", "expected_error": "GENERATION_CONFLICT"},
+    {"path": "negative-hardware-mismatch.json", "kind": "negative", "expected_error": "HARDWARE_MISMATCH"},
+    {"path": "negative-protocol-major.json", "kind": "negative", "expected_error": "UNSUPPORTED_PROTOCOL"}
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "base_fixture": "device-auth-v1.json",
+  "mutation": {
+    "target": "certificate_response.result.certificate.serial",
+    "value": "CP01-AABBCCDDEE00"
+  },
+  "expected_failure": "certificate_signature"
+}

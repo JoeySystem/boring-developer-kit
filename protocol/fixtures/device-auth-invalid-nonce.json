@@ -1,0 +1,8 @@
+{
+  "base_fixture": "device-auth-v1.json",
+  "mutation": {
+    "target": "challenge_signing_object.nonce",
+    "value": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA"
+  },
+  "expected_failure": "challenge_signature"
+}

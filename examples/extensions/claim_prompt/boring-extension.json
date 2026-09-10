@@ -1,0 +1,18 @@
+{
+  "manifest_version": 1,
+  "id": "com.boring.example.claim-prompt",
+  "name": "Claim prompt action",
+  "version": "1.0.0",
+  "api_version": {
+    "major": 1,
+    "minor": 0
+  },
+  "entrypoint": "main.py",
+  "observer_events": [],
+  "actions": [
+    {
+      "id": "use_prompt",
+      "name": "Use prompt"
+    }
+  ]
+}

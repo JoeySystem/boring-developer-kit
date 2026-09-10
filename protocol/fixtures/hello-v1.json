@@ -1,0 +1,41 @@
+{
+  "request": {
+    "client": {
+      "name": "controller-config",
+      "version": "0.1.0"
+    },
+    "protocol": {
+      "min_major": 1,
+      "max_major": 1,
+      "max_minor": 0
+    }
+  },
+  "ack": {
+    "command": "HELLO",
+    "result": {
+      "identity": {
+        "product_id": "wired-macro-pad-v1",
+        "hardware_id": "WMP-S3-REV-A",
+        "serial": "CP01-AABBCCDDEEFF",
+        "usb_vid": 12346,
+        "usb_pid": 33632
+      },
+      "versions": {
+        "firmware": "0.1.0-alpha.1",
+        "build_id": "20260822.01-g1fafffab-dirty",
+        "protocol_major": 1,
+        "protocol_minor": 0,
+        "schema_version": 1
+      },
+      "config": {
+        "generation": 1,
+        "digest": "2b5f3ac5b3cf49acfa8dc96ded6206de2dec44067c4fe6b7ab1790ec08d30ad9"
+      },
+      "compatibility": {
+        "read": true,
+        "write": true,
+        "reason": "compatible"
+      }
+    }
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "command": "GET_STATUS",
+  "result": {
+    "build_id": "20260827.08-g03ce07d7-dirty",
+    "state": "ACTIVE",
+    "activation_failed": false,
+    "active": {
+      "generation": 17,
+      "digest": "de9f6a17b47b9210a0243f87d47f60c7bd6ae907e388454e59a5aad8fc7247c7"
+    },
+    "pending": null,
+    "inputs_neutral": true,
+    "platform": "macos",
+    "operating_mode": "normal",
+    "codex_agent_press": {
+      "sequence": 0,
+      "agent": null,
+      "transport": null
+    },
+    "claude_code_status": {
+      "active": false,
+      "selected": false,
+      "lease_ms": 5000,
+      "states": [
+        "idle",
+        "idle",
+        "idle",
+        "idle",
+        "idle",
+        "idle"
+      ]
+    },
+    "active_controls": [],
+    "action_engine": {
+      "host_output_state": "enabled",
+      "local_page": "none",
+      "round_setting_state": "idle",
+      "quick_config_active": false,
+      "local_confirm_selected": false,
+      "round_feedback_active": false,
+      "idle_circle_active": false,
+      "idle_standby_active": false,
+      "usb_standby_active": false
+    },
+    "diagnostic_capture": {
+      "active": false,
+      "timeout_ms": 3000,
+      "event_sequence": 0,
+      "last_control": null,
+      "last_pressed": null
+    },
+    "joystick_diagnostics": {
+      "raw_x": 2048,
+      "raw_y": 2048,
+      "filtered_x": 2048,
+      "filtered_y": 2048,
+      "center_x": 2048,
+      "center_y": 2048,
+      "minimum_x": 0,
+      "maximum_x": 4095,
+      "minimum_y": 0,
+      "maximum_y": 4095,
+      "deadzone_x": 180,
+      "deadzone_y": 180,
+      "directions": 0,
+      "radial_active": false,
+      "radial_valid": true,
+      "radial_angle_turns": 0.0
+    },
+    "codex_micro": {
+      "connected": true,
+      "usb_connected": true,
+      "ble_connected": false,
+      "mode": "normal",
+      "active_slot": 1,
+      "slots": [
+        {
+          "slot": 1,
+          "paired": true,
+          "connected": false
+        },
+        {
+          "slot": 2,
+          "paired": false,
+          "connected": false
+        },
+        {
+          "slot": 3,
+          "paired": false,
+          "connected": false
+        }
+      ]
+    }
+  }
+}

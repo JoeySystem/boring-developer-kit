@@ -1,0 +1,8 @@
+{
+  "base_fixture": "device-auth-v1.json",
+  "mutation": {
+    "target": "challenge_signing_object.domain",
+    "value": "BORING-WMP1-DEVICE-AUTH-V0"
+  },
+  "expected_failure": "challenge_signature"
+}

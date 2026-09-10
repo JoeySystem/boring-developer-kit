@@ -1,0 +1,9 @@
+{
+  "message_type": 1,
+  "request_id": 42,
+  "flags": 0,
+  "canonical_payload": "{\"client\":{\"name\":\"controller-config\",\"version\":\"0.1.0\"},\"protocol\":{\"max_major\":1,\"max_minor\":0,\"min_major\":1}}",
+  "payload_length": 112,
+  "payload_crc32": "9882ac96",
+  "frame_hex": "574d5031010001002a0000007000000096ac82987b22636c69656e74223a7b226e616d65223a22636f6e74726f6c6c65722d636f6e666967222c2276657273696f6e223a22302e312e30227d2c2270726f746f636f6c223a7b226d61785f6d616a6f72223a312c226d61785f6d696e6f72223a302c226d696e5f6d616a6f72223a317d7d"
+}

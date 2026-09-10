@@ -1,0 +1,11 @@
+{
+  "header": {
+    "protocol_major": 2,
+    "protocol_minor": 0
+  },
+  "expected_error": {
+    "code": 6,
+    "name": "UNSUPPORTED_PROTOCOL",
+    "write_allowed": false
+  }
+}

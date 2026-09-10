@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "boring-console-sdk"
+version = "1.0.0"
+readme = "README.md"
+license = {file = "LICENSE"}
+description = "Python SDK for local BORING Console extensions"
+requires-python = ">=3.12,<3.14"
+dependencies = ["PySide6==6.11.1"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["boring_console_sdk*"]

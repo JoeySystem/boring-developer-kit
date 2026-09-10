@@ -1,0 +1,8 @@
+{
+  "base_fixture": "device-auth-v1.json",
+  "mutation": {
+    "target": "challenge_response.result.signature",
+    "value": "AA"
+  },
+  "expected_failure": "challenge_signature"
+}

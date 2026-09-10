@@ -1,0 +1,1490 @@
+{
+  "contract_version": "1.0.0",
+  "capability": {
+    "features": {
+      "custom_home_icon": true
+    },
+    "screen_icon": {
+      "version": 1,
+      "target": "normal_home",
+      "width": 128,
+      "height": 128,
+      "format": "rgb565_le",
+      "total_bytes": 32768,
+      "max_chunk_bytes": 1024,
+      "session_timeout_ms": 15000
+    }
+  },
+  "legacy_capability_fixture": "capabilities-v1.json",
+  "message_types": {
+    "SCREEN_ICON_GET": 80,
+    "SCREEN_ICON_READ": 81,
+    "SCREEN_ICON_BEGIN": 82,
+    "SCREEN_ICON_DATA": 83,
+    "SCREEN_ICON_COMMIT": 84,
+    "SCREEN_ICON_ABORT": 85,
+    "SCREEN_ICON_RESET": 86
+  },
+  "request_schemas": {
+    "SCREEN_ICON_GET": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "SCREEN_ICON_READ": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32767
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        }
+      },
+      "required": [
+        "revision",
+        "offset",
+        "length"
+      ],
+      "additionalProperties": false
+    },
+    "SCREEN_ICON_BEGIN": {
+      "type": "object",
+      "properties": {
+        "base_revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "target": {
+          "const": "normal_home"
+        },
+        "format": {
+          "const": "rgb565_le"
+        },
+        "width": {
+          "const": 128
+        },
+        "height": {
+          "const": 128
+        },
+        "total_bytes": {
+          "const": 32768
+        }
+      },
+      "required": [
+        "base_revision",
+        "target",
+        "format",
+        "width",
+        "height",
+        "total_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "SCREEN_ICON_DATA": {
+      "type": "object",
+      "properties": {
+        "upload_id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32767
+        },
+        "data": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 1368
+        }
+      },
+      "required": [
+        "upload_id",
+        "offset",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "SCREEN_ICON_COMMIT": {
+      "type": "object",
+      "properties": {
+        "upload_id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "upload_id"
+      ],
+      "additionalProperties": false
+    },
+    "SCREEN_ICON_ABORT": {
+      "type": "object",
+      "properties": {
+        "upload_id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "upload_id"
+      ],
+      "additionalProperties": false
+    },
+    "SCREEN_ICON_RESET": {
+      "type": "object",
+      "properties": {
+        "base_revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "base_revision"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "result_schemas": {
+    "SCREEN_ICON_GET": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "source": {
+          "enum": [
+            "default",
+            "custom"
+          ]
+        },
+        "target": {
+          "const": "normal_home"
+        },
+        "format": {
+          "const": "rgb565_le"
+        },
+        "width": {
+          "const": 128
+        },
+        "height": {
+          "const": 128
+        },
+        "total_bytes": {
+          "enum": [
+            0,
+            32768
+          ]
+        }
+      },
+      "required": [
+        "revision",
+        "source",
+        "target",
+        "format",
+        "width",
+        "height",
+        "total_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "SCREEN_ICON_READ": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32767
+        },
+        "data": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 1368
+        }
+      },
+      "required": [
+        "revision",
+        "offset",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "SCREEN_ICON_BEGIN": {
+      "type": "object",
+      "properties": {
+        "upload_id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "next_offset": {
+          "const": 0
+        },
+        "max_chunk_bytes": {
+          "const": 1024
+        }
+      },
+      "required": [
+        "upload_id",
+        "next_offset",
+        "max_chunk_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "SCREEN_ICON_DATA": {
+      "type": "object",
+      "properties": {
+        "next_offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32768
+        }
+      },
+      "required": [
+        "next_offset"
+      ],
+      "additionalProperties": false
+    },
+    "SCREEN_ICON_COMMIT": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "source": {
+          "enum": [
+            "default",
+            "custom"
+          ]
+        },
+        "target": {
+          "const": "normal_home"
+        },
+        "format": {
+          "const": "rgb565_le"
+        },
+        "width": {
+          "const": 128
+        },
+        "height": {
+          "const": 128
+        },
+        "total_bytes": {
+          "enum": [
+            0,
+            32768
+          ]
+        }
+      },
+      "required": [
+        "revision",
+        "source",
+        "target",
+        "format",
+        "width",
+        "height",
+        "total_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "SCREEN_ICON_ABORT": {
+      "type": "object",
+      "properties": {
+        "aborted": {
+          "const": true
+        }
+      },
+      "required": [
+        "aborted"
+      ],
+      "additionalProperties": false
+    },
+    "SCREEN_ICON_RESET": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "source": {
+          "enum": [
+            "default",
+            "custom"
+          ]
+        },
+        "target": {
+          "const": "normal_home"
+        },
+        "format": {
+          "const": "rgb565_le"
+        },
+        "width": {
+          "const": 128
+        },
+        "height": {
+          "const": 128
+        },
+        "total_bytes": {
+          "enum": [
+            0,
+            32768
+          ]
+        }
+      },
+      "required": [
+        "revision",
+        "source",
+        "target",
+        "format",
+        "width",
+        "height",
+        "total_bytes"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "pixels": [
+    {
+      "name": "red",
+      "rgb": [
+        255,
+        0,
+        0
+      ],
+      "word": 63488,
+      "wire_hex": "00f8",
+      "base64": "APg="
+    },
+    {
+      "name": "green",
+      "rgb": [
+        0,
+        255,
+        0
+      ],
+      "word": 2016,
+      "wire_hex": "e007",
+      "base64": "4Ac="
+    },
+    {
+      "name": "blue",
+      "rgb": [
+        0,
+        0,
+        255
+      ],
+      "word": 31,
+      "wire_hex": "1f00",
+      "base64": "HwA="
+    }
+  ],
+  "complete_exchange": {
+    "description": "Expand the deterministic image recipe into 32 sequential DATA requests then 32 READ requests. No ellipsis is sent on the wire.",
+    "connection": "usb-epoch-1",
+    "image_recipe": {
+      "width": 128,
+      "height": 128,
+      "format": "rgb565_le",
+      "circle_diameter": 125,
+      "vertical_bands": [
+        {
+          "x_begin": 0,
+          "x_end": 43,
+          "word": 63488
+        },
+        {
+          "x_begin": 43,
+          "x_end": 86,
+          "word": 2016
+        },
+        {
+          "x_begin": 86,
+          "x_end": 128,
+          "word": 31
+        }
+      ],
+      "outside_word": 0
+    },
+    "chunk_bytes": 1024,
+    "chunk_count": 32,
+    "get": {
+      "request": {
+        "message_type": 80,
+        "request_id": 1,
+        "payload": {}
+      },
+      "response": {
+        "message_type": 126,
+        "flags": 1,
+        "request_id": 1,
+        "payload": {
+          "command": "SCREEN_ICON_GET",
+          "result": {
+            "revision": 0,
+            "source": "default",
+            "target": "normal_home",
+            "format": "rgb565_le",
+            "width": 128,
+            "height": 128,
+            "total_bytes": 0
+          }
+        }
+      }
+    },
+    "begin": {
+      "request": {
+        "message_type": 82,
+        "request_id": 2,
+        "payload": {
+          "base_revision": 0,
+          "target": "normal_home",
+          "format": "rgb565_le",
+          "width": 128,
+          "height": 128,
+          "total_bytes": 32768
+        }
+      },
+      "response": {
+        "message_type": 126,
+        "flags": 1,
+        "request_id": 2,
+        "payload": {
+          "command": "SCREEN_ICON_BEGIN",
+          "result": {
+            "upload_id": 1,
+            "next_offset": 0,
+            "max_chunk_bytes": 1024
+          }
+        }
+      }
+    },
+    "data_request_ids": {
+      "first": 3,
+      "last": 34
+    },
+    "commit": {
+      "request": {
+        "message_type": 84,
+        "request_id": 35,
+        "payload": {
+          "upload_id": 1
+        }
+      },
+      "response": {
+        "message_type": 126,
+        "flags": 1,
+        "request_id": 35,
+        "payload": {
+          "command": "SCREEN_ICON_COMMIT",
+          "result": {
+            "revision": 1,
+            "source": "custom",
+            "target": "normal_home",
+            "format": "rgb565_le",
+            "width": 128,
+            "height": 128,
+            "total_bytes": 32768
+          }
+        }
+      }
+    },
+    "read_request_ids": {
+      "first": 36,
+      "last": 67
+    },
+    "reset": {
+      "request": {
+        "message_type": 86,
+        "request_id": 68,
+        "payload": {
+          "base_revision": 1
+        }
+      },
+      "response": {
+        "message_type": 126,
+        "flags": 1,
+        "request_id": 68,
+        "payload": {
+          "command": "SCREEN_ICON_RESET",
+          "result": {
+            "revision": 2,
+            "source": "default",
+            "target": "normal_home",
+            "format": "rgb565_le",
+            "width": 128,
+            "height": 128,
+            "total_bytes": 0
+          }
+        }
+      }
+    }
+  },
+  "abort_exchange": {
+    "request": {
+      "message_type": 85,
+      "request_id": 70,
+      "payload": {
+        "upload_id": 2
+      }
+    },
+    "response": {
+      "message_type": 126,
+      "flags": 1,
+      "request_id": 70,
+      "payload": {
+        "command": "SCREEN_ICON_ABORT",
+        "result": {
+          "aborted": true
+        }
+      }
+    }
+  },
+  "negative_cases": [
+    {
+      "name": "decoded chunk exceeds limit",
+      "request": {
+        "message_type": 83,
+        "request_id": 100,
+        "payload": {
+          "upload_id": 1,
+          "offset": 0,
+          "data": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+        }
+      },
+      "context": {
+        "validation": "decoded_length"
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_DATA",
+          "error": {
+            "code": 9,
+            "name": "VALIDATION_FAILED",
+            "message": "decoded chunk exceeds limit",
+            "details": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "data crosses image end",
+      "request": {
+        "message_type": 83,
+        "request_id": 100,
+        "payload": {
+          "upload_id": 1,
+          "offset": 32767,
+          "data": "APg="
+        }
+      },
+      "context": {
+        "validation": "data_range"
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_DATA",
+          "error": {
+            "code": 9,
+            "name": "VALIDATION_FAILED",
+            "message": "data crosses image end",
+            "details": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "wrong width",
+      "request": {
+        "message_type": 82,
+        "request_id": 100,
+        "payload": {
+          "base_revision": 0,
+          "target": "normal_home",
+          "format": "rgb565_le",
+          "width": 127,
+          "height": 128,
+          "total_bytes": 32768
+        }
+      },
+      "context": {
+        "validation": "schema"
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_BEGIN",
+          "error": {
+            "code": 9,
+            "name": "VALIDATION_FAILED",
+            "message": "wrong width",
+            "details": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "wrong total bytes",
+      "request": {
+        "message_type": 82,
+        "request_id": 100,
+        "payload": {
+          "base_revision": 0,
+          "target": "normal_home",
+          "format": "rgb565_le",
+          "width": 128,
+          "height": 128,
+          "total_bytes": 32766
+        }
+      },
+      "context": {
+        "validation": "schema"
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_BEGIN",
+          "error": {
+            "code": 9,
+            "name": "VALIDATION_FAILED",
+            "message": "wrong total bytes",
+            "details": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "wrong byte order format",
+      "request": {
+        "message_type": 82,
+        "request_id": 100,
+        "payload": {
+          "base_revision": 0,
+          "target": "normal_home",
+          "format": "rgb565_be",
+          "width": 128,
+          "height": 128,
+          "total_bytes": 32768
+        }
+      },
+      "context": {
+        "validation": "schema"
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_BEGIN",
+          "error": {
+            "code": 9,
+            "name": "VALIDATION_FAILED",
+            "message": "wrong byte order format",
+            "details": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "boolean revision",
+      "request": {
+        "message_type": 86,
+        "request_id": 100,
+        "payload": {
+          "base_revision": true
+        }
+      },
+      "context": {
+        "validation": "schema"
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_RESET",
+          "error": {
+            "code": 9,
+            "name": "VALIDATION_FAILED",
+            "message": "boolean revision",
+            "details": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "unknown request field",
+      "request": {
+        "message_type": 80,
+        "request_id": 100,
+        "payload": {
+          "filename": "icon.png"
+        }
+      },
+      "context": {
+        "validation": "schema"
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_GET",
+          "error": {
+            "code": 9,
+            "name": "VALIDATION_FAILED",
+            "message": "unknown request field",
+            "details": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "read crosses image end",
+      "request": {
+        "message_type": 81,
+        "request_id": 100,
+        "payload": {
+          "revision": 1,
+          "offset": 32767,
+          "length": 2
+        }
+      },
+      "context": {
+        "validation": "range"
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_READ",
+          "error": {
+            "code": 9,
+            "name": "VALIDATION_FAILED",
+            "message": "read crosses image end",
+            "details": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "read old revision",
+      "request": {
+        "message_type": 81,
+        "request_id": 100,
+        "payload": {
+          "revision": 1,
+          "offset": 0,
+          "length": 6
+        }
+      },
+      "context": {
+        "current_revision": 2
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_READ",
+          "error": {
+            "code": 10,
+            "name": "GENERATION_CONFLICT",
+            "message": "read old revision",
+            "details": {
+              "current_revision": 2
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "begin old revision",
+      "request": {
+        "message_type": 82,
+        "request_id": 100,
+        "payload": {
+          "base_revision": 1,
+          "target": "normal_home",
+          "format": "rgb565_le",
+          "width": 128,
+          "height": 128,
+          "total_bytes": 32768
+        }
+      },
+      "context": {
+        "current_revision": 2
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_BEGIN",
+          "error": {
+            "code": 10,
+            "name": "GENERATION_CONFLICT",
+            "message": "begin old revision",
+            "details": {
+              "current_revision": 2
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "commit revision changed",
+      "request": {
+        "message_type": 84,
+        "request_id": 100,
+        "payload": {
+          "upload_id": 1
+        }
+      },
+      "context": {
+        "upload_base_revision": 1,
+        "current_revision": 2,
+        "received_bytes": 32768
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_COMMIT",
+          "error": {
+            "code": 10,
+            "name": "GENERATION_CONFLICT",
+            "message": "commit revision changed",
+            "details": {
+              "current_revision": 2
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "reset old revision",
+      "request": {
+        "message_type": 86,
+        "request_id": 100,
+        "payload": {
+          "base_revision": 1
+        }
+      },
+      "context": {
+        "current_revision": 2
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_RESET",
+          "error": {
+            "code": 10,
+            "name": "GENERATION_CONFLICT",
+            "message": "reset old revision",
+            "details": {
+              "current_revision": 2
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "default has no pixels",
+      "request": {
+        "message_type": 81,
+        "request_id": 100,
+        "payload": {
+          "revision": 0,
+          "offset": 0,
+          "length": 6
+        }
+      },
+      "context": {
+        "source": "default"
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_READ",
+          "error": {
+            "code": 13,
+            "name": "NOT_FOUND",
+            "message": "default has no pixels",
+            "details": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "second begin",
+      "request": {
+        "message_type": 82,
+        "request_id": 100,
+        "payload": {
+          "base_revision": 0,
+          "target": "normal_home",
+          "format": "rgb565_le",
+          "width": 128,
+          "height": 128,
+          "total_bytes": 32768
+        }
+      },
+      "context": {
+        "active_upload_id": 1
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_BEGIN",
+          "error": {
+            "code": 11,
+            "name": "BUSY",
+            "message": "second begin",
+            "details": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "maintenance transaction owns device",
+      "request": {
+        "message_type": 82,
+        "request_id": 100,
+        "payload": {
+          "base_revision": 0,
+          "target": "normal_home",
+          "format": "rgb565_le",
+          "width": 128,
+          "height": 128,
+          "total_bytes": 32768
+        }
+      },
+      "context": {
+        "maintenance": "firmware_update"
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_BEGIN",
+          "error": {
+            "code": 11,
+            "name": "BUSY",
+            "message": "maintenance transaction owns device",
+            "details": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "malformed base64",
+      "request": {
+        "message_type": 83,
+        "request_id": 100,
+        "payload": {
+          "upload_id": 1,
+          "offset": 0,
+          "data": "!!!!"
+        }
+      },
+      "context": {
+        "validation": "base64"
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_DATA",
+          "error": {
+            "code": 9,
+            "name": "VALIDATION_FAILED",
+            "message": "malformed base64",
+            "details": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "zero decoded bytes",
+      "request": {
+        "message_type": 83,
+        "request_id": 100,
+        "payload": {
+          "upload_id": 1,
+          "offset": 0,
+          "data": ""
+        }
+      },
+      "context": {
+        "validation": "schema"
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_DATA",
+          "error": {
+            "code": 9,
+            "name": "VALIDATION_FAILED",
+            "message": "zero decoded bytes",
+            "details": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "forward gap",
+      "request": {
+        "message_type": 83,
+        "request_id": 100,
+        "payload": {
+          "upload_id": 1,
+          "offset": 7,
+          "data": "APjgBx8A"
+        }
+      },
+      "context": {
+        "next_offset": 6
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_DATA",
+          "error": {
+            "code": 9,
+            "name": "VALIDATION_FAILED",
+            "message": "forward gap",
+            "details": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "changed duplicate",
+      "request": {
+        "message_type": 83,
+        "request_id": 100,
+        "payload": {
+          "upload_id": 1,
+          "offset": 0,
+          "data": "AAAA"
+        }
+      },
+      "context": {
+        "next_offset": 6,
+        "received_base64": "APjgBx8A"
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_DATA",
+          "error": {
+            "code": 9,
+            "name": "VALIDATION_FAILED",
+            "message": "changed duplicate",
+            "details": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "partial overlap",
+      "request": {
+        "message_type": 83,
+        "request_id": 100,
+        "payload": {
+          "upload_id": 1,
+          "offset": 4,
+          "data": "APjgBx8A"
+        }
+      },
+      "context": {
+        "next_offset": 6,
+        "received_base64": "APjgBx8A"
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_DATA",
+          "error": {
+            "code": 9,
+            "name": "VALIDATION_FAILED",
+            "message": "partial overlap",
+            "details": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "missing final bytes",
+      "request": {
+        "message_type": 84,
+        "request_id": 100,
+        "payload": {
+          "upload_id": 1
+        }
+      },
+      "context": {
+        "received_bytes": 32767
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_COMMIT",
+          "error": {
+            "code": 9,
+            "name": "VALIDATION_FAILED",
+            "message": "missing final bytes",
+            "details": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "NVS write or readback failure",
+      "request": {
+        "message_type": 84,
+        "request_id": 100,
+        "payload": {
+          "upload_id": 1
+        }
+      },
+      "context": {
+        "received_bytes": 32768,
+        "current_revision": 1,
+        "after_failure_revision": 1
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_COMMIT",
+          "error": {
+            "code": 12,
+            "name": "STORAGE_FAILURE",
+            "message": "NVS write or readback failure",
+            "details": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "lease expired",
+      "request": {
+        "message_type": 83,
+        "request_id": 100,
+        "payload": {
+          "upload_id": 1,
+          "offset": 6,
+          "data": "APg="
+        }
+      },
+      "context": {
+        "last_activity_ms": 100,
+        "now_ms": 15100,
+        "session_timeout_ms": 15000
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_DATA",
+          "error": {
+            "code": 14,
+            "name": "TIMEOUT",
+            "message": "lease expired",
+            "details": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "old connection upload",
+      "request": {
+        "message_type": 84,
+        "request_id": 100,
+        "payload": {
+          "upload_id": 1
+        }
+      },
+      "context": {
+        "upload_connection": "usb-epoch-1",
+        "current_connection": "ble-epoch-2"
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_COMMIT",
+          "error": {
+            "code": 13,
+            "name": "NOT_FOUND",
+            "message": "old connection upload",
+            "details": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "HELLO replaced session",
+      "request": {
+        "message_type": 84,
+        "request_id": 100,
+        "payload": {
+          "upload_id": 1
+        }
+      },
+      "context": {
+        "event": "HELLO",
+        "fresh_request_id": true,
+        "clear_old_replay_entries": true,
+        "upload_epoch": 1,
+        "current_epoch": 2
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_COMMIT",
+          "error": {
+            "code": 13,
+            "name": "NOT_FOUND",
+            "message": "HELLO replaced session",
+            "details": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "aborted upload cannot commit",
+      "request": {
+        "message_type": 84,
+        "request_id": 100,
+        "payload": {
+          "upload_id": 1
+        }
+      },
+      "context": {
+        "aborted_upload_id": 1
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_COMMIT",
+          "error": {
+            "code": 13,
+            "name": "NOT_FOUND",
+            "message": "aborted upload cannot commit",
+            "details": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "committed upload cannot abort",
+      "request": {
+        "message_type": 85,
+        "request_id": 100,
+        "payload": {
+          "upload_id": 1
+        }
+      },
+      "context": {
+        "committed_upload_id": 1
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_ABORT",
+          "error": {
+            "code": 13,
+            "name": "NOT_FOUND",
+            "message": "committed upload cannot abort",
+            "details": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "cached id changed payload",
+      "request": {
+        "message_type": 86,
+        "request_id": 100,
+        "payload": {
+          "base_revision": 2
+        }
+      },
+      "context": {
+        "cached_request_id": 100,
+        "cached_payload": {
+          "base_revision": 1
+        }
+      },
+      "response": {
+        "message_type": 127,
+        "flags": 3,
+        "request_id": 100,
+        "payload": {
+          "command": "SCREEN_ICON_RESET",
+          "error": {
+            "code": 17,
+            "name": "DUPLICATE_REQUEST_MISMATCH",
+            "message": "cached id changed payload",
+            "details": {}
+          }
+        }
+      }
+    }
+  ],
+  "retry_cases": [
+    {
+      "name": "same DATA range new request ID",
+      "first": {
+        "upload_id": 1,
+        "offset": 0,
+        "data": "APjgBx8A"
+      },
+      "retry": {
+        "upload_id": 1,
+        "offset": 0,
+        "data": "APjgBx8A"
+      },
+      "received_bytes_before_retry": 6,
+      "result": {
+        "next_offset": 6
+      },
+      "renew_lease": true
+    },
+    {
+      "name": "same request ID cache hit",
+      "command": "SCREEN_ICON_DATA",
+      "same_request_id": true,
+      "renew_lease": false
+    },
+    {
+      "name": "same connection ABORT new request ID",
+      "command": "SCREEN_ICON_ABORT",
+      "upload_id": 2,
+      "result": {
+        "aborted": true
+      },
+      "new_begin_since_abort": false
+    },
+    {
+      "name": "RESET cache hit",
+      "command": "SCREEN_ICON_RESET",
+      "same_request_id": true,
+      "revision_before_retry": 2,
+      "revision_after_retry": 2
+    },
+    {
+      "name": "cached HELLO is a retry",
+      "command": "HELLO",
+      "same_request_id": true,
+      "identical_payload": true,
+      "cached_response": true,
+      "cancel_upload": false,
+      "reset_session": false
+    }
+  ],
+  "session_boundary_cases": [
+    {
+      "event": "serial_close_and_reopen_without_cdc_disconnect",
+      "detected_by_device": false,
+      "client_must_send_fresh_hello": true
+    },
+    {
+      "event": "successful_new_begin",
+      "clear_aborted_upload_marker": true,
+      "clear_expired_upload_marker": true,
+      "old_upload_error": "NOT_FOUND"
+    }
+  ],
+  "unknown_result_cases": [
+    {
+      "command": "SCREEN_ICON_COMMIT",
+      "response_lost": true,
+      "reconnect_action": [
+        "authenticate_same_device",
+        "SCREEN_ICON_GET",
+        "SCREEN_ICON_READ",
+        "compare_pixels"
+      ],
+      "replay_mutation": false
+    },
+    {
+      "command": "SCREEN_ICON_RESET",
+      "response_lost": true,
+      "reconnect_action": [
+        "authenticate_same_device",
+        "SCREEN_ICON_GET"
+      ],
+      "confirm_source": "default",
+      "confirm_total_bytes": 0,
+      "replay_mutation": false
+    }
+  ]
+}

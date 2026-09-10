@@ -1,0 +1,49 @@
+{
+  "fixture_version": 1,
+  "test_only": true,
+  "warning": "Public test-only fixture. Signing private keys are intentionally omitted; this test root is not an official production trust root.",
+  "signature_algorithm": "rsa-pss-sha256-salt32",
+  "test_root": {
+    "issuer_key_id": "BORING-TEST-ROOT-2026-09",
+    "public_key_algorithm": "rsa-3072",
+    "public_key_spki": "MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAspoR0EY4btVXYHUvsIvmPHUugev69h8zPk696k_MRbPP16tCwaSbL8D0Ko2TciDEe_HfVwl5tndDH2d_WJbhJGqdvKep_4_aX2hAaavBryrAiZgSWRwXekqYlCUZ8Ffd8opThQMYk0SqTna57RNbHuci784rylIpiOYTa7zfGKvpjDE0D8tyS2sz5aj2SZG0TW7JCeVxfOwGwUUxAt0CM_oPfpvKaQkfnGWOOTNVsnWJ5tGlODVeoritKp34ULY5JtDNpHBAIe0iSTZ_5aqlV1KIT_-bUenXXmZJMl7k9Xs2TDBUEr77SxhKH86Y5GNVEgj8rBLG_oL0eUA4WRFeed_xgsxyKMLxk-ufgGOZgJydZTzIr_nmdCMGrw8RIfoawOYYGjOMigTtaji22zO8nQKam0RSVh9msG3mQaEVj9i1t0V5HpcJ9T7hRqtJw1hkj99-NxaB5b83TgWrvSVDO_O26ECj0HB3KBqxRVBjYuW7-zuV9WzXFJnEjKfgEbshAgMBAAE"
+  },
+  "certificate_response": {
+    "command": "AUTH_GET_CERTIFICATE",
+    "result": {
+      "certificate": {
+        "version": 1,
+        "issuer_key_id": "BORING-TEST-ROOT-2026-09",
+        "product_id": "wired-macro-pad-v1",
+        "hardware_id": "WMP-S3-MATRIX12-POWER-V2",
+        "serial": "CP01-AABBCCDDEEFF",
+        "public_key_algorithm": "rsa-3072",
+        "public_key_spki": "MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEA4zFd7vKG2Z6n6MJNLuTNhepgJCM3PGZyXhF5mJ38RnOmcOiMJyjTrtRJlqxcGavD8GJwZGOk8yQ0F9WUixMjPsZDyPCaremOwuz0BokOL1CeN7hocqTLB6ARnf88uLF0Zp-zxmtCuhM9fxairc6GHVr6Le9qd9QPOFUsc468ErRqoPEhLq_psdyyH2hL5hQnzpNjYr6z8UC48XoU5NXogOAitiGvYM4ufPlIyMvj1DKCDf1Gm64UzeqlXXzWSwXkh2BuSYEMv7F4ZSZCuCc6expoYtvM9kLn5HBrp_hAV1h07U06i3FPHLM7hJJxdIsJ_rDzBISEu2YvtxtI_HoKa-ZMWJWHA0IaQ5ke8xTLLY-HjqhlfdWVV2noJzmNyj3gDP0zuxk-t80KiQJyo2RVlwNVzsdn91Ehf5mfDyQS16Sc69Z9QhFVKd-9eOJw0suKG7jwQPgWjLQV2hDHJd-VamgVO_SH4SstBf4swbI2egj1etDN-SPFDNSNosoE3akpAgMBAAE"
+      },
+      "issuer_signature": "Ou01Xsp58n2yhP5unaoHrNmuS5TmviOllsUHF2ippW8cvAKYzMIB-MytHLYXQRdZRtXlODdrD3AjMLdQ2m2Rwodhma1MfsDg92Nf3JbBGVc8r-6PO82YdjyfyVjPqFbM7PbdQH6aMX6SdraPE_-LXLWPIKN38QiWOpOhnWOe_aMi3Md_Q13aqvAXHPUrJVJOEHAcRaaK4G8qzPmsq7Q1vM8o_K0ZMJ7pI__LcLUgXS0lHhA1eTj6JIYNE97dK1te_OrIDTPKvG3ZYPDWthNFp8o2oqizCPJYzU9Zznazzq7G7FhZ4nsUcvaWf3zafqChCQZT9bOG18suo0qkNVmrz21Mbo_ByniWS9YxVA1CG2jMjFANenjV1KH-fBxl6lcf6hj3GKeETEheriKZFhECvSg87YlJJFixwZhJcXdzNGVeHMeNbEOD1fLlsrRg1a5mEKbApzkqLLtiB7SNSv8y0WGByD34dYUWHqB2AePNjpikuxIaS-iRywZqfS8CJeVJ",
+      "signature_algorithm": "rsa-pss-sha256-salt32"
+    }
+  },
+  "challenge_request": {
+    "nonce": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+  },
+  "challenge_signing_object": {
+    "domain": "BORING-WMP1-DEVICE-AUTH-V1",
+    "nonce": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "serial": "CP01-AABBCCDDEEFF"
+  },
+  "challenge_response": {
+    "command": "AUTH_CHALLENGE",
+    "result": {
+      "nonce": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "signature_algorithm": "rsa-pss-sha256-salt32",
+      "signature": "tc9gIt_7QBJ4b2cPehQHMQCmxn2pX9A0oc_n-sp9JhEWuoaVdGqmNt8xVt3Iv8iWLgdmDjhgSCVgi4JywFlcdHPia1kevoRpU2vzrbfBkcSSYgl7o677l4gAp-JByxgYOoHcjHtYal6b4R4vnfLy7EU6ORxfI3KtQHo8jjzsvgUitvaHrQvIoZIBydt3tgtnjDlDhP7gOnYX22RsOcOSFzZeV0L5_A1V_EaBVCQFndMWXvivuYQBcdf6U5pjEJNTJ0lzkjvuvgFq6AbfXEsS-4Krpc10VD54KVJNNmU9aCVQG4uhuQ8_P8OxkkTRwxBHSNY38RoeONMLJoiS355y-mK1TI2ComIbIc7hW7fXLt2oeTtFtKDnoxdwXfFxuDqdmaI4Ki6WajkXB95JV8kchOGqAg3mKvfJ_ZBYEXLX9rlguADMVSWXttcsr69nSQ410xsDp_ye42yTtYfp_UB4w_tGMocLXejVlqBVJj6clKspslQ9I_f1rPkskIvK2qhj"
+    }
+  },
+  "canonical": {
+    "certificate_utf8": "{\"hardware_id\":\"WMP-S3-MATRIX12-POWER-V2\",\"issuer_key_id\":\"BORING-TEST-ROOT-2026-09\",\"product_id\":\"wired-macro-pad-v1\",\"public_key_algorithm\":\"rsa-3072\",\"public_key_spki\":\"MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEA4zFd7vKG2Z6n6MJNLuTNhepgJCM3PGZyXhF5mJ38RnOmcOiMJyjTrtRJlqxcGavD8GJwZGOk8yQ0F9WUixMjPsZDyPCaremOwuz0BokOL1CeN7hocqTLB6ARnf88uLF0Zp-zxmtCuhM9fxairc6GHVr6Le9qd9QPOFUsc468ErRqoPEhLq_psdyyH2hL5hQnzpNjYr6z8UC48XoU5NXogOAitiGvYM4ufPlIyMvj1DKCDf1Gm64UzeqlXXzWSwXkh2BuSYEMv7F4ZSZCuCc6expoYtvM9kLn5HBrp_hAV1h07U06i3FPHLM7hJJxdIsJ_rDzBISEu2YvtxtI_HoKa-ZMWJWHA0IaQ5ke8xTLLY-HjqhlfdWVV2noJzmNyj3gDP0zuxk-t80KiQJyo2RVlwNVzsdn91Ehf5mfDyQS16Sc69Z9QhFVKd-9eOJw0suKG7jwQPgWjLQV2hDHJd-VamgVO_SH4SstBf4swbI2egj1etDN-SPFDNSNosoE3akpAgMBAAE\",\"serial\":\"CP01-AABBCCDDEEFF\",\"version\":1}",
+    "certificate_sha256": "adc6e4a14e04e51d16b62a69401c4f6464957890da4b34f891ae9a083892f0ef",
+    "challenge_utf8": "{\"domain\":\"BORING-WMP1-DEVICE-AUTH-V1\",\"nonce\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8\",\"serial\":\"CP01-AABBCCDDEEFF\"}",
+    "challenge_sha256": "a23e72df54bc055d1b0f78ca78964c9732434b4116e7d4831aaffe55f0726be6"
+  }
+}

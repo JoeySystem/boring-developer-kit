@@ -1,0 +1,13 @@
+{
+  "manifest_version": 1,
+  "id": "com.boring.example.propose-mapping",
+  "name": "Propose key mapping",
+  "version": "1.0.0",
+  "api_version": {
+    "major": 1,
+    "minor": 0
+  },
+  "entrypoint": "main.py",
+  "observer_events": [],
+  "actions": []
+}
