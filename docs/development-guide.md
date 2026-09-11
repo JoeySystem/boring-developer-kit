@@ -1,6 +1,6 @@
 # 从示例到自己的扩展
 
-本次提供 SDK 1.0.0 和三个示例。环境准备见 [开始使用](../START-HERE.md)，接口见 [API 参考](api.md)，版本边界见 [兼容说明](versions.md)。
+本次提供 SDK 1.0.0、三个示例和社区控制台源码。控制台修改、运行与测试见 [控制台说明](../console/README.md)；本页介绍扩展开发。环境准备见 [开始使用](../START-HERE.md)，接口见 [API 参考](api.md)，版本边界见 [兼容说明](versions.md)。
 
 ## 保留一份能够运行的原始示例
 
@@ -50,9 +50,10 @@
 
 ```bash
 python -m pip wheel --no-deps --wheel-dir dist ./sdk/python
+python -m pip wheel --no-deps --wheel-dir dist ./console
 python tools/build_release.py --output dist
 ```
 
-第一条构建 SDK wheel；第二条生成三个独立扩展 ZIP，并把文档、源码、协议和扩展 ZIP 汇总到完整开发包。构建工具不依赖私有项目或 Git 历史，也不连接设备或上传 GitHub。
+前两条分别构建 SDK 和社区控制台 wheel；最后一条生成三个独立扩展 ZIP，并把文档、控制台源码、SDK、协议和扩展 ZIP 汇总到完整开发包。源码 wheel 不是 macOS / Windows 安装包；原生应用打包和验收需在对应平台进行。构建工具不依赖私有项目或 Git 历史，也不连接设备或上传 GitHub。
 
 发布产物位于 dist，许可与 NOTICE 会随 SDK 和每个扩展保留。

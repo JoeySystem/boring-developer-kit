@@ -1,6 +1,6 @@
 # 使用许可
 
-本仓库发布的 BORING 原创 SDK、示例、协议资料、文档和交付工具采用 **PolyForm Noncommercial License 1.0.0**。完整条款见 [LICENSE](LICENSE)，分发时保留 [NOTICE](NOTICE)。这是非商业源码开放，不是允许任意商业使用的 OSI 开源许可。
+本仓库发布的 BORING 原创控制台代码、SDK、示例、协议资料、文档和交付工具采用 **PolyForm Noncommercial License 1.0.0**。完整条款见 [LICENSE](LICENSE)，分发时保留 [NOTICE](NOTICE)。这是非商业源码开放，不是允许任意商业使用的 OSI 开源许可。
 
 ## 非商业使用
 
@@ -16,9 +16,11 @@
 
 ## 保留和第三方内容
 
-本仓库不提供完整固件、完整控制台、生产工具、密钥、硬件生产资料或 BORING 品牌素材的授权。名称、Logo、字体、图标和动画不因 SDK 发布而自动放开。
+本次许可覆盖 `console/` 中公开的 BORING 原创代码，包括通信、认证验证、配置编辑和扩展运行代码。社区构建使用系统字体，不附内部 BORING 5R 字库或官方应用图标。
 
-首页的[产品实拍照片](docs/images/boring-mist-product.png)仅用于展示 BORING MIST，不纳入 SDK 的非商业许可授权范围；照片及其中品牌素材的权利保留。
+完整固件、生产工具、生产密钥与凭据、硬件生产资料和未随本仓库授权的 BORING 品牌素材仍然保留。名称、Logo、字体、图标和动画不因源码发布而自动放开；不得将自行修改或构建的程序表述为官方发布或官方认证。生产根公钥及验证代码可以公开，不代表获得签发官方设备身份的权利。
+
+首页的[产品实拍照片](docs/images/boring-mist-product.png)仅用于展示 BORING MIST，不纳入本仓库的非商业许可授权范围；照片及其中品牌素材的权利保留。
 
 [第三方依赖](THIRD-PARTY-NOTICES.md)保持各自许可，不受本仓库的非商业条款重新授权。
 

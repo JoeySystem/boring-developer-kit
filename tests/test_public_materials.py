@@ -104,6 +104,11 @@ def test_release_archives_have_importable_roots_and_licenses(tmp_path):
     with zipfile.ZipFile(results[-1]) as archive:
         names = archive.namelist()
         assert any(name.endswith("sdk/python/boring_console_sdk/client.py") for name in names)
+        assert any(name.endswith("console/src/controller_config/app.py") for name in names)
+        assert any(name.endswith("console/README.md") for name in names)
+        assert any(name.endswith("console/LICENSE") for name in names)
+        assert not any("font-pack.json" in name or "boring-console-icon" in name for name in names)
+        assert not any(".venv/" in name or "device-backups/" in name or "/firmware/" in name for name in names)
         assert any(name.endswith("examples/packages/claim_prompt.zip") for name in names)
         assert not any("test_private_keys" in archive.read(name).decode() for name in names if name.endswith(".json"))
         assert not any("__pycache__" in name or ".egg-info/" in name for name in names)

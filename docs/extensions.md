@@ -1,6 +1,6 @@
 # BORING 本地扩展 1.0
 
-BORING 本地扩展是由 BORING 控制台管理、由私有 Runner 执行的 Python 扩展包。
+BORING 本地扩展是由 BORING 控制台管理、由专用 Runner 执行的 Python 扩展包。
 它不是固件 MOD，也不是让第三方代码直接控制串口的驱动。用户可以在控制台复制
 “AI 开发提示词”，去 Codex 或其他 AI 中完成开发，再把目录或 ZIP 导回控制台。
 
@@ -105,5 +105,5 @@ observer 不影响粘贴、action 接管、停用回退，以及提案批准后�
 - 不假设用户电脑预装 Python；
 - V1 不包含插件商店、账号、云端分发或网络代码下载。
 
-SDK 开发说明见 [SDK 开发说明](../sdk/python/README.md)。双平台正式包必须同时交付控制台、私有
+SDK 开发说明见 [SDK 开发说明](../sdk/python/README.md)。双平台正式包必须同时交付控制台、专用
 Runner、SDK 运行内容及构建时从 `protocol/` 复制的权威协议资产。

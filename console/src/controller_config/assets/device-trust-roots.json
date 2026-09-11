@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "roots": [
+    {
+      "issuer_key_id": "BORING-TEST-ROOT-2026-09",
+      "public_key_algorithm": "rsa-3072",
+      "public_key_spki": "MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAspoR0EY4btVXYHUvsIvmPHUugev69h8zPk696k_MRbPP16tCwaSbL8D0Ko2TciDEe_HfVwl5tndDH2d_WJbhJGqdvKep_4_aX2hAaavBryrAiZgSWRwXekqYlCUZ8Ffd8opThQMYk0SqTna57RNbHuci784rylIpiOYTa7zfGKvpjDE0D8tyS2sz5aj2SZG0TW7JCeVxfOwGwUUxAt0CM_oPfpvKaQkfnGWOOTNVsnWJ5tGlODVeoritKp34ULY5JtDNpHBAIe0iSTZ_5aqlV1KIT_-bUenXXmZJMl7k9Xs2TDBUEr77SxhKH86Y5GNVEgj8rBLG_oL0eUA4WRFeed_xgsxyKMLxk-ufgGOZgJydZTzIr_nmdCMGrw8RIfoawOYYGjOMigTtaji22zO8nQKam0RSVh9msG3mQaEVj9i1t0V5HpcJ9T7hRqtJw1hkj99-NxaB5b83TgWrvSVDO_O26ECj0HB3KBqxRVBjYuW7-zuV9WzXFJnEjKfgEbshAgMBAAE",
+      "purpose": "test"
+    },
+    {
+      "issuer_key_id": "BORING-PRODUCTION-ROOT-2026-09",
+      "public_key_algorithm": "rsa-3072",
+      "public_key_spki": "MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEA0_18oPkAgY5WTNNv6VOoFG9p4zsOdirybIe3UAiCVnAYbpCoAFbU8E6QskNWlk1KXIHiqonxkRyhfinpFWU8PXxcqHRk8e2nDWreJde0JVJEKh4rF3hFG2ndfATo62rxyme0yx5gNQez5Uey7LsJJMV4dWb_F-00iV1oq3Ob9N0_7XcBE76HoUIlXetnfc4UVqwGbmISunCRJDweLU0QNB8duisD7tJ5Ki4cOCHlpiCeT_gLiytxaYms9dmYiV5rSWqAKZ2BJhu2n-h3reH3oxsrh7roK-1IvrJeDjF4k0kyXro2j8fHjyrHFIqcVSSfmQko0h7dHoC4B2QtAETVK9a65s0Os3V1OMbxdMdTtvyvJCcgF2Tp2NhTwKGS6ziNWcYI6SEx9qQi9BQHXHDYx7XU842PI_aSydytpZK3Z9knqfQBLaojl29t-XLbTwAMAJH-rP6kfZY6YhVWSMhS2HI5loxb4E19GUicPLz8S2pGLXjGhafNMj2k5ZSEE6KXAgMBAAE",
+      "purpose": "production"
+    },
+    {
+      "issuer_key_id": "BORING-PRODUCTION-ROOT-2026-09-R2",
+      "public_key_algorithm": "rsa-3072",
+      "public_key_spki": "MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAnSnf9jUaFrJ5iHtjlYXUl0LUjI-bhHhhEkauleUgbo1cyxxfpA3b8yexyZUSMjjOMo_M76Wm2jJPJ9eEe3trQEEpfnW1ozXFR1_WEoQySbdYprp11ZYxSmlFVEH7LjDMQ_iCM8uyQK_cwIzzRM7myiADABCYSbopbffBhHuQHoajlbpyFaC8ueIUgJj6aSdLUvwboegHO3pnPnFVqMHmgT1OANQC2kb6J6flwyIy9UrIfYHv5qATDRi6wtR1aN6oKu3BGeBiMFkaAmRXLwrEXUdqEzZ0PuFl0d1_wzpJY19Kg3nV-jDuxnYMdE278w2Q6auPipjRipSz9YhtrM-TXlaFwFHMGwUKqQHYmY1X_MbN_nWoDA6sQwR_js8gkeVNdB7Z2LQhWO8QF8isJYQwFnzZAgPr6f7qhtrt9bXSmbXUdhzoHlVyoiIriz5qBw3Ag5VvqesCtuJI3khT7AAMRTh0RIrsheHwdujbWtl8wOOXUdarqOFD5ybOiN5rJcx9AgMBAAE",
+      "purpose": "production"
+    }
+  ]
+}

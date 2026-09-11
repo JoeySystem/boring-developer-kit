@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "boring-controller-config"
+dynamic = ["version"]
+description = "BORING Console Community source preview"
+readme = "README.md"
+license = "LicenseRef-PolyForm-Noncommercial-1.0.0"
+license-files = ["LICENSE", "NOTICE"]
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "cryptography>=45,<47",
+  "jsonschema>=4.23,<5",
+  "psutil>=6,<8",
+  "PySide6==6.11.1",
+  "pyobjc-core>=11.1,<12; sys_platform == 'darwin'",
+  "pyobjc-framework-Cocoa>=11.1,<12; sys_platform == 'darwin'",
+  "pyobjc-framework-CoreBluetooth>=11.1,<12; sys_platform == 'darwin'",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8.3,<9",
+  "pytest-qt>=4.4,<5",
+]
+
+[project.scripts]
+boring-configurator = "controller_config.app:main"
+boring-extension-runner = "controller_config.extension_runner:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"controller_config.assets" = ["*.json", "*.md", "*.svg", "*.png", "*.icns", "*.ico"]
+"controller_config.translations" = ["*.ts", "*.qm"]
+
+[tool.setuptools.dynamic]
+version = {attr = "controller_config.__version__"}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

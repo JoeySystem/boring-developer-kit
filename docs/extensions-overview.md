@@ -7,7 +7,7 @@
 ```text
 BORING 设备
     ↓ 实体触发
-官方 BORING Console
+BORING Console / Community
     ↓ 本地扩展接口
 你的 Python 扩展
     ↓
