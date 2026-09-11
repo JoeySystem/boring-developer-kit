@@ -6,6 +6,12 @@
 
 [开始使用](START-HERE.md) · [下载预发布](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.2) · [兼容与验证边界](docs/versions.md) · [许可](LICENSING.md)
 
+<p align="center">
+  <img src="docs/images/boring-mist-product.png" alt="BORING MIST 产品实拍：金属外壳、彩色背光按键、圆形屏幕、旋钮和摇杆" width="420">
+  <br>
+  <sub>BORING MIST · 产品实拍</sub>
+</p>
+
 ## 本次可用的内容
 
 | 内容 | 入口 |
