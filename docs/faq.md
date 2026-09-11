@@ -44,7 +44,7 @@
 
 ## Windows、macOS 和蓝牙是否都支持？
 
-本次在 macOS / Python 3.12 上验证 SDK 和当前控制台源码 API；Windows、Linux、Python 3.13、BLE 扩展实体触发及完整安装包路径未在本次验证。见 [兼容说明](versions.md)。
+本次在 macOS / Python 3.12 上验证 SDK 和当前控制台源码 API；Windows、Linux、Python 3.13、BLE 扩展实体触发及安装版扩展示例的完整实体触发路径未在本次验证。控制台普通连接和固件更新的安装版验收另见兼容说明。见 [兼容说明](versions.md)。
 
 ## 可以商用、收费分享或在工作中使用吗？
 
