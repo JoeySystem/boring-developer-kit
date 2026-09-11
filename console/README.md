@@ -1,6 +1,6 @@
-# BORING Console Community 源码
+# BORING 控制台源码
 
-此目录是基于 Console **0.1.6** 已归档提交 `1b0b16b28ddf69fafa8a2621331a69bc49df30c9` 的社区源码适配，随开发包 `v0.1.0-preview.3` 交付。它不是仍在开发的 0.1.10 源码，也不是新版官方 DMG。
+此目录是基于 Console **0.1.6** 已归档提交 `1b0b16b28ddf69fafa8a2621331a69bc49df30c9` 的社区源码适配，随开发包 `v0.1.0-preview.3` 交付。[官方 0.1.11 安装包](../docs/install-console.md) 另行交付，本目录不包含该版本的完整源码。公开源码构建仍使用 BORING Console Community 作为程序标识，以区分官方安装版。
 
 ## 安装和运行
 
