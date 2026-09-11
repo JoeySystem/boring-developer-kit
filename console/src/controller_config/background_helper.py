@@ -9,6 +9,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QRectF, QSettings, QTimer, Qt, Signal
 from PySide6.QtGui import (
     QAction,
+    QActionGroup,
     QColor,
     QCursor,
     QFont,
@@ -49,6 +50,13 @@ from controller_config.i18n import LanguageManager, translate_ui_text
 
 BACKGROUND_ENABLED_KEY = "prompt_helper/background_enabled"
 LOGIN_ENABLED_KEY = "prompt_helper/start_at_login"
+MENU_BAR_DISPLAY_KEY = "prompt_helper/menu_bar_display"
+MENU_BAR_DISPLAYS = {
+    "compact": "紧凑 · 仅 BORING",
+    "codex": "仅显示 Codex",
+    "claude": "仅显示 Claude",
+    "both": "显示 Codex 和 Claude",
+}
 
 try:
     from AppKit import NSStatusBar, NSVariableStatusItemLength
@@ -467,6 +475,8 @@ class PromptBackgroundController(QObject):
         self._window_closed_to_background = False
         self._quitting = False
         self._background_enabled = self._read_bool(BACKGROUND_ENABLED_KEY, True)
+        display = self._settings.value(MENU_BAR_DISPLAY_KEY, "both")
+        self._menu_bar_display = display if display in MENU_BAR_DISPLAYS else "both"
         self._launch_agent = launch_agent
         self._codex_usage_monitor = codex_usage_monitor
         self._claude_usage_monitor = claude_usage_monitor
@@ -525,6 +535,18 @@ class PromptBackgroundController(QObject):
     @property
     def login_enabled(self) -> bool:
         return self._launch_agent.enabled if self._launch_agent is not None else False
+
+    @property
+    def menu_bar_display(self) -> str:
+        return self._menu_bar_display
+
+    def set_menu_bar_display(self, display: str) -> None:
+        if display not in MENU_BAR_DISPLAYS:
+            raise ValueError("未知的菜单栏显示方式")
+        self._menu_bar_display = display
+        self._settings.setValue(MENU_BAR_DISPLAY_KEY, display)
+        self._settings.sync()
+        self._update_tray_usage()
 
     @property
     def quitting(self) -> bool:
@@ -683,17 +705,26 @@ class PromptBackgroundController(QObject):
             translate_ui_text("退出 BORING 主机自动化助手"), menu
         )
         quit_action.triggered.connect(self.quit_application)
-        menu.addAction(quit_action)
         self._tray_show_console = show
         self._tray_quit_helper = quit_action
+        self._tray_display_menu = menu.addMenu(translate_ui_text("菜单栏显示"))
+        self._menu_bar_display_actions = QActionGroup(menu)
+        self._menu_bar_display_actions.setExclusive(True)
+        for display, label in MENU_BAR_DISPLAYS.items():
+            action = self._tray_display_menu.addAction(translate_ui_text(label))
+            action.setCheckable(True)
+            action.setData(display)
+            action.triggered.connect(lambda _checked=False, value=display: self.set_menu_bar_display(value))
+            self._menu_bar_display_actions.addAction(action)
+        menu.addSeparator()
+        menu.addAction(quit_action)
         self._tray_menu = menu
         try:
             if self._platform != "darwin":
                 raise RuntimeError("使用系统托盘")
             self._native_status_item = _MacTextStatusItem(self._show_tray_menu)
-            self._native_claude_status_item = _MacTextStatusItem(
-                self._show_tray_menu
-            )
+            if self._menu_bar_display == "both":
+                self._native_claude_status_item = _MacTextStatusItem(self._show_tray_menu)
         except RuntimeError:
             if self._native_status_item is not None:
                 self._native_status_item.hide()
@@ -732,9 +763,16 @@ class PromptBackgroundController(QObject):
             limit_id="claude",
         )
         if self._native_status_item is not None:
-            self._native_status_item.set_title(codex_label)
-            if self._native_claude_status_item is not None:
+            title = ("BORING" if self._menu_bar_display == "compact" else
+                     claude_label if self._menu_bar_display == "claude" else codex_label)
+            self._native_status_item.set_title(title)
+            if self._menu_bar_display == "both":
+                if self._native_claude_status_item is None:
+                    self._native_claude_status_item = _MacTextStatusItem(self._show_tray_menu)
                 self._native_claude_status_item.set_title(claude_label)
+            elif self._native_claude_status_item is not None:
+                self._native_claude_status_item.hide()
+                self._native_claude_status_item = None
         elif self._tray is not None:
             self._tray.setIcon(_menu_bar_usage_icon("AI 额度"))
         if self._tray_usage_panel is not None:
@@ -762,6 +800,11 @@ class PromptBackgroundController(QObject):
             self._tray_quit_helper.setText(
                 translate_ui_text("退出 BORING 主机自动化助手")
             )
+        self._tray_display_menu.setTitle(translate_ui_text("菜单栏显示"))
+        self._tray_display_menu.menuAction().setVisible(self._native_status_item is not None)
+        for action in self._menu_bar_display_actions.actions():
+            action.setText(translate_ui_text(MENU_BAR_DISPLAYS[action.data()]))
+            action.setChecked(action.data() == self._menu_bar_display)
         self._update_tray_tooltip()
 
     def _retranslate_tray(self) -> None:
@@ -780,8 +823,12 @@ class PromptBackgroundController(QObject):
             f"{translate_ui_text(self._helper_state_label)}"
         )
         if self._native_status_item is not None:
+            label = (_provider_menu_bar_usage_label(self._claude_usage_snapshot, provider_name="Claude", limit_id="claude")
+                     if self._menu_bar_display == "claude" else
+                     "BORING" if self._menu_bar_display == "compact" else
+                     _menu_bar_usage_label(self._codex_usage_snapshot))
             self._native_status_item.set_tooltip(
-                f"{_menu_bar_usage_label(self._codex_usage_snapshot)} · {helper}"
+                f"{label} · {helper}"
             )
             if self._native_claude_status_item is not None:
                 claude_label = _provider_menu_bar_usage_label(

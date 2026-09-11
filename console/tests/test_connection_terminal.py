@@ -2,7 +2,7 @@ from dataclasses import replace
 
 import pytest
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtWidgets import QLabel, QPushButton
+from PySide6.QtWidgets import QLabel, QPushButton, QPlainTextEdit
 
 from controller_config.models import AppState, ScreenModel
 from controller_config.protocol.device_auth import DeviceTrust, DeviceTrustState
@@ -92,7 +92,9 @@ def test_main_window_reuses_terminal_and_keeps_retry_and_editor_available(qtbot,
         assert window._connection_terminal is terminal
         qtbot.waitUntil(lambda: any(b.isVisible() and b.text() == '重新扫描'
                                    for b in window.findChildren(QPushButton)))
-        assert any(label.text() == '请检查设备身份' for label in window.findChildren(QLabel))
+        assert not window.findChild(QPlainTextEdit, 'connectionDetails').isVisible()
+        window.findChild(QPushButton, 'connectionDetailsToggle').click()
+        assert '请检查设备身份' in window.findChild(QPlainTextEdit, 'connectionDetails').toPlainText()
         # A new attempt updates the real view model immediately; the visual hold does not gate it.
         vm.start()
         qtbot.waitUntil(lambda: vm.model.state is AppState.READY)

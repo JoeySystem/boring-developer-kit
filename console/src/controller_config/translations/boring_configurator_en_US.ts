@@ -96,6 +96,8 @@ Quitting does not cancel the device write or confirm success. After reopening, c
 Firmware maintenance requires explicit confirmation</translation></message>
     <message><source>工作区</source><translation>Workspace</translation></message>
     <message><source>当前模式</source><translation>Current Mode</translation></message>
+    <message><source>已切换至</source><translation>Switched to</translation></message>
+    <message><source>按键名称按本机显示；设备平台设置：{platform}。显示名称不会更改设备映射。</source><translation>Key names follow this computer; device platform: {platform}. Display names do not change device mappings.</translation></message>
     <message><source>当前 PROFILE</source><translation>Current Profile</translation></message>
     <message><source>重新扫描</source><translation>Rescan</translation></message>
     <message><source>扫描中</source><translation>Scanning</translation></message>
@@ -964,5 +966,47 @@ Knob: confirm</translation></message>
     <message><source>震动说明</source><translation>Haptic Details</translation></message>
     <message><source>正在连接你的 BORING</source><translation>Connecting to your BORING</translation></message>
     <message><source>连接进度显示在左侧，完成身份认证后自动加载设备配置。</source><translation>Follow the connection progress on the left. Your configuration loads after identity verification.</translation></message>
+    <message><source>正在编辑：{profile} · 普通映射（NORMAL）</source><translation>Editing: {profile} · Normal mappings (NORMAL)</translation></message>
+    <message><source>当前模式的专用按键由固件处理；未被专用功能占用的控件仍使用这套映射。切换模式不会切换正在编辑的方案。</source><translation>Firmware handles dedicated controls in the current mode; other controls still use these mappings. Changing mode does not select a different profile for editing.</translation></message>
+    <message><source>录制与编辑使用 {host} 按键名称。设备系统设置为 {device}；已有动作不自动转换。</source><translation>Recording and editing use {host} key names. The device system is set to {device}; existing actions are not converted.</translation></message>
+    <message><source>此处编辑 NORMAL 映射；{mode} 模式使用专用动作。切回 NORMAL 后才会执行此映射。</source><translation>This edits the NORMAL mapping. {mode} mode uses dedicated actions. Switch to NORMAL to execute this mapping.</translation></message>
+    <message><source>保存 NORMAL 映射…</source><translation>Save NORMAL mapping…</translation></message>
+    <message><source>将当前灯光、震动和屏幕设置交给设备验证；确认后写入，无需先保存本地草稿。</source><translation>Validate the current lighting, haptics and display settings, then confirm to apply. Saving a local draft first is not required.</translation></message>
+    <message><source>当前设置尚未应用到设备</source><translation>Current settings have not been applied to the device</translation></message>
+    <message><source>当前控件有未应用的修改</source><translation>This control has unapplied changes</translation></message>
+    <message><source>点击应用到设备，验证后确认生效</source><translation>Click Apply to Device, then confirm after validation</translation></message>
+    <message><source>配置修订：{generation}（成功写入后递增）</source><translation>Configuration revision: {generation} (increments after a successful write)</translation></message>
+    <message><source>菜单栏显示</source><translation>Menu Bar Display</translation></message>
+    <message><source>紧凑 · 仅 BORING</source><translation>Compact · BORING only</translation></message>
+    <message><source>仅显示 Codex</source><translation>Codex only</translation></message>
+    <message><source>仅显示 Claude</source><translation>Claude only</translation></message>
+    <message><source>显示 Codex 和 Claude</source><translation>Codex and Claude</translation></message>
+    <message><source>电量</source><translation>Battery</translation></message>
+    <message><source>电量 —</source><translation>Battery —</translation></message>
+    <message><source>电量 — · 已断开</source><translation>Battery — · Disconnected</translation></message>
+    <message><source>重新连接设备后更新电量。</source><translation>Reconnect the device to update its battery level.</translation></message>
+    <message><source>设备报告的电量；USB 连接不代表电池正在充电。</source><translation>Battery level reported by the device; a USB connection does not mean the battery is charging.</translation></message>
+    <message><source>当前固件未提供电量，请更新支持电量上报的固件。</source><translation>This firmware does not report battery level. Update to firmware with battery reporting support.</translation></message>
+    <message><source>设备暂未取得有效电量。</source><translation>The device has no valid battery reading yet.</translation></message>
+    <message><source>连接详情</source><translation>Connection details</translation></message>
+    <message><source>离线草稿 · 上次读取的配置可继续编辑；连接后才能应用到设备。</source><translation>Offline draft · Keep editing the last read configuration. Connect to apply it to the device.</translation></message>
+    <message><source>预览 · 尚未读取设备配置。</source><translation>Preview · No device configuration has been read.</translation></message>
+    <message><source>BORING MIST · 外观预览</source><translation>BORING MIST · Device preview</translation></message>
+    <message><source>先认识你的 BORING</source><translation>Meet your BORING</translation></message>
+    <message><source>按键配置 · 设置按键、旋钮和摇杆的动作，管理配置方案。</source><translation>Key configuration · Set key, dial and joystick actions, and manage profiles.</translation></message>
+    <message><source>设备偏好 · 调整灯光、震动和屏幕；实时效果需要连接设备。</source><translation>Device preferences · Adjust lighting, haptics and display. Live effects require a connection.</translation></message>
+    <message><source>提示词与本地动作 · 管理内容和电脑端流程。</source><translation>Prompts and local actions · Manage content and computer workflows.</translation></message>
+    <message><source>连接设备后可查看当前配置，并将修改应用到设备。</source><translation>Connect to view your current configuration and apply changes to the device.</translation></message>
+    <message><source>软件设置</source><translation>App settings</translation></message>
+    <message><source>离线草稿 · 上次读取，可继续编辑</source><translation>Offline draft · Last read, available to edit</translation></message>
+    <message><source>上次读取 · 当前设备状态未确认</source><translation>Last read · Current device state is unconfirmed</translation></message>
+    <message><source>上次读取 · 没有本地变更</source><translation>Last read · No local changes</translation></message>
+    <message><source>离线草稿 · 连接后才能应用到设备</source><translation>Offline draft · Connect to apply to the device</translation></message>
+    <message><source>需要连接并读取设备；当前修改可先保存为本地草稿。</source><translation>Connect and read the device first. You can save changes as a local draft.</translation></message>
+    <message><source>离线草稿可继续编辑；重新连接并读取设备后，由你确认应用。</source><translation>Keep editing offline. After reconnecting and reading the device, confirm when to apply.</translation></message>
+    <message><source>请先连接并读取设备，再确认写入</source><translation>Connect and read the device before confirming the write</translation></message>
+    <message><source>上次读取</source><translation>Last read</translation></message>
+    <message><source>连接已变化，请重新验证配置</source><translation>The connection changed. Validate the configuration again.</translation></message>
+    <message><source>无法建立蓝牙配置连接</source><translation>Unable to connect to the device over Bluetooth</translation></message>
 </context>
 </TS>

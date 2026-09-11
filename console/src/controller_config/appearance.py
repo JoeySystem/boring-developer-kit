@@ -74,16 +74,16 @@ QFrame[cardRole="focus"] { background: #221F1B; border: none; border-radius: 25p
 QFrame[cardRole="widget"] { background: #242320; border: 1px solid rgba(239,234,224,16); border-radius: 25px; }
 QFrame#deviceWorkspace, QFrame#deviceStage { background: transparent; border: none; }
 QFrame#navigationSeparator { background: rgba(239,234,224,41); border: none; }
-QPushButton#navIconButton { min-height: 40px; max-height: 40px; padding: 0; border: none; }
-QPushButton#navIconButton[active="true"] { min-width: 124px; max-width: 1000px; padding: 0 10px; }
+QPushButton#navIconButton { min-width: 42px; max-width: 1000px; min-height: 40px; max-height: 40px; padding: 0 10px; border: none; }
 QPushButton#settingsGroup { text-align: left; border: none; border-radius: 14px; }
 QPushButton#settingsGroup[selected="true"] { background: #2B2A27; border-left: 3px solid #4C6EE8; }
 QPushButton#actionTab { background: transparent; color: #9A958C; border: none; border-radius: 20px; }
 QPushButton#actionTab:checked { background: #EFEAE0; color: #1C1B19; border: none; }
-QPushButton#controlKey { min-height: 64px; max-height: 64px; padding: 0; border: none; }
+/* Physical sizes belong to the device layout; selection repolish must not reset them. */
+QPushButton#controlKey { padding: 0; border: none; }
 QPushButton#controlKey[mapped="true"], QPushButton#controlKey[role="agent"], QPushButton#controlKey[role="agent"][mapped="true"], QPushButton#controlKey[selected="true"], QPushButton#controlKey[role="agent"][selected="true"], QPushButton#controlKey:hover, QPushButton#controlKey:focus { border: none; padding: 0; }
-QPushButton#encoderControl { min-height: 128px; max-height: 128px; padding: 0; border: none; border-radius: 64px; }
-QPushButton#joystickControl { min-height: 52px; max-height: 52px; padding: 0; border: none; border-radius: 26px; }
+QPushButton#encoderControl { padding: 0; border: none; border-radius: 64px; }
+QPushButton#joystickControl { padding: 0; border: none; border-radius: 26px; }
 QPushButton#secondaryControl:hover, QPushButton#encoderControl:hover, QPushButton#joystickControl:hover,
 QPushButton#secondaryControl[selected="true"], QPushButton#encoderControl[selected="true"], QPushButton#joystickControl[selected="true"] { border-color: #4C6EE8; }
 QLabel#syncChangeCount { font-size: 15px; }

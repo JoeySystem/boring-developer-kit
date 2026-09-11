@@ -368,7 +368,7 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
     }
     assert window._nav_buttons["overview"].text() == "Key Mapping"
     assert all(
-        button.text() == ""
+        button.text() == button.accessibleName()
         for page, button in window._nav_buttons.items()
         if page != "overview"
     )
@@ -395,7 +395,7 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
     assert english_action is not None and english_action.isChecked()
     qtbot.mouseClick(window._nav_buttons["settings"], Qt.LeftButton)
     assert window._nav_buttons["settings"].text() == "Settings"
-    assert window._nav_buttons["overview"].text() == ""
+    assert window._nav_buttons["overview"].text() == "Key Mapping"
     assert window.findChild(QPushButton, "openDiagnosticsSettings").text() == (
         "Open Diagnostics"
     )

@@ -531,6 +531,14 @@ per-connection preference table; no command payload or HID report changed.
 activation attempts with bounded backoff it becomes true; the pending slot is
 retained for diagnosis and activation is retried after reboot.
 
+`GET_STATUS.result.battery` optionally reports the latest fuel-gauge SOC rounded
+to an integer percentage (0–100). `battery_valid` is true only when that sample
+is valid; otherwise `battery` is null. Older firmware may omit these fields.
+The handler reads the existing cached sample, without a new I2C poll or a
+separate USB/BLE connection. `is_charging` is null on the current board because
+the MCU has no verified charger-status signal. Neither USB host connectivity
+nor a 100 percent SOC value establishes whether charge current is flowing.
+
 `GET_STATUS.result.active_controls` is a unique array of the stable control IDs
 currently held or classified as active. It is empty when all physical controls
 are released. `GET_STATUS.result.action_engine` reports the read-only host-output

@@ -42,7 +42,8 @@ def test_v4_selected_editor_fits_and_keeps_complete_keycaps(console, qtbot):
     assert len(keys) == 12
     for key in keys:
         assert key.accessibleName()
-        assert key.height() == 64
+        expected_ratio = 131 / 64 if key.property("controlId") == "key.8" else 1
+        assert abs(key.width() / key.height() - expected_ratio) < .05
         assert all(not label.isVisible() for label in key.findChildren(QLabel, "controlId"))
         if key.property("role") == "agent":
             assert key.findChild(QLabel, "keycapInscription") is None
@@ -171,14 +172,36 @@ def test_settings_groups_obey_firmware_transaction_lock(console, qtbot):
         vm._firmware_update = replace(vm.firmware_update, state=FirmwareUpdateState.IDLE)
 
 
-def test_old_ble_firmware_shows_usb_recovery_without_opening_editor(console, qtbot):
+@pytest.mark.parametrize("previous_session", [False, True])
+def test_old_ble_firmware_shows_usb_recovery_and_blocks_device_write(qtbot, contract, previous_session):
     from controller_config.protocol.bootstrap import BootstrapKind
-    window, vm = console
-    vm._on_failure(BootstrapKind.FIRMWARE_UPDATE_REQUIRED,
-        '请通过 USB 更新固件后再使用蓝牙配置', '请连接 USB 数据线后重新扫描，认证后进入设置 → 固件维护。')
-    qtbot.waitUntil(lambda: any(b.isVisible() and b.text() == '连接 USB 后重新扫描'
-        for b in window.findChildren(QPushButton)))
-    assert vm.model.state is AppState.FIRMWARE_UPDATE_REQUIRED
-    assert not vm._reconnect_timer.isActive()
-    assert not any(b.isVisible() and b.objectName() == 'controlKey'
-                   for b in window.findChildren(QPushButton))
+    from test_write_transaction import FakeWriteGateway
+    from controller_config.transport.demo import _power_v2_snapshot
+    gateway = FakeWriteGateway()
+    vm = MainViewModel(gateway, contract)
+    window = MainWindow(vm)
+    qtbot.addWidget(window)
+    window.show()
+    try:
+        if previous_session:
+            snapshot = _power_v2_snapshot(contract, read_only=False)
+            gateway.snapshot_ready.emit(snapshot)
+            window._select_physical_control("key.1")
+        gateway.failure.emit(BootstrapKind.FIRMWARE_UPDATE_REQUIRED,
+            '请通过 USB 更新固件后再使用蓝牙配置', '请连接 USB 数据线后重新扫描，认证后进入设置 → 固件维护。')
+        assert vm.model.state is AppState.FIRMWARE_UPDATE_REQUIRED
+        assert not vm._reconnect_timer.isActive()
+        assert window._connection_message.isVisible()
+        assert "USB" in window._connection_message.text()
+        if previous_session:
+            # An offline editor is intentional; it cannot write to the device.
+            assert not window.findChild(QPushButton, 'applyMappingToDevice').isEnabled()
+            with pytest.raises(ValueError, match='不可写入'):
+                vm.prepare_device_write()
+        else:
+            qtbot.waitUntil(lambda: any(b.isVisible() and b.text() == '连接 USB 后重新扫描'
+                for b in window.findChildren(QPushButton)))
+            assert vm.draft is None
+        assert gateway.commands == []
+    finally:
+        vm.shutdown()

@@ -56,7 +56,7 @@ def test_lighting_workspace_layout_preview_and_controls(session, qtbot, tmp_path
     assert key.property("lightingColor").red() == 255
     assert key.property("lightingColor").alpha() == round(235 * (230 / 255) ** .45)
     assert window.findChild(QLabel, "preferencesSyncSummary").text() == (
-        "Current settings are not saved" if language == "en_US" else "当前设置尚未保存"
+        "Current settings have not been applied to the device" if language == "en_US" else "当前设置尚未应用到设备"
     )
     before = len(gateway.commands)
     qtbot.mouseClick(key, Qt.LeftButton)

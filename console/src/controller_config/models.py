@@ -96,6 +96,13 @@ class DeviceSnapshot:
         return "bluetooth" if self.port_name.startswith("ble:") else "usb"
 
     @property
+    def battery_percent(self) -> int | None:
+        value = self.status.get("battery")
+        if self.status.get("battery_valid") is True and type(value) is int and 0 <= value <= 100:
+            return value
+        return None
+
+    @property
     def active_profile_id(self) -> int | None:
         value = self.config.get("active_profile")
         return value if isinstance(value, int) and not isinstance(value, bool) else None

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import re
 import uuid
 import pytest
+from controller_config.models import AppState
 
 from PySide6.QtCore import QObject, QPoint, QRect, QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QCloseEvent, QImage, QPainter, QPalette
@@ -94,6 +95,29 @@ class _ImmediateScriptRunner:
 
 
 EXTENSION_EXAMPLES = Path(__file__).resolve().parents[2] / "examples" / "extensions"
+
+
+def test_demo_haptic_apply_is_not_blocked_by_unimplemented_icon_read(qtbot, contract):
+    vm = MainViewModel(DemoGateway(contract, "ready"), contract)
+    window = MainWindow(vm)
+    qtbot.addWidget(window)
+    window.show()
+    vm.start()
+    qtbot.waitUntil(lambda: vm.model.snapshot is not None)
+    vm.navigate("lighting")
+    qtbot.wait(50)  # Let the page's deferred icon refresh run.
+    assert not vm.screen_icon.busy
+    assert not vm.screen_glyphs.busy
+    editor = window.findChild(PreferencesEditor)
+    enabled = editor._haptic_enabled.isChecked()
+    editor._haptic_enabled.setChecked(not enabled)
+    window.findChild(QPushButton, "savePreferencesToDevice").click()
+    qtbot.waitUntil(lambda: vm.write_transaction.state is ConfigTransactionState.AWAITING_CONFIRMATION)
+    vm.confirm_device_write()
+    qtbot.waitUntil(lambda: vm.write_transaction.state is ConfigTransactionState.ACTIVE)
+    assert vm.model.snapshot.config_result["config"]["haptic"]["enabled"] is not enabled
+    assert not window.findChild(QPushButton, "savePreferencesToDevice").isEnabled()
+    vm.shutdown()
 
 
 def test_firmware_status_refresh_preserves_scroll_position(qtbot, contract):
@@ -533,7 +557,7 @@ def test_window_keeps_top_navigation_and_workspace_at_compact_width(qtbot, contr
     assert window._device_name_summary.isVisible()
 
 
-def test_top_navigation_expands_active_label_and_routes_primary_pages(
+def test_top_navigation_keeps_labels_and_routes_primary_pages(
     qtbot, contract
 ) -> None:
     gateway = DemoGateway(contract, "ready")
@@ -588,12 +612,7 @@ def test_top_navigation_expands_active_label_and_routes_primary_pages(
         assert button.property("active") is True
         assert button.text() == label
         assert all(
-            other.text() == ""
-            for other_page, other in window._nav_buttons.items()
-            if other_page != page
-        )
-        assert all(
-            button.width() > other.width()
+            other.text() == other.accessibleName()
             for other_page, other in window._nav_buttons.items()
             if other_page != page
         )
@@ -891,13 +910,13 @@ def test_window_replaces_scanning_content_when_no_device(qtbot, contract) -> Non
     view_model.start()
     qtbot.waitUntil(
         lambda: any(
-            label.text() == "尚未发现 BORING 设备" and label.isVisible()
+            "尚未发现 BORING 设备" in label.text() and label.isVisible()
             for label in window.findChildren(QLabel)
         ),
         timeout=1000,
     )
     visible_text = [label.text() for label in window.findChildren(QLabel) if label.isVisible()]
-    assert "尚未发现 BORING 设备" in visible_text
+    assert any("尚未发现 BORING 设备" in text for text in visible_text)
     assert "正在查找 BORING 设备…" not in visible_text
 
 
@@ -910,7 +929,7 @@ def test_window_renders_incompatible_action_without_clipping(qtbot, contract) ->
     view_model.start()
     qtbot.waitUntil(
         lambda: any(
-            label.text() == "这台设备与当前 BORING 控制台不兼容" and label.isVisible()
+            "这台设备与当前 BORING 控制台不兼容" in label.text() and label.isVisible()
             for label in window.findChildren(QLabel)
         ),
         timeout=1000,
@@ -918,7 +937,7 @@ def test_window_renders_incompatible_action_without_clipping(qtbot, contract) ->
     title = next(
         label
         for label in window.findChildren(QLabel)
-        if label.text() == "这台设备与当前 BORING 控制台不兼容" and label.isVisible()
+        if "这台设备与当前 BORING 控制台不兼容" in label.text() and label.isVisible()
     )
     assert title.height() >= title.sizeHint().height()
 
@@ -935,7 +954,7 @@ def test_window_renders_device_authenticity_failure_as_a_distinct_state(
 
     qtbot.waitUntil(
         lambda: any(
-            label.text() == "无法确认这是 BORING 设备" and label.isVisible()
+            "无法确认这是 BORING 设备" in label.text() and label.isVisible()
             for label in window.findChildren(QLabel)
         ),
         timeout=1000,
@@ -944,8 +963,10 @@ def test_window_renders_device_authenticity_failure_as_a_distinct_state(
     visible_text = [
         label.text() for label in window.findChildren(QLabel) if label.isVisible()
     ]
-    assert "AUTHENTICITY FAILED" in visible_text
-    assert any("certificate_signature" in text for text in visible_text)
+    assert view_model.model.state is AppState.AUTHENTICITY_FAILED
+    assert not window.findChild(QPlainTextEdit, "connectionDetails").isVisible()
+    window.findChild(QPushButton, "connectionDetailsToggle").click()
+    assert "certificate_signature" in window.findChild(QPlainTextEdit, "connectionDetails").toPlainText()
 
 
 def test_window_keeps_last_snapshot_visible_after_disconnect(qtbot, contract) -> None:
@@ -961,7 +982,7 @@ def test_window_keeps_last_snapshot_visible_after_disconnect(qtbot, contract) ->
 
     qtbot.waitUntil(
         lambda: any(
-            "断开前的只读快照" in label.text() and label.isVisible()
+            "离线草稿 · 上次读取" in label.text() and label.isVisible()
             for label in window.findChildren(QLabel)
         ),
         timeout=1000,
@@ -971,7 +992,7 @@ def test_window_keeps_last_snapshot_visible_after_disconnect(qtbot, contract) ->
     assert "已断开 [ NO LINK ]" in visible_text
     profile_pill = window.findChild(QPushButton, "profilePill")
     assert profile_pill is not None and "Default" in profile_pill.text()
-    assert any("断开前的只读快照" in text for text in visible_text)
+    assert any("离线草稿 · 上次读取" in text for text in visible_text)
 
 
 def test_overview_control_opens_editor_and_creates_dirty_local_draft(qtbot, contract) -> None:
@@ -1121,7 +1142,7 @@ def test_mapping_inspector_stays_beside_device_and_switches_controls(
     assert inspector_rail.parentWidget() is workspace
     assert inspector is not None and inspector.parentWidget() is inspector_rail
     assert device.geometry().right() <= inspector_rail.geometry().left()
-    assert inspector_rail.width() == 300
+    assert 300 <= inspector_rail.width() <= 480
     assert body is not None and body.parentWidget() is inspector
     assert window.findChild(QScrollArea, "mappingEditorOverlay") is None
     save = window.findChild(QPushButton, "saveMappingDraft")
@@ -1255,7 +1276,7 @@ def test_mapping_inspector_stacks_below_device_in_narrow_workspace(
     assert workspace.property("stacked") is True
     assert device.geometry().bottom() <= inspector_rail.geometry().top()
     assert inspector.parentWidget() is inspector_rail
-    assert inspector_rail.width() <= 480
+    qtbot.waitUntil(lambda: workspace.rect().contains(inspector_rail.geometry()))
 
 
 def test_mapping_inspector_warns_before_switching_away_from_unsaved_input(
@@ -1534,7 +1555,8 @@ def test_settings_groups_tools_and_language_before_device_read(qtbot, contract) 
         button.text() == "摇杆校准" for button in window.findChildren(QPushButton)
     )
     settings = window._nav_buttons["settings"]
-    assert settings.text() == "" and settings.isEnabled()
+    assert settings.text() == ("" if settings.property("compactNavigation") else "设置")
+    assert settings.isEnabled()
     assert settings.toolTip() == "设置"
     assert settings.accessibleName() == "设置"
     qtbot.mouseClick(settings, Qt.LeftButton)
@@ -1649,7 +1671,7 @@ def test_extension_entry_page_is_navigable_and_exposes_live_management(
     window.show()
 
     button = window._nav_buttons["actions"]
-    assert button.text() == ""
+    assert button.text() == ("" if button.property("compactNavigation") else "Playground")
     assert button.toolTip() == "Playground"
     assert button.accessibleName() == "Playground"
     assert button.isEnabled()
@@ -2644,7 +2666,7 @@ def test_preferences_navigation_enables_after_device_read(qtbot, contract) -> No
     save_to_device = window.findChild(QPushButton, "savePreferencesToDevice")
     assert save_local is not None and save_local.text() == "仅保存本地草稿"
     assert save_local.property("buttonRole") == "secondary"
-    assert save_to_device is not None and save_to_device.text() == "保存到设备…"
+    assert save_to_device is not None and save_to_device.text() == "应用到设备…"
     assert save_to_device.property("buttonRole") == "primary"
     qtbot.waitUntil(save_to_device.isVisible, timeout=1000)
     assert save_to_device.width() >= 160
@@ -2850,7 +2872,7 @@ def test_lighting_preview_async_status_stays_in_english(
     save_local = window.findChild(QPushButton, "savePreferencesDraft")
     assert toggle is not None
     assert level_value is not None and level_value.text() == "Custom"
-    assert save_to_device is not None and save_to_device.text() == "Save to Device…"
+    assert save_to_device is not None and save_to_device.text() == "Apply to Device…"
     assert save_local is not None and save_local.text() == "Save Local Draft Only"
     assert [
         label.text()

@@ -410,16 +410,15 @@ def test_unknown_manual_reconcile_reads_back_without_retrying_set(contract) -> N
 
     view_model.reconcile_device_write()
 
-    assert gateway.commands[-1].name == "GET_CONFIG"
-    assert [command.name for command in gateway.commands].count("SET_CONFIG") == 1
-    gateway.command_completed.emit(
-        "GET_CONFIG",
-        _ack(
-            "GET_CONFIG",
-            {"generation": generation, "digest": digest, "config": candidate},
-        ),
-    )
+    assert gateway.scan_calls == 1
+    assert gateway.commands[-1].name == "SET_CONFIG"
+    gateway.snapshot_ready.emit(replace(
+        snapshot,
+        status=_active_status(snapshot, digest, generation),
+        config_result={"generation": generation, "digest": digest, "config": candidate},
+    ))
     assert view_model.write_transaction.state is ConfigTransactionState.ACTIVE
+    assert [command.name for command in gateway.commands].count("SET_CONFIG") == 1
 
 
 def test_unknown_reconcile_while_disconnected_scans_without_sending_command(contract) -> None:
@@ -462,7 +461,8 @@ def test_unknown_reconcile_to_unchanged_base_allows_edit_without_retry(contract)
     gateway.failure.emit(BootstrapKind.READ_FAILED, "设备连接已中断", "short write")
 
     view_model.reconcile_device_write()
-    gateway.command_completed.emit("GET_CONFIG", _ack("GET_CONFIG", snapshot.config_result))
+    assert gateway.scan_calls == 1
+    gateway.snapshot_ready.emit(snapshot)
 
     assert view_model.write_transaction.state is ConfigTransactionState.FAILED
     assert "未落盘" in view_model.write_transaction.message

@@ -9,7 +9,7 @@ import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "v0.1.0-preview.3"
+VERSION = "v0.1.0-preview.4"
 EXAMPLES = ("observe_prompt", "claim_prompt", "propose_mapping")
 ROOT_FILES = (
     "README.md", "START-HERE.md", "LICENSE", "NOTICE", "LICENSING.md",

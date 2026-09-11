@@ -31,16 +31,16 @@ def test_long_shortcut_fits_narrow_editor(qtbot):
     assert recorder.rect().contains(recorder._capture.geometry())
 
 
-def test_mapping_stacks_before_columns_collide(qtbot):
-    device = QWidget()
-    device.setMinimumWidth(696)
-    inspector = QWidget()
-    workspace = _ResponsiveMappingWorkspace(device, inspector)
-    qtbot.addWidget(workspace)
-    workspace.resize(950, 700)
-    workspace.show()
-    qtbot.wait(30)
+def test_mapping_stacks_before_columns_collide(session, qtbot):
+    window, *_ = session
+    window.show()
+    window._fit_window_to_available_area(QRect(0, 0, 960, 700))
+    window.resize(960, 700)
+    qtbot.wait(100)
+    workspace = window.findChild(_ResponsiveMappingWorkspace)
     assert workspace.property('stacked') is True
+    overview = window.findChild(QScrollArea, 'overviewScroll')
+    assert overview.widget().width() <= overview.viewport().width()
 
 
 @pytest.mark.parametrize('page', ['overview', 'prompts', 'lighting', 'actions', 'settings', 'firmware', 'diagnostics'])
@@ -151,9 +151,11 @@ def test_returning_from_compact_layout_does_not_keep_stacked_height(session, qtb
     workspace = window.findChild(_ResponsiveMappingWorkspace)
     initial_height = workspace.height()
     for _ in range(3):
-        window.resize(1100, 700)
+        window._fit_window_to_available_area(QRect(0, 0, 960, 700))
+        window.resize(960, 700)
         qtbot.wait(100)
         assert workspace.property('stacked')
+        window._fit_window_to_available_area(QRect(0, 0, 1920, 1080))
         window.resize(1280, 800)
         qtbot.wait(100)
         assert not workspace.property('stacked')
@@ -170,4 +172,5 @@ def test_unselected_inspector_cards_fit_their_rail(session, qtbot, language):
     rail = window.findChild(QWidget, 'mappingInspectorRail')
     for index in range(rail.layout().count()):
         card = rail.layout().itemAt(index).widget()
-        assert rail.rect().contains(card.geometry()), (card.objectName(), card.geometry(), rail.rect())
+        if card is not None:
+            assert rail.rect().contains(card.geometry()), (card.objectName(), card.geometry(), rail.rect())

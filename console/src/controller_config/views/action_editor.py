@@ -382,6 +382,7 @@ class ShortcutRecorder(QFrame):
         action: dict[str, Any],
         *,
         platform: str,
+        capture_platform: str | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -401,7 +402,7 @@ class ShortcutRecorder(QFrame):
         self._preview.setWordWrap(True)
         self._preview.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         row.addWidget(self._preview)
-        self._capture = _ShortcutCaptureButton(platform=platform)
+        self._capture = _ShortcutCaptureButton(platform=capture_platform or platform)
         self._capture.shortcut_recorded.connect(self._recorded)
         row.addWidget(self._capture, 0, Qt.AlignRight)
         layout.addLayout(row)
@@ -474,6 +475,7 @@ class ModifierSelector(QWidget):
 
 class ActionEditor(QWidget):
     shortcut_recorded = Signal(dict)
+    action_changed = Signal()
 
     def __init__(
         self,
@@ -482,6 +484,7 @@ class ActionEditor(QWidget):
         parent: QWidget | None = None,
         *,
         platform: str = "",
+        capture_platform: str | None = None,
         reference_choices: dict[
             tuple[str, str], tuple[tuple[str, Any], ...]
         ] | None = None,
@@ -503,6 +506,7 @@ class ActionEditor(QWidget):
             self._shortcut_recorder = ShortcutRecorder(
                 action,
                 platform=platform,
+                capture_platform=capture_platform,
             )
             self._shortcut_recorder.shortcut_recorded.connect(
                 self._shortcut_was_recorded
@@ -547,6 +551,7 @@ class ActionEditor(QWidget):
         self._rebuild_fields(action)
         if self._shortcut_recorder is not None:
             self._shortcut_recorder.set_action(action)
+        self.action_changed.emit()
 
     def action(self) -> dict[str, Any]:
         action_type = self._type_selector.currentData()
@@ -564,6 +569,7 @@ class ActionEditor(QWidget):
         self._rebuild_fields(action)
         if self._shortcut_recorder is not None:
             self._shortcut_recorder.set_action(action)
+        self.action_changed.emit()
 
     def _shortcut_was_recorded(self, action: dict[str, Any]) -> None:
         self.set_action(action)
@@ -584,6 +590,15 @@ class ActionEditor(QWidget):
             widget.setObjectName(f"actionField_{field.name}")
             self._field_widgets[field.name] = widget
             self._fields.addRow(action_field_label(definition.action_type, field.name), widget)
+            if isinstance(widget, ModifierSelector):
+                for checkbox in widget.findChildren(QCheckBox):
+                    checkbox.toggled.connect(self.action_changed)
+            elif isinstance(widget, QComboBox):
+                widget.currentIndexChanged.connect(self.action_changed)
+            elif isinstance(widget, QSpinBox):
+                widget.valueChanged.connect(self.action_changed)
+            elif isinstance(widget, QLineEdit):
+                widget.textChanged.connect(self.action_changed)
 
     def _field_widget(self, action_type: str, field: ActionField, value: Any) -> QWidget:
         if action_type == "key" and field.name == "modifiers":

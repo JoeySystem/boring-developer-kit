@@ -156,6 +156,11 @@ class DiagnosticsSession:
         if snapshot is None:
             return report
 
+        if snapshot.battery_percent is not None:
+            report["unavailable_fields"].remove("battery")
+        if type(snapshot.status.get("is_charging")) is bool:
+            report["unavailable_fields"].remove("charging")
+
         report["device"] = {
             "identity": copy.deepcopy(snapshot.identity),
             "versions": copy.deepcopy(snapshot.versions),
@@ -180,6 +185,9 @@ class DiagnosticsSession:
                 "inputs_neutral",
                 "platform",
                 "operating_mode",
+                "battery",
+                "battery_valid",
+                "is_charging",
                 "active_controls",
                 "action_engine",
                 "diagnostic_capture",

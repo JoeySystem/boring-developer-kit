@@ -771,3 +771,42 @@ def test_native_menu_bar_item_keeps_quota_as_readable_text(qapp) -> None:
         assert activations == [True]
     finally:
         item.hide()
+
+
+def test_menu_bar_display_choice_persists_and_keeps_usage_details(qapp, tmp_path, monkeypatch):
+    import controller_config.background_helper as background_helper
+
+    class FakeStatusItem:
+        def __init__(self, _on_click):
+            self.title = ''
+            self.tooltip = ''
+            self.hidden = False
+
+        def set_title(self, value):
+            self.title = value
+
+        def set_tooltip(self, value):
+            self.tooltip = value
+
+        def hide(self):
+            self.hidden = True
+
+    monkeypatch.setattr(background_helper.QSystemTrayIcon, 'isSystemTrayAvailable', staticmethod(lambda: True))
+    monkeypatch.setattr(background_helper, '_MacTextStatusItem', FakeStatusItem)
+    settings = QSettings(str(tmp_path / 'display.ini'), QSettings.Format.IniFormat)
+    controller = PromptBackgroundController(qapp, shutdown=lambda: None, settings=settings, platform='darwin')
+    second = controller._native_claude_status_item
+    controller.set_menu_bar_display('compact')
+    assert controller._native_status_item.title == 'BORING'
+    assert second.hidden
+    assert controller._native_claude_status_item is None
+    assert controller._tray_usage_panel is not None
+    assert len(controller._menu_bar_display_actions.actions()) == 4
+    controller.set_menu_bar_display('claude')
+    assert controller._native_status_item.title.startswith('Claude')
+    restored = PromptBackgroundController(qapp, shutdown=lambda: None, settings=settings, platform='darwin')
+    assert restored.menu_bar_display == 'claude'
+    assert restored._native_claude_status_item is None
+    assert restored._native_status_item.title.startswith('Claude')
+    restored.set_menu_bar_display('both')
+    assert restored._native_claude_status_item.title.startswith('Claude')

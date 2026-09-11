@@ -1,6 +1,6 @@
 # 第三方依赖
 
-源码开发包不内置 Python、Qt 或其他第三方运行库二进制。另行发布的官方 0.1.11 安装交付包包含程序运行所需组件，并附 [许可文本与来源说明](docs/distribution/console-0.1.11/README.md)。SDK wheel 包含 BORING SDK 源码及其许可；社区控制台 wheel 按其构建配置收集应用代码和资源，运行依赖通过 Python 包管理器另行安装。
+源码开发包不内置 Python、Qt 或其他第三方运行库二进制。另行发布的官方 0.1.13 安装交付包包含程序运行所需组件，并附 [许可文本与来源说明](docs/distribution/console-0.1.13/README.md)。SDK wheel 包含 BORING SDK 源码及其许可；社区控制台 wheel 按其构建配置收集应用代码和资源，运行依赖通过 Python 包管理器另行安装。
 
 | 依赖 | 用途 | 上游许可入口 |
 |---|---|---|

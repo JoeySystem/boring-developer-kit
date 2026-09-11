@@ -56,7 +56,9 @@ def test_diagnostic_report_exports_protocol_data_without_full_configuration(
     assert report["configuration"]["generation"] == 1
     assert "profiles" not in report["configuration"]
     assert report["runtime"]["joystick_diagnostics"]["raw_x"] == 2048
-    assert report["unavailable_fields"] == ["battery", "charging", "device_logs"]
+    assert report["runtime"]["battery"] == 73
+    assert report["runtime"]["is_charging"] is None
+    assert report["unavailable_fields"] == ["charging", "device_logs"]
 
 
 def test_direction_mask_uses_authoritative_status_bit_order() -> None:

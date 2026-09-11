@@ -1136,6 +1136,8 @@ class MainViewModel(QObject):
         transaction = self._write_transaction
         if transaction.state is not ConfigTransactionState.AWAITING_CONFIRMATION:
             raise ValueError("当前没有等待确认的设备写入")
+        if self._model.state is not AppState.READY:
+            raise ValueError("请先连接并读取设备，再确认写入")
         snapshot = self._model.snapshot
         draft = self._require_draft()
         current_digest = hashlib.sha256(canonical_json_bytes(draft.config)).hexdigest()
@@ -1182,7 +1184,7 @@ class MainViewModel(QObject):
     def reconcile_device_write(self) -> None:
         if not self._write_transaction.candidate_digest:
             raise ValueError("当前没有可对账的写入事务")
-        if self._model.state is AppState.DISCONNECTED:
+        if self._model.state not in {AppState.READY, AppState.READ_ONLY}:
             self.refresh()
             return
         self._request_config_readback("正在重新读取设备配置进行对账")
@@ -1641,7 +1643,7 @@ class MainViewModel(QObject):
         self._suspend_extension_platform("正在重新扫描设备")
         self.stop_lighting_preview(clear_candidate=True)
         self._prompt_device.unbind()
-        self._set(ScreenModel(AppState.SCANNING, "正在查找 BORING 设备…"))
+        self._set(ScreenModel(AppState.SCANNING, "正在查找 BORING 设备…", snapshot=self._model.snapshot))
         if self._firmware_update.is_busy:
             self._gateway.scan(usb_only=True)
         else:
@@ -1652,7 +1654,7 @@ class MainViewModel(QObject):
         self.screen_icon.attach(None)
         self.claude_status.unbind(clear=True)
         self._reconnect_timer.stop()
-        self._set(ScreenModel(AppState.CONNECTING, "正在确认设备身份并读取配置…"))
+        self._set(ScreenModel(AppState.CONNECTING, "正在确认设备身份并读取配置…", snapshot=self._model.snapshot))
         self._gateway.connect_port(port_name)
 
     def shutdown(self) -> None:
@@ -1695,6 +1697,7 @@ class MainViewModel(QObject):
                     AppState.NO_DEVICE,
                     "尚未发现 BORING 设备",
                     "请连接设备后重新扫描。控制台不会把其他串口当作目标设备。",
+                    snapshot=self._model.snapshot,
                 )
             )
             return
@@ -1706,6 +1709,7 @@ class MainViewModel(QObject):
                     "发现多台候选设备",
                     "请选择要读取的设备；控制台不会默认使用第一台。",
                     candidates=candidates,
+                    snapshot=self._model.snapshot,
                 )
             )
             return
@@ -2265,6 +2269,16 @@ class MainViewModel(QObject):
     def _set(self, model: ScreenModel) -> None:
         if model == self._model:
             return
+        if (model.state in {AppState.SCANNING, AppState.CONNECTING}
+                and self._write_transaction.state in {
+                    ConfigTransactionState.VALIDATING,
+                    ConfigTransactionState.AWAITING_CONFIRMATION,
+                }):
+            self._write_deadline.stop()
+            self._write_transaction = replace(
+                self._write_transaction, state=ConfigTransactionState.FAILED,
+                message="连接已变化，请重新验证配置",
+            )
         self._model = model
         if model.state not in {AppState.READY, AppState.READ_ONLY}:
             self.codex_agent_focus.unbind()

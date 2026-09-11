@@ -839,7 +839,8 @@ def _power_v2_snapshot(contract: Contract, *, read_only: bool) -> DeviceSnapshot
         "diagnostic_capture"
     ] = True
     capabilities["result"]["features"]["lighting_preview"] = True
-    # The demo gateway does not persist or serve per-resource glyph images.
+    # The demo gateway does not implement home-icon or glyph-image transfers.
+    capabilities["result"]["features"]["custom_home_icon"] = False
     capabilities["result"]["features"]["custom_glyph_icons"] = False
     digest = hashlib.sha256(canonical_json_bytes(config)).hexdigest()
     generation = 1
@@ -877,6 +878,9 @@ def _power_v2_snapshot(contract: Contract, *, read_only: bool) -> DeviceSnapshot
             "inputs_neutral": True,
             "platform": "macos",
             "operating_mode": "codex",
+            "battery": 73,
+            "battery_valid": True,
+            "is_charging": None,
             "active_controls": [],
             "diagnostic_capture": {
                 "active": False,

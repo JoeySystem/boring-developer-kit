@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from PySide6.QtCore import QRectF, QSize, QSettings, QTimer, Qt
+from PySide6.QtCore import QEvent, QRectF, QSize, QSettings, QTimer, Qt
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
@@ -39,6 +39,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QMessageBox,
+    QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -136,7 +137,6 @@ QFrame#navigationCapsule { background: rgba(10, 10, 12, 158); border: 1px solid 
 QPushButton#navIconButton { min-width: 40px; max-width: 40px; min-height: 36px; max-height: 36px; padding: 0; background: transparent; border: 1px solid transparent; border-radius: 16px; }
 QPushButton#navIconButton:hover { background: rgba(255, 255, 255, 18); border-color: rgba(255, 255, 255, 28); }
 QPushButton#navIconButton[active="true"] { background: rgba(255, 255, 255, 32); border-color: rgba(255, 255, 255, 42); }
-QPushButton#navIconButton:focus { border: 2px solid rgba(255, 255, 255, 92); }
 QPushButton#navIconButton:disabled { background: transparent; border-color: transparent; }
 QLabel#shellBrand { color: #fff4eb; }
 QLabel#shellEdition { color: #967f7a; }
@@ -465,10 +465,10 @@ QFrame#navigationCapsule {
 }
 QPushButton#navIconButton {
     min-width: 42px;
-    max-width: 42px;
     min-height: 44px;
     max-height: 44px;
-    padding: 0;
+    padding: 0 10px;
+    font-weight: 600;
     color: rgba(224, 222, 211, 148);
     border-radius: 22px;
 }
@@ -480,10 +480,6 @@ QPushButton#navIconButton[active="true"] {
     background: transparent;
     border-color: transparent;
     color: rgba(255, 254, 248, 245);
-    min-width: 116px;
-    max-width: 116px;
-    padding: 0 10px;
-    font-weight: 750;
 }
 QLabel#deviceNameSummary { color: rgba(245, 245, 238, 225); }
 QLabel#deviceAuthSummary[trust="authenticated"] { color: #79b997; }
@@ -770,6 +766,7 @@ QSlider#lightingBrightness::handle:horizontal { border-color: #5574ed; }
 
 @dataclass(frozen=True)
 class _MappingEditingState:
+    device_identity: tuple[str, str]
     control_id: str
     short_name: str
     action: dict
@@ -824,12 +821,11 @@ class _NavigationCapsule(QFrame):
 
 
 class _TopNavigationButton(QPushButton):
-    """Show the active page name while keeping inactive destinations compact."""
+    """Keep every destination in place while the active background changes."""
 
     def sizeHint(self) -> QSize:  # noqa: N802 - Qt virtual method
         size = super().sizeHint()
-        if self.property("active") is True:
-            size.setWidth(max(size.width(), self.fontMetrics().horizontalAdvance(self.text()) + self.iconSize().width() + 28))
+        size.setWidth(max(size.width(), self.fontMetrics().horizontalAdvance(self.text()) + self.iconSize().width() + 28))
         return size
 
     def set_navigation_icons(self, *, active: QIcon, inactive: QIcon) -> None:
@@ -848,7 +844,7 @@ class _TopNavigationButton(QPushButton):
 
     def set_active(self, active: bool) -> None:
         self.setProperty("active", active)
-        self.setText(self.accessibleName() if active else "")
+        self.setText("" if self.property("compactNavigation") else self.accessibleName())
         self._apply_navigation_icon()
         self.style().unpolish(self)
         self.style().polish(self)
@@ -966,85 +962,139 @@ class _DottedRoot(QWidget):
         painter.end()
 
 
-class _ResponsiveMappingWorkspace(QWidget):
-    """Keep the device visible beside its inspector, stacking only when needed."""
+class _DeviceStage(QFrame):
+    """Size the real device controls to the space left by the reading columns."""
 
-    # Context rail (260) + board (420) + inspector (300) + two gaps (32).
-    _STACK_BREAKPOINT = 1040
+    def __init__(self, shell: QFrame):
+        super().__init__(objectName="deviceStage")
+        self._shell = shell
+        self.setMinimumSize(280, 320)
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        box = QVBoxLayout(self)
+        box.setContentsMargins(8, 8, 8, 8)
+        box.setSpacing(12)
+        box.addStretch(1)
+        box.addWidget(shell, 0, Qt.AlignCenter)
+        label = QLabel(DEVICE_DISPLAY_NAME, objectName="deviceStageName")
+        label.setProperty(SKIP_TRANSLATION_PROPERTY, True)
+        label.setAlignment(Qt.AlignCenter)
+        box.addWidget(label)
+        box.addStretch(1)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if isinstance(self._shell, _Matrix12Shell):
+            self._shell.scale_to(max(240, min(640, self.width() - 16, self.height() - 52)))
+            self.layout().activate()
+
+
+class _ResponsiveMappingWorkspace(QWidget):
+    """Keep editing actions visible; use viewport height instead of window height."""
+
+    _STACK_BREAKPOINT = 960
 
     def __init__(self, device: QWidget, inspector: QWidget | None) -> None:
         super().__init__(objectName="mappingWorkspace")
         self._inspector = inspector
-        self._layout = QBoxLayout(QBoxLayout.Direction.LeftToRight, self)
+        self._viewport = None
+        self._resize_timer = QTimer(self)
+        self._resize_timer.setSingleShot(True)
+        self._resize_timer.timeout.connect(lambda: self._update_direction(self.width()))
+        self._layout = QBoxLayout(QBoxLayout.LeftToRight, self)
         self._layout.setContentsMargins(0, 0, 0, 0)
-        self._layout.setSpacing(16)
-        self._layout.addWidget(device, 3)
+        self._layout.setSpacing(20)
+        self._layout.addWidget(device, 1)
         if inspector is not None:
-            inspector.setMinimumWidth(300)
-            inspector.setMaximumWidth(300)
-            self._layout.addWidget(inspector, 0)
+            self._layout.addWidget(inspector)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
         self._update_direction(self.width())
 
-    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt virtual method
-        self._update_direction(event.size().width())
-        super().resizeEvent(event)
-
-    def showEvent(self, event) -> None:  # noqa: N802 - Qt virtual method
+    def showEvent(self, event) -> None:
         super().showEvent(event)
-        QTimer.singleShot(0, lambda: self._update_direction(self.width()))
+        parent = self.parentWidget()
+        while parent is not None and not isinstance(parent, QScrollArea):
+            parent = parent.parentWidget()
+        if parent is not None and self._viewport is None:
+            self._viewport = parent.viewport()
+            self._viewport.installEventFilter(self)
+        self._update_direction(self.width())
+
+    def eventFilter(self, watched, event):
+        if watched is self._viewport and event.type() == QEvent.Resize:
+            self._resize_timer.start(0)
+        return super().eventFilter(watched, event)
+
+    def event(self, event):
+        if event.type() == QEvent.LayoutRequest:
+            self._resize_timer.start(0)
+        return super().event(event)
 
     def set_inspector(self, inspector: QWidget | None) -> None:
         if self._inspector is not None:
             self._layout.removeWidget(self._inspector)
-            self._inspector.hide()
-            self._inspector.setParent(None)
             self._inspector.deleteLater()
         self._inspector = inspector
         if inspector is not None:
-            inspector.setMinimumWidth(300)
-            inspector.setMaximumWidth(300)
-            self._layout.addWidget(inspector, 0)
-            inspector.show()
+            self._layout.addWidget(inspector)
         self._update_direction(self.width())
-        self._layout.invalidate()
-        self._layout.activate()
-        self.updateGeometry()
 
     def _update_direction(self, width: int) -> None:
+        if self._viewport is None:
+            return
+        available_height = self._viewport.height()
+        compact = available_height < 760 or width < 1300
         stacked = self._inspector is not None and width < self._STACK_BREAKPOINT
         self.setProperty("stacked", stacked)
-        self._layout.setDirection(
-            QBoxLayout.Direction.TopToBottom
-            if stacked
-            else QBoxLayout.Direction.LeftToRight
-        )
-        self._layout.setStretch(0, 0 if stacked else 3)
+        self.setProperty("compactWorkspace", compact)
+        self._layout.setDirection(QBoxLayout.TopToBottom if stacked else QBoxLayout.LeftToRight)
         device = self._layout.itemAt(0).widget()
-        if device is not None and isinstance(device.layout(), QBoxLayout):
-            device.layout().setDirection(QBoxLayout.BottomToTop if stacked else QBoxLayout.LeftToRight)
-            rail = device.findChild(QWidget, "deviceContextRail")
-            if rail is not None:
-                rail.setMinimumWidth(0 if stacked else 260)
-                rail.setMaximumWidth(16777215 if stacked else 300)
+        device.layout().setDirection(QBoxLayout.LeftToRight)
+        rail = device.findChild(QWidget, "deviceContextRail")
+        if rail is not None:
+            rail_width = max(260, min(300, round(width * .18)))
+            if rail.minimumWidth() != rail_width or rail.maximumWidth() != rail_width:
+                rail.setFixedWidth(rail_width)
+            usage = rail.findChild(QWidget, "codexHomeCard")
+            if usage is not None:
+                usage.findChild(UsageRings, "homeUsageRings").setVisible(not compact)
+                usage.findChild(QLabel, "homeUsageCompact").setVisible(compact)
+                usage.findChild(QLabel, "homeUsageDetail").setVisible(not compact)
+            explanation = rail.findChild(QLabel, "mappingModeExplanation")
+            if explanation is not None:
+                explanation.setVisible(not compact)
+                rail.findChild(QLabel, "mappingModeContext").setToolTip(explanation.text())
+            rail.layout().setSpacing(12 if compact else 20)
         if self._inspector is not None:
-            self._inspector.setMinimumHeight(540 if stacked else 0)
-            self._inspector.setMaximumWidth(16777215 if stacked else 300)
-            self._layout.setAlignment(
-                self._inspector,
-                Qt.AlignHCenter if stacked else Qt.AlignmentFlag(0),
-            )
-        self._layout.invalidate()
-        self._layout.activate()
-        # Measure only after switching the inner layout back to columns.
-        # Otherwise its stacked minimum height survives a narrow-to-wide resize.
+            inspector_width = max(320, min(480, round(width * .28)))
+            if self._inspector.minimumWidth() != inspector_width:
+                self._inspector.setMinimumWidth(inspector_width)
+            max_width = 16777215 if stacked else inspector_width
+            if self._inspector.maximumWidth() != max_width:
+                self._inspector.setMaximumWidth(max_width)
+            min_height = 480 if stacked else 0
+            if self._inspector.minimumHeight() != min_height:
+                self._inspector.setMinimumHeight(min_height)
+            explanation = self._inspector.findChild(QWidget, "selectionInspectorDetails")
+            if explanation is not None:
+                explanation.setVisible(not compact)
         if stacked:
-            self.setMinimumHeight(0)
-            self.setMaximumHeight(16777215)
+            if self.minimumHeight() != 0:
+                self.setMinimumHeight(0)
+            if self.maximumHeight() != 16777215:
+                self.setMaximumHeight(16777215)
         else:
-            rail = device.findChild(QWidget, "deviceContextRail") if device is not None else None
             rail_height = rail.layout().totalHeightForWidth(rail.width()) if rail is not None else 0
-            self.setFixedHeight(max(510, self.window().height() - 140, rail_height,
-                                    device.minimumSizeHint().height() if device is not None else 0))
+            inspector_height = 0
+            if self._inspector is not None:
+                inspector_height = self._inspector.layout().totalHeightForWidth(inspector_width)
+            height = max(available_height, rail_height, inspector_height, 440)
+            if self.minimumHeight() != height or self.maximumHeight() != height:
+                self.setFixedHeight(height)
+        self._layout.activate()
+        device.layout().activate()
+
 
 
 class _SettingsWorkspace(QWidget):
@@ -1195,6 +1245,34 @@ class MainWindow(QMainWindow):
         self._top_navigation = self._build_top_navigation()
         console_layout.addWidget(self._top_navigation)
 
+        self._connection_area = QWidget(objectName="connectionArea")
+        connection_layout = QVBoxLayout(self._connection_area)
+        connection_layout.setContentsMargins(26, 0, 26, 4)
+        connection_layout.setSpacing(4)
+        connection_row = QHBoxLayout()
+        self._connection_message = QLabel(objectName="connectionMessage")
+        self._connection_message.setWordWrap(True)
+        connection_row.addWidget(self._connection_message, 1)
+        self._connection_candidates = QComboBox(objectName="connectionCandidates")
+        connection_row.addWidget(self._connection_candidates)
+        self._connect_selected = QPushButton("读取所选设备", objectName="secondary")
+        self._connect_selected.clicked.connect(
+            lambda: self._view_model.connect_candidate(self._connection_candidates.currentData())
+        )
+        connection_row.addWidget(self._connect_selected)
+        self._connection_details_toggle = QPushButton("连接详情", objectName="connectionDetailsToggle")
+        self._connection_details_toggle.setCheckable(True)
+        connection_row.addWidget(self._connection_details_toggle)
+        connection_layout.addLayout(connection_row)
+        self._connection_details = QPlainTextEdit(objectName="connectionDetails")
+        self._connection_details.setReadOnly(True)
+        self._connection_details.setMaximumHeight(110)
+        self._connection_details.setProperty(SKIP_TRANSLATION_PROPERTY, True)
+        self._connection_details.hide()
+        self._connection_details_toggle.toggled.connect(self._connection_details.setVisible)
+        connection_layout.addWidget(self._connection_details)
+        console_layout.addWidget(self._connection_area)
+
         self._content = QWidget()
         self._content_layout = QVBoxLayout(self._content)
         self._content_layout.setContentsMargins(26, 8, 26, 18)
@@ -1206,6 +1284,7 @@ class MainWindow(QMainWindow):
         self._connection_terminal.hide()
 
         view_model.changed.connect(self.render)
+        view_model.diagnostics_changed.connect(self._refresh_battery_summary)
         view_model.lighting_preview_changed.connect(
             self._lighting_preview_status_changed
         )
@@ -1308,6 +1387,10 @@ class MainWindow(QMainWindow):
         super().resizeEvent(event)
         if not hasattr(self, "_content"):
             return
+        for button in self._nav_buttons.values():
+            if button.property("compactNavigation") != (self.width() < 1100):
+                button.setProperty("compactNavigation", self.width() < 1100)
+                button.set_active(button.property("active") is True)
         compact = self.width() < 820
         self._apply_compact_mode(compact)
 
@@ -1481,6 +1564,18 @@ class MainWindow(QMainWindow):
         )
         self._device_auth_summary.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         device_layout.addWidget(self._device_name_summary)
+        self._device_mode_summary = QLabel(objectName="deviceModeSummary")
+        self._device_mode_summary.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self._device_mode_summary.setStyleSheet("color: #c9dcf4; font-size: 15px; font-weight: 700;")
+        self._device_mode_summary.setProperty(SKIP_TRANSLATION_PROPERTY, True)
+        self._last_device_mode = None
+        self._mode_notice_timer = QTimer(self)
+        self._mode_notice_timer.setSingleShot(True)
+        self._mode_notice_timer.setInterval(3000)
+        self._mode_notice_timer.timeout.connect(
+            lambda: self._show_device_mode(False)
+        )
+        device_layout.addWidget(self._device_mode_summary)
         auth_row = QHBoxLayout()
         auth_row.addStretch(1)
         self._device_trust_mark = StatusMark("nolink", dot_size=1.7)
@@ -1527,7 +1622,20 @@ class MainWindow(QMainWindow):
         self._view_model.navigate(page)
 
     def _refresh_device_summary(self, model: ScreenModel) -> None:
+        self._refresh_battery_summary()
         snapshot = model.snapshot
+        mode = (
+            str(snapshot.status.get("operating_mode", "unknown"))
+            if snapshot is not None and model.state in {AppState.READY, AppState.READ_ONLY}
+            else None
+        )
+        if mode != self._last_device_mode:
+            switched = mode is not None and self._last_device_mode is not None
+            self._last_device_mode = mode
+            self._mode_notice_timer.stop()
+            if switched:
+                self._mode_notice_timer.start()
+        self._show_device_mode(self._mode_notice_timer.isActive())
         if model.state is AppState.AUTHENTICITY_FAILED:
             self._device_name_summary.setText(DEVICE_DISPLAY_NAME)
             self._device_name_summary.setToolTip("")
@@ -1554,14 +1662,45 @@ class MainWindow(QMainWindow):
         self._relink_button.setEnabled(
             not self._view_model.firmware_update.blocks_editing
             and not self._view_model.calibration.blocks_editing
+            and model.state not in {AppState.SCANNING, AppState.CONNECTING}
         )
         self._device_auth_summary.setProperty("trust", trust)
         self._device_trust_mark.set_status({"authenticated": "verified", "development": "dev", "untrusted": "untrusted", "waiting": "nolink"}[trust])
         self._device_auth_summary.style().unpolish(self._device_auth_summary)
         self._device_auth_summary.style().polish(self._device_auth_summary)
 
+    def _refresh_battery_summary(self) -> None:
+        label = self._content.findChild(QLabel, "deviceBatterySummary")
+        if label is None:
+            return
+        model = self._view_model.model
+        snapshot = model.snapshot
+        translate = self._language_manager.translate
+        connected = model.state in {AppState.READY, AppState.READ_ONLY}
+        if not connected or snapshot is None:
+            text = translate("电量 — · 已断开")
+            tooltip = translate("重新连接设备后更新电量。")
+        elif snapshot.battery_percent is not None:
+            text = f'{translate("电量")} {snapshot.battery_percent}%'
+            tooltip = translate("设备报告的电量；USB 连接不代表电池正在充电。")
+        else:
+            text = translate("电量 —")
+            tooltip = translate(
+                "当前固件未提供电量，请更新支持电量上报的固件。"
+                if "battery" not in snapshot.status
+                else "设备暂未取得有效电量。"
+            )
+        label.setText(text)
+        label.setToolTip(tooltip)
+
+    def _show_device_mode(self, switched: bool) -> None:
+        mode = self._last_device_mode
+        prefix = self._language_manager.translate("已切换至" if switched else "当前模式")
+        self._device_mode_summary.setText(f"{prefix} · {_mode_label(mode)}" if mode else "—")
+
     def render(self, model: ScreenModel) -> None:
         self._connection_terminal.observe(model)
+        self._refresh_connection_area(model)
         firmware_scroll = self._content.findChild(QScrollArea, "firmwareMaintenanceScroll")
         reuse_firmware_scroll = self._view_model.page == "firmware" and firmware_scroll is not None
         if self._view_model.page != "settings":
@@ -1615,6 +1754,21 @@ class MainWindow(QMainWindow):
             QScrollArea, "preferencesPage"
         )
         current_draft = self._view_model.draft
+        macro_values = None
+        current_macro_page = self._content.findChild(QScrollArea, "deviceKeySequencesPage")
+        if (current_macro_page is not None and current_draft is not None
+                and current_macro_page.property("draftIdentity") == id(current_draft)
+                and current_macro_page.property("macroId") == self._selected_macro_id):
+            macro_name = current_macro_page.findChild(QLineEdit, "macroNameEditor")
+            macro_editor = current_macro_page.findChild(MacroEditor)
+            if macro_name is not None and macro_editor is not None:
+                macro_values = (macro_name.text(), macro_editor.steps())
+        preferences_values = None
+        if (current_preferences_page is not None and current_draft is not None
+                and current_preferences_page.property("draftIdentity") == id(current_draft)):
+            current_editor = current_preferences_page.findChild(PreferencesEditor)
+            if current_editor is not None:
+                preferences_values = current_editor.values()
         reuse_preferences_page = (
             self._view_model.page == "lighting"
             and current_preferences_page is not None
@@ -1660,7 +1814,7 @@ class MainWindow(QMainWindow):
         calibration_blocks = self._view_model.calibration.blocks_editing
         self._nav_buttons["overview"].setEnabled(not firmware_blocks and not calibration_blocks)
         self._nav_buttons["lighting"].setEnabled(
-            has_draft and not firmware_blocks and not calibration_blocks
+            not firmware_blocks and not calibration_blocks
         )
         self._nav_buttons["prompts"].setEnabled(
             not firmware_blocks and not calibration_blocks
@@ -1678,6 +1832,14 @@ class MainWindow(QMainWindow):
         )
         for page, button in self._nav_buttons.items():
             button.set_active(page == active_nav_page)
+        overview_scroll = self._content.findChild(QScrollArea, "overviewScroll")
+        if (self._view_model.page == "overview" and overview_scroll is not None
+                and model.snapshot is not None):
+            self._overview(model.snapshot, model.state,
+                           mapping_editing_state=mapping_editing_state, scroll=overview_scroll)
+            self._refresh_device_summary(model)
+            self._language_manager.retranslate_widget_tree(self)
+            return
         if reuse_firmware_scroll:
             # Keep the scroll view under the styled window even when a phase
             # changes. Detaching it drops inherited styles and clamps its range
@@ -1732,14 +1894,14 @@ class MainWindow(QMainWindow):
             )
             self._content_layout.addWidget(self._settings_workspace(diagnostics_page, "diagnostics"), 1)
             diagnostics_page.refresh()
-        elif model.state in {AppState.READY, AppState.READ_ONLY, AppState.DISCONNECTED} and model.snapshot is not None:
+        elif model.snapshot is not None:
             if self._view_model.page == "sequences" and has_draft:
-                self._content_layout.addWidget(self._macro_page(model.snapshot), 1)
+                self._content_layout.addWidget(self._macro_page(model.snapshot, editing_values=macro_values), 1)
             elif self._view_model.page == "lighting" and has_draft:
                 preferences_page = (
                     current_preferences_page
                     if reuse_preferences_page
-                    else self._preferences_page(model.snapshot)
+                    else self._preferences_page(model.snapshot, editing_values=preferences_values)
                 )
                 self._content_layout.addWidget(preferences_page, 1)
                 if reuse_preferences_page:
@@ -1757,10 +1919,6 @@ class MainWindow(QMainWindow):
                 )
         else:
             self._content_layout.addWidget(self._state_page(model), 1)
-        if model.snapshot is not None and self._connection_terminal.present:
-            context = self._content.findChild(QWidget, "deviceContextCard")
-            if context is not None:
-                self._connection_terminal.cover_card(context)
         self._refresh_device_summary(model)
         self._language_manager.retranslate_widget_tree(self)
 
@@ -2806,54 +2964,79 @@ class MainWindow(QMainWindow):
         except ValueError as exc:
             QMessageBox.warning(self, "无法退出固件维护", str(exc))
 
+    def _refresh_connection_area(self, model: ScreenModel) -> None:
+        connected = model.state in {AppState.READY, AppState.READ_ONLY}
+        self._connection_area.setVisible(not connected)
+        suffix = (
+            "离线草稿 · 上次读取的配置可继续编辑；连接后才能应用到设备。"
+            if model.snapshot is not None
+            else "预览 · 尚未读取设备配置。"
+        )
+        self._connection_message.setText(
+            f"{self._language_manager.translate(model.message)} · {self._language_manager.translate(suffix)}"
+        )
+        self._connection_message.setProperty(SKIP_TRANSLATION_PROPERTY, True)
+        multiple = model.state is AppState.MULTIPLE_DEVICES
+        self._connection_candidates.setVisible(multiple)
+        self._connect_selected.setVisible(multiple)
+        self._connection_candidates.clear()
+        for candidate in model.candidates:
+            self._connection_candidates.addItem(candidate.display_name, candidate.port_name)
+        details = "\n".join(self._connection_terminal.transcript)
+        if model.technical_message:
+            details += "\n" + model.technical_message
+        self._connection_details.setPlainText(details)
+
     def _state_page(self, model: ScreenModel) -> QWidget:
-        wrapper = QWidget()
-        layout = QHBoxLayout(wrapper)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(20)
-        self._connection_terminal.setMinimumWidth(260)
-        self._connection_terminal.setMaximumWidth(300)
-        layout.addWidget(self._connection_terminal, 0, Qt.AlignTop)
-        self._connection_terminal.show()
-
-        card = QFrame(objectName="card")
-        card.setMinimumWidth(560)
-        card.setMaximumWidth(720)
+        scroll = QScrollArea(objectName="devicePreviewScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("QScrollArea { background: transparent; }")
+        page = QWidget(objectName="devicePreviewPage")
+        layout = QHBoxLayout(page)
+        layout.setContentsMargins(0, 8, 8, 8)
+        layout.setSpacing(24)
+        stage = QVBoxLayout()
+        stage.addStretch(1)
+        stage.addWidget(_device_shell_widget(
+            None, mappings={}, on_control=None, selected_control_id=None,
+        ), 0, Qt.AlignHCenter)
+        caption = QLabel("BORING MIST · 外观预览", objectName="deviceStageName")
+        caption.setAlignment(Qt.AlignCenter)
+        stage.addWidget(caption)
+        stage.addStretch(1)
+        layout.addLayout(stage, 1)
+        card = V4Card(role="focus")
+        card.setMinimumWidth(320)
+        card.setMaximumWidth(480)
         box = QVBoxLayout(card)
-        box.setContentsMargins(38, 34, 38, 36)
-        box.setSpacing(12)
-        marker = _digital_caption(_state_marker(model.state))
-        busy = model.state in {AppState.SCANNING, AppState.CONNECTING}
-        title = QLabel("正在连接你的 BORING" if busy else model.message or "正在准备 BORING 控制台")
-        title.setObjectName("pageTitle")
+        box.setContentsMargins(24, 24, 24, 24)
+        box.setSpacing(16)
+        box.addWidget(_digital_caption("PREVIEW"))
+        title = QLabel("先认识你的 BORING", objectName="inspectorTitle")
         title.setWordWrap(True)
-        if len(title.text()) > 10:
-            title.setMinimumHeight(90)
-        detail = QLabel("连接进度显示在左侧，完成身份认证后自动加载设备配置。" if busy else
-                        model.technical_message or _state_help(model.state), objectName="muted")
-        detail.setWordWrap(True)
-        box.addWidget(marker)
         box.addWidget(title)
-        box.addWidget(detail)
-
-        if model.state is AppState.MULTIPLE_DEVICES:
-            selector = QComboBox()
-            for candidate in model.candidates:
-                selector.addItem(candidate.display_name, candidate.port_name)
-            connect_button = QPushButton("读取所选设备", objectName="primary")
-            connect_button.clicked.connect(lambda: self._view_model.connect_candidate(selector.currentData()))
-            box.addSpacing(10)
-            box.addWidget(selector, 0, Qt.AlignLeft)
-            box.addWidget(connect_button, 0, Qt.AlignLeft)
-        elif model.state not in {AppState.SCANNING, AppState.CONNECTING}:
-            retry = QPushButton("连接 USB 后重新扫描" if model.state is AppState.FIRMWARE_UPDATE_REQUIRED else "重新扫描", objectName="primary")
-            retry.clicked.connect(self._view_model.refresh)
-            box.addSpacing(10)
-            box.addWidget(retry, 0, Qt.AlignLeft)
-
-        layout.addWidget(card, 1, Qt.AlignTop)
-        layout.addStretch(1)
-        return wrapper
+        for text in (
+            "按键配置 · 设置按键、旋钮和摇杆的动作，管理配置方案。",
+            "设备偏好 · 调整灯光、震动和屏幕；实时效果需要连接设备。",
+            "提示词与本地动作 · 管理内容和电脑端流程。",
+            "连接设备后可查看当前配置，并将修改应用到设备。",
+        ):
+            label = QLabel(text, objectName="muted")
+            label.setWordWrap(True)
+            box.addWidget(label)
+        retry = QPushButton("连接 USB 后重新扫描" if model.state is AppState.FIRMWARE_UPDATE_REQUIRED else "重新扫描", objectName="primary")
+        retry.setEnabled(model.state not in {AppState.SCANNING, AppState.CONNECTING})
+        retry.clicked.connect(self._view_model.refresh)
+        box.addWidget(retry)
+        for title, destination in (("提示词", "prompts"), ("本地动作", "actions"), ("软件设置", "settings")):
+            button = QPushButton(title, objectName="secondary")
+            button.clicked.connect(lambda _checked=False, target=destination: self._navigate(target))
+            box.addWidget(button)
+        layout.addWidget(card, 1, Qt.AlignVCenter)
+        scroll.setWidget(page)
+        return scroll
 
     def _overview(
         self,
@@ -2861,8 +3044,19 @@ class MainWindow(QMainWindow):
         state: AppState,
         *,
         mapping_editing_state: _MappingEditingState | None = None,
+        scroll: QScrollArea | None = None,
     ) -> QWidget:
-        scroll = QScrollArea(objectName="overviewScroll")
+        scroll = scroll if scroll is not None else QScrollArea(objectName="overviewScroll")
+        pending_position = scroll.property("restoringScrollPosition")
+        scroll_position = pending_position if pending_position is not None else scroll.verticalScrollBar().value()
+        old_editor_scroll = scroll.findChild(QScrollArea, "mappingEditorBody")
+        editor_position = old_editor_scroll.verticalScrollBar().value() if old_editor_scroll else 0
+        old_focus = QApplication.focusWidget()
+        focus_name = old_focus.objectName() if old_focus is not None and scroll.isAncestorOf(old_focus) else ""
+        cursor_position = old_focus.cursorPosition() if isinstance(old_focus, QLineEdit) else None
+        # The connection transcript is shared across pages and must outlive the old card.
+        self._connection_terminal.setParent(self)
+        self._connection_terminal.hide()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -2903,17 +3097,7 @@ class MainWindow(QMainWindow):
             on_control=self._select_physical_control if draft is not None else None,
             selected_control_id=self._selected_control_id,
         )
-        stage = QFrame(objectName="deviceStage")
-        stage_layout = QVBoxLayout(stage)
-        stage_layout.setContentsMargins(0, 4, 0, 0)
-        stage_layout.setSpacing(9)
-        stage_layout.addStretch(1)
-        stage_layout.addWidget(device_shell, 0, Qt.AlignHCenter | Qt.AlignVCenter)
-        stage_name = QLabel(DEVICE_DISPLAY_NAME, objectName="deviceStageName")
-        stage_name.setProperty(SKIP_TRANSLATION_PROPERTY, True)
-        stage_name.setAlignment(Qt.AlignCenter)
-        stage_layout.addWidget(stage_name)
-        stage_layout.addStretch(1)
+        stage = _DeviceStage(device_shell)
         controls_layout.addWidget(stage, 1)
 
         editor = self._mapping_editor(snapshot, mapping_editing_state)
@@ -2922,20 +3106,25 @@ class MainWindow(QMainWindow):
         side_rail = self._mapping_side_rail(snapshot, state, editor)
         layout.addWidget(_ResponsiveMappingWorkspace(controls_card, side_rail), 1)
 
-        if self._view_model.write_transaction.state is not ConfigTransactionState.IDLE:
-            current_generation = snapshot.config_result.get("generation")
-            base_changed = (
-                draft is not None and current_generation != draft.base_generation
-            )
-            layout.addWidget(
-                self._write_transaction_card(
-                    snapshot,
-                    bool(base_changed),
-                    show_prepare=False,
-                )
-            )
-
         scroll.setWidget(page)
+        scroll.verticalScrollBar().setValue(scroll_position)
+        scroll.setProperty("restoringScrollPosition", scroll_position)
+        # Qt finalizes the new page's range after its responsive layout runs.
+        # Consecutive save/validation signals must retain the original position.
+        def restore_scroll_position() -> None:
+            scroll.verticalScrollBar().setValue(scroll_position)
+            scroll.setProperty("restoringScrollPosition", None)
+
+        QTimer.singleShot(0, page, restore_scroll_position)
+        editor_scroll = page.findChild(QScrollArea, "mappingEditorBody")
+        if editor_scroll is not None:
+            editor_scroll.verticalScrollBar().setValue(editor_position)
+        if focus_name and not self._view_model.write_transaction.blocks_editing:
+            new_focus = page.findChild(QWidget, focus_name)
+            if new_focus is not None:
+                new_focus.setFocus(Qt.OtherFocusReason)
+                if isinstance(new_focus, QLineEdit) and cursor_position is not None:
+                    new_focus.setCursorPosition(cursor_position)
         return scroll
 
     def _mapping_side_rail(
@@ -2948,8 +3137,38 @@ class MainWindow(QMainWindow):
         rail_layout = QVBoxLayout(rail)
         rail_layout.setContentsMargins(0, 0, 0, 0)
         rail_layout.setSpacing(20)
-        rail_layout.addWidget(editor, 1)
-        rail_layout.addWidget(self._sync_summary_card(snapshot, state), 0)
+        action_editor = editor.findChild(ActionEditor)
+        short_name = editor.findChild(QLineEdit, "mappingShortNameEditor")
+        editing = action_editor is not None and short_name is not None
+        rail_layout.addWidget(editor, 1 if editing else 0)
+        sync = self._sync_summary_card(snapshot, state)
+        rail_layout.addWidget(sync, 0)
+        if not editing:
+            rail_layout.addStretch(1)
+        if editing:
+            # The editor's Apply action includes all pending draft changes.
+            # Avoid a second entry that could apply the old draft while typing.
+            sync.findChild(QPushButton, "saveConfigurationToDevice").hide()
+            summary = sync.findChild(QLabel, "syncChangeCount")
+            draft_state = sync.findChild(QLabel, "syncDraftState")
+            saved_summary, saved_state = summary.text(), draft_state.text()
+            draft = self._view_model.draft
+            saved = draft.mapping(draft.config.get("active_profile"), self._selected_control_id) or {}
+
+            def refresh_pending() -> None:
+                try:
+                    pending = (short_name.text() != saved.get("short_name", "未映射")
+                               or _canonical_action(action_editor.action()) != _canonical_action(saved.get("action", {"type": "none"})))
+                except ValueError:
+                    pending = True
+                set_translatable_text(summary, "当前控件有未应用的修改" if pending else saved_summary)
+                set_translatable_text(draft_state,
+                    "离线草稿 · 连接后才能应用到设备" if state not in {AppState.READY, AppState.READ_ONLY}
+                    else "点击应用到设备，验证后确认生效" if pending else saved_state)
+
+            action_editor.action_changed.connect(refresh_pending)
+            short_name.textChanged.connect(refresh_pending)
+            refresh_pending()
         return rail
 
     def _sync_summary_card(
@@ -2965,7 +3184,7 @@ class MainWindow(QMainWindow):
         bottom_layout.addWidget(_digital_caption("SYNC"))
         status_row = QVBoxLayout()
         status_row.setSpacing(8)
-        sync = QLabel(snapshot.config_status_label)
+        sync = QLabel(snapshot.config_status_label if state in {AppState.READY, AppState.READ_ONLY} else "上次读取 · 当前设备状态未确认")
         sync.setStyleSheet("font-weight: 800;")
         status_row.addWidget(sync)
         profile_switch_pending = (
@@ -2978,12 +3197,12 @@ class MainWindow(QMainWindow):
             draft_text = "未保存变更"
         else:
             draft_text = "没有本地变更"
-        status_row.addWidget(QLabel(draft_text, objectName="bottomMuted"))
+        status_row.addWidget(QLabel(draft_text, objectName="syncDraftState"))
         status_row.addStretch(1)
         bottom_layout.addLayout(status_row)
         if draft is not None:
             change_count = len(draft.changes)
-            count = QLabel(f"{change_count}  处未写入改动" if change_count else "已同步 [ SYNCED ]", objectName="syncChangeCount")
+            count = QLabel(f"{change_count}  处未写入改动" if change_count else ("已同步 [ SYNCED ]" if state in {AppState.READY, AppState.READ_ONLY} else "上次读取 · 没有本地变更"), objectName="syncChangeCount")
             count.setProperty("dirty", draft.is_dirty)
             bottom_layout.addWidget(count)
         actions_row = QVBoxLayout()
@@ -3004,7 +3223,8 @@ class MainWindow(QMainWindow):
                 else "验证当前配置方案及其他本地修改；通过后仍需再次确认才会写入设备。"
             )
             save_to_device.setEnabled(
-                draft.is_dirty
+                state is AppState.READY
+                and draft.is_dirty
                 and not base_changed
                 and not self._view_model.validate_draft()
                 and snapshot.compatibility.get("write") is True
@@ -3021,6 +3241,10 @@ class MainWindow(QMainWindow):
         technical.clicked.connect(lambda: self._show_technical_details(snapshot))
         actions_row.addWidget(technical)
         bottom_layout.addLayout(actions_row)
+        if self._view_model.write_transaction.state not in {ConfigTransactionState.IDLE, ConfigTransactionState.ACTIVE}:
+            transaction_card = self._write_transaction_card(snapshot, base_changed, show_prepare=False)
+            transaction_card.layout().setContentsMargins(0, 6, 0, 0)
+            bottom_layout.addWidget(transaction_card)
         return bottom
 
     def _device_context_card(
@@ -3035,7 +3259,6 @@ class MainWindow(QMainWindow):
             "connectionState",
             "ready" if connected else "disconnected",
         )
-        card.setMinimumHeight(330)
         box = QVBoxLayout(card)
         box.setContentsMargins(18, 12, 18, 12)
         box.setSpacing(6)
@@ -3057,7 +3280,7 @@ class MainWindow(QMainWindow):
         name.setProperty(SKIP_TRANSLATION_PROPERTY, True)
         box.addWidget(name)
         subtitle = QLabel(
-            "BORING 桌面控制台 · 已连接" if connected else "连接已断开 · 断开前的只读快照",
+            "BORING 桌面控制台 · 已连接" if connected else "离线草稿 · 上次读取，可继续编辑",
             objectName="devicePanelSubtitle",
         )
         subtitle.setWordWrap(True)
@@ -3115,6 +3338,11 @@ class MainWindow(QMainWindow):
             digital=True,
         )
 
+        battery = QLabel(objectName="deviceBatterySummary")
+        battery.setProperty(SKIP_TRANSLATION_PROPERTY, True)
+        battery.setWordWrap(True)
+        box.addWidget(battery)
+
         codex_micro = snapshot.status.get("codex_micro")
         active_slot = codex_micro.get("active_slot") if isinstance(codex_micro, dict) else None
         if isinstance(active_slot, int) and not isinstance(active_slot, bool):
@@ -3126,6 +3354,22 @@ class MainWindow(QMainWindow):
         if self._view_model.draft is not None:
             box.addSpacing(2)
             box.addWidget(self._profile_selector_metric(snapshot))
+            draft = self._view_model.draft
+            profile = draft.profile(draft.config.get("active_profile"))
+            context = QLabel(
+                self._language_manager.translate("正在编辑：{profile} · 普通映射（NORMAL）").format(profile=profile.get("name", "—")),
+                objectName="mappingModeContext",
+            )
+            context.setProperty(SKIP_TRANSLATION_PROPERTY, True)
+            context.setWordWrap(True)
+            box.addWidget(context)
+            if str(snapshot.status.get("operating_mode", "unknown")) != "normal":
+                explanation = QLabel(
+                    "当前模式的专用按键由固件处理；未被专用功能占用的控件仍使用这套映射。切换模式不会切换正在编辑的方案。",
+                    objectName="mappingModeExplanation",
+                )
+                explanation.setWordWrap(True)
+                box.addWidget(explanation)
         return card
 
     def _show_ble_slots(self, snapshot: DeviceSnapshot, state: AppState) -> None:
@@ -3152,6 +3396,10 @@ class MainWindow(QMainWindow):
         rings = UsageRings()
         rings.setObjectName("homeUsageRings")
         box.addWidget(rings, 0, Qt.AlignCenter)
+        compact = QLabel(objectName="homeUsageCompact")
+        compact.setWordWrap(True)
+        box.addWidget(compact)
+        compact.hide()
         detail = QLabel(objectName="homeUsageDetail")
         detail.setWordWrap(True)
         box.addWidget(detail)
@@ -3184,6 +3432,10 @@ class MainWindow(QMainWindow):
             seven_day=seven.remaining_percent if seven else None,
             five_hour=five.remaining_percent if five else None,
         )
+        def remaining(window):
+            return f"{window.remaining_percent:.0f}%" if window is not None else "—"
+        set_translatable_text(card.findChild(QLabel, "homeUsageCompact"),
+                              f"7D  {remaining(seven)}    ·    5H  {remaining(five)}")
         text = "7D 外环 · 5H 内环 · 剩余额度"
         if snapshot.status is not CodexUsageStatus.AVAILABLE:
             text += "\n" + snapshot.message
@@ -3191,6 +3443,7 @@ class MainWindow(QMainWindow):
             from datetime import datetime
             text += "\n更新于 " + datetime.fromtimestamp(snapshot.updated_at).strftime("%m-%d %H:%M")
         set_translatable_text(card.findChild(QLabel, "homeUsageDetail"), text)
+        card.findChild(QLabel, "homeUsageCompact").setToolTip(text)
 
     def _ble_slots_card(
         self, snapshot: DeviceSnapshot, state: AppState
@@ -3300,7 +3553,6 @@ class MainWindow(QMainWindow):
         card = V4Card(role="secondary")
         card.setObjectName("selectionInspectorCard")
         card.setMinimumWidth(300)
-        card.setMaximumWidth(410)
         box = QVBoxLayout(card)
         box.setContentsMargins(22, 19, 22, 22)
         box.setSpacing(12)
@@ -3311,6 +3563,10 @@ class MainWindow(QMainWindow):
         box.addWidget(guidance)
         box.addSpacing(6)
 
+        details = QWidget(objectName="selectionInspectorDetails")
+        details_box = QVBoxLayout(details)
+        details_box.setContentsMargins(0, 0, 0, 0)
+        details_box.setSpacing(12)
         human = _semantic_role_card(
             "HUMAN INPUT",
             "白色键帽与金属控制件 · 发出动作",
@@ -3326,16 +3582,16 @@ class MainWindow(QMainWindow):
             "圆屏 · 模式、任务与下一步",
             "roleContext",
         )
-        box.addWidget(human)
-        box.addWidget(agent)
-        box.addWidget(context)
-        box.addSpacing(4)
+        details_box.addWidget(human)
+        details_box.addWidget(agent)
+        details_box.addWidget(context)
+        details_box.addSpacing(4)
 
         mode = str(snapshot.status.get("operating_mode", "unknown"))
         mode_note = QLabel(_mode_explanation(mode), objectName="muted")
         mode_note.setWordWrap(True)
-        box.addWidget(mode_note)
-        box.addStretch(1)
+        details_box.addWidget(mode_note)
+        box.addWidget(details)
         return card
 
     def _mapping_editor(
@@ -3351,7 +3607,7 @@ class MainWindow(QMainWindow):
             return None
         mapping = draft.mapping(profile_id, self._selected_control_id)
         confirmed_mapping = snapshot.mappings.get(self._selected_control_id)
-        platform = str(snapshot.status.get("platform", ""))
+        platform = _shortcut_display_platform(snapshot)
         current_generation = snapshot.config_result.get("generation")
         base_changed = current_generation != draft.base_generation
         write_state = self._view_model.write_transaction.state
@@ -3359,8 +3615,9 @@ class MainWindow(QMainWindow):
         card = V4Card(role="focus")
         card.setObjectName("mappingEditorCard")
         card.setProperty("controlId", self._selected_control_id)
+        card.setProperty("deviceIdentity", (draft.serial, draft.hardware_id))
         card.setMinimumWidth(300)
-        card.setMaximumWidth(300)
+        card.setMaximumWidth(16777215)
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(20, 16, 20, 18)
         card_layout.setSpacing(10)
@@ -3379,6 +3636,21 @@ class MainWindow(QMainWindow):
         header.addWidget(close, 0, Qt.AlignTop)
         card_layout.addLayout(header)
 
+        mode = str(snapshot.status.get("operating_mode", "unknown"))
+        uses_dedicated_actions = (
+            draft.hardware_id in MATRIX12_HARDWARE_IDS
+            and mode in {"codex", "claude_code"}
+        )
+        if uses_dedicated_actions:
+            execution_notice = QLabel(
+                self._language_manager.translate(
+                    "此处编辑 NORMAL 映射；{mode} 模式使用专用动作。切回 NORMAL 后才会执行此映射。"
+                ).format(mode="CODEX" if mode == "codex" else "CC"),
+                objectName="mappingExecutionNotice",
+            )
+            execution_notice.setWordWrap(True)
+            card_layout.addWidget(execution_notice)
+
         body_scroll = QScrollArea(objectName="mappingEditorBody")
         body_scroll.setWidgetResizable(True)
         body_scroll.setFrameShape(QFrame.NoFrame)
@@ -3390,6 +3662,19 @@ class MainWindow(QMainWindow):
         editor_layout = QVBoxLayout(editor_body)
         editor_layout.setContentsMargins(0, 0, 4, 0)
         editor_layout.setSpacing(10)
+        capture_platform = "macos" if sys.platform == "darwin" else "windows"
+        if (platform == "macos") != (capture_platform == "macos"):
+            notice = QLabel(
+                self._language_manager.translate(
+                    "录制与编辑使用 {host} 按键名称。设备系统设置为 {device}；已有动作不自动转换。"
+                ).format(
+                    host="macOS" if capture_platform == "macos" else "Windows / Linux",
+                    device="macOS" if platform == "macos" else "Windows / Linux",
+                ),
+                objectName="devicePlatformNotice",
+            )
+            notice.setWordWrap(True)
+            editor_layout.addWidget(notice)
         body_scroll.setWidget(editor_body)
         card_layout.addWidget(body_scroll, 1)
 
@@ -3402,15 +3687,6 @@ class MainWindow(QMainWindow):
                 compact=True,
             )
         )
-        if write_state is not ConfigTransactionState.IDLE:
-            editor_layout.addWidget(
-                self._write_transaction_card(
-                    snapshot,
-                    base_changed,
-                    show_prepare=False,
-                )
-            )
-
         manage_sequences = QPushButton("管理设备按键序列")
         manage_sequences.setObjectName("manageDeviceKeySequences")
         manage_sequences.setProperty("buttonRole", "secondary")
@@ -3451,7 +3727,7 @@ class MainWindow(QMainWindow):
         actual_action.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         actual_action.setStyleSheet("font-size: 17px; font-weight: 800;")
         actual_action.setWordWrap(True)
-        form.addRow("设备当前", actual_action)
+        form.addRow("设备当前" if self._view_model.model.state in {AppState.READY, AppState.READ_ONLY} else "上次读取", actual_action)
 
         short_name_editor = QLineEdit(
             str(mapping.get("short_name", "未映射")) if mapping else "未映射"
@@ -3474,7 +3750,7 @@ class MainWindow(QMainWindow):
             if _canonical_action(action) == current_action_key:
                 continue
             preset_selector.addItem(
-                f"{describe_action(action, platform=platform)} · {preset['short_name']}",
+                f"{describe_action(action, platform=capture_platform)} · {preset['short_name']}",
                 action,
             )
 
@@ -3561,12 +3837,14 @@ class MainWindow(QMainWindow):
         action_editor = ActionEditor(
             definitions,
             initial_action,
-            platform=platform,
+            platform=capture_platform,
+            capture_platform=capture_platform,
             reference_choices=reference_choices,
         )
         if (
             editing_state is not None
             and editing_state.control_id == self._selected_control_id
+            and editing_state.device_identity == (draft.serial, draft.hardware_id)
         ):
             short_name_editor.setText(editing_state.short_name)
             action_editor.set_action(editing_state.action)
@@ -3586,6 +3864,11 @@ class MainWindow(QMainWindow):
             except ValueError as exc:
                 QMessageBox.warning(self, "动作参数有误", str(exc))
                 return False
+            saved = draft.mapping(profile_id, str(self._selected_control_id))
+            if saved is not None and _canonical_action(action) == _canonical_action(saved.get("action")):
+                action = saved["action"]
+                if short_name_editor.text() == saved.get("short_name", ""):
+                    return True
             self._suppress_mapping_edit_restore = True
             try:
                 self._view_model.set_mapping(
@@ -3606,14 +3889,16 @@ class MainWindow(QMainWindow):
         editing_enabled = not self._view_model.write_transaction.blocks_editing
         save_actions = QVBoxLayout()
         apply_to_device = QPushButton(
-            "应用到设备…", objectName="applyMappingToDevice"
+            "保存 NORMAL 映射…" if uses_dedicated_actions else "应用到设备…",
+            objectName="applyMappingToDevice",
         )
         apply_to_device.setProperty("buttonRole", "primary")
         apply_to_device.setToolTip(
             "保存当前修改并交给设备验证；验证通过后仍需由你最终确认。"
         )
-        apply_to_device.setEnabled(
+        can_apply = (
             editing_enabled
+            and self._view_model.model.state is AppState.READY
             and not base_changed
             and snapshot.compatibility.get("write") is True
             and write_state
@@ -3624,12 +3909,26 @@ class MainWindow(QMainWindow):
             }
         )
 
+        def update_apply_state() -> None:
+            try:
+                pending = (short_name_editor.text() != str(mapping.get("short_name", "未映射") if mapping else "未映射")
+                           or _canonical_action(action_editor.action()) != _canonical_action(editing_action))
+            except ValueError:
+                pending = False
+            apply_to_device.setEnabled(can_apply and (pending or draft.is_dirty))
+
+        action_editor.action_changed.connect(update_apply_state)
+        short_name_editor.textChanged.connect(update_apply_state)
+        update_apply_state()
+
         def save_and_prepare() -> None:
             if save_local_draft():
                 self._prepare_device_write()
 
         apply_to_device.clicked.connect(save_and_prepare)
         save_actions.addWidget(apply_to_device)
+        if self._view_model.model.state not in {AppState.READY, AppState.READ_ONLY}:
+            apply_to_device.setToolTip("需要连接并读取设备；当前修改可先保存为本地草稿。")
         save = QPushButton("仅保存草稿", objectName="saveMappingDraft")
         save.setProperty("buttonRole", "secondary")
         save.clicked.connect(save_local_draft)
@@ -3652,12 +3951,13 @@ class MainWindow(QMainWindow):
         card_layout.addLayout(save_actions)
         return card
 
-    def _macro_page(self, snapshot: DeviceSnapshot) -> QWidget:
+    def _macro_page(self, snapshot: DeviceSnapshot, *, editing_values=None) -> QWidget:
         draft = self._view_model.draft
         if draft is None:
             return self._state_page(self._view_model.model)
         scroll = QScrollArea()
         scroll.setObjectName("deviceKeySequencesPage")
+        scroll.setProperty("draftIdentity", id(draft))
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
         page = QWidget()
@@ -3692,6 +3992,7 @@ class MainWindow(QMainWindow):
         macro_ids = [macro.get("id") for macro in macros if isinstance(macro.get("id"), int)]
         if self._selected_macro_id not in macro_ids:
             self._selected_macro_id = macro_ids[0] if macro_ids else None
+        scroll.setProperty("macroId", self._selected_macro_id)
         editing_enabled = not self._view_model.write_transaction.blocks_editing
 
         card = _card()
@@ -3730,14 +4031,14 @@ class MainWindow(QMainWindow):
         else:
             macro = draft.macro(self._selected_macro_id)
             form = QFormLayout()
-            name = QLineEdit(str(macro.get("name", "")), objectName="macroNameEditor")
+            name = QLineEdit(editing_values[0] if editing_values is not None else str(macro.get("name", "")), objectName="macroNameEditor")
             name.setMaxLength(draft.editor_rules.macro_name_max_length)
             name.setEnabled(editing_enabled)
             form.addRow("按键序列名称", name)
             editor_layout.addLayout(form)
             steps = macro.get("steps") if isinstance(macro.get("steps"), list) else []
             macro_editor = MacroEditor(
-                steps,
+                editing_values[1] if editing_values is not None else steps,
                 self._macro_key_choices(),
                 byte_limit=draft.limits["macro_bytes"],
                 rules=draft.editor_rules,
@@ -3763,7 +4064,7 @@ class MainWindow(QMainWindow):
         scroll.setWidget(page)
         return scroll
 
-    def _preferences_page(self, snapshot: DeviceSnapshot) -> QWidget:
+    def _preferences_page(self, snapshot: DeviceSnapshot, *, editing_values=None) -> QWidget:
         draft = self._view_model.draft
         if draft is None:
             return self._state_page(self._view_model.model)
@@ -3792,10 +4093,10 @@ class MainWindow(QMainWindow):
         if preview.candidate is not None:
             editor_lighting.update(copy.deepcopy(preview.candidate))
         editor = PreferencesEditor(
-            lighting=editor_lighting,
+            lighting=editing_values[0] if editing_values is not None else editor_lighting,
             screen_icon_draft=self._screen_icon_draft_for(snapshot),
-            haptic=draft.config["haptic"],
-            display=draft.config["display"],
+            haptic=editing_values[1] if editing_values is not None else draft.config["haptic"],
+            display=editing_values[2] if editing_values is not None else draft.config["display"],
             features=draft.features,
             under_key_control_ids=tuple(
                 control_id
@@ -3891,15 +4192,16 @@ class MainWindow(QMainWindow):
         sync_layout.addWidget(sync_summary)
         save_actions = QVBoxLayout()
         save_to_device = QPushButton(
-            "保存到设备…", objectName="savePreferencesToDevice"
+            "应用到设备…", objectName="savePreferencesToDevice"
         )
         save_to_device.setProperty("buttonRole", "primary")
         save_to_device.setMinimumHeight(40)
         save_to_device.setToolTip(
-            "先保存当前设置并验证，验证通过后仍需由你确认才会写入设备。"
+            "将当前灯光、震动和屏幕设置交给设备验证；确认后写入，无需先保存本地草稿。"
         )
-        save_to_device.setEnabled(
+        can_apply = (
             editing_enabled
+            and self._view_model.model.state is AppState.READY
             and not base_changed
             and snapshot.compatibility.get("write") is True
             and self._view_model.write_transaction.state
@@ -3913,6 +4215,8 @@ class MainWindow(QMainWindow):
             lambda: self._save_preferences_and_prepare(editor)
         )
         save_actions.addWidget(save_to_device)
+        if self._view_model.model.state not in {AppState.READY, AppState.READ_ONLY}:
+            save_to_device.setToolTip("需要连接并读取设备；当前修改可先保存为本地草稿。")
         save_local = QPushButton(
             "仅保存本地草稿", objectName="savePreferencesDraft"
         )
@@ -3923,7 +4227,7 @@ class MainWindow(QMainWindow):
         save_actions.addWidget(save_local)
         sync_layout.addLayout(save_actions)
         transaction_card = self._write_transaction_card(snapshot, base_changed, show_prepare=False)
-        if self._view_model.write_transaction.state is not ConfigTransactionState.IDLE:
+        if self._view_model.write_transaction.state not in {ConfigTransactionState.IDLE, ConfigTransactionState.ACTIVE}:
             transaction_card.layout().setContentsMargins(0, 8, 0, 0)
             for label in transaction_card.findChildren(QLabel):
                 label.setWordWrap(True)
@@ -3935,14 +4239,15 @@ class MainWindow(QMainWindow):
             transaction_card.deleteLater()
 
         def update_summary(*_args):
+            pending = editor.values() != (
+                draft.config["lighting"], draft.config["haptic"], draft.config["display"]
+            )
+            save_to_device.setEnabled(can_apply and (pending or draft.is_dirty))
             state = self._view_model.write_transaction.state
             if state not in {ConfigTransactionState.IDLE, ConfigTransactionState.ACTIVE}:
                 set_translatable_text(sync_summary, _transaction_title(state))
                 return
-            pending = editor.values() != (
-                draft.config["lighting"], draft.config["haptic"], draft.config["display"]
-            )
-            set_translatable_text(sync_summary, "当前设置尚未保存" if pending else
+            set_translatable_text(sync_summary, "离线草稿 · 连接后才能应用到设备" if self._view_model.model.state not in {AppState.READY, AppState.READ_ONLY} else "当前设置尚未应用到设备" if pending else
                                   "本地草稿尚未写入设备" if draft.is_dirty else "已同步 · 没有本地变更")
 
         for widget_type, signal_name in ((QCheckBox, "toggled"), (QComboBox, "currentIndexChanged"),
@@ -3985,25 +4290,33 @@ class MainWindow(QMainWindow):
         layout.setSpacing(10)
         layout.addWidget(QLabel("写入设备", objectName="eyebrow"))
         title = QLabel(_transaction_title(transaction.state), objectName="inspectorTitle")
+        title.setWordWrap(True)
         layout.addWidget(title)
         message = QLabel(transaction.message, objectName="muted")
         message.setWordWrap(True)
         layout.addWidget(message)
         if transaction.candidate_digest:
-            layout.addWidget(
-                QLabel(
-                    f"base generation {transaction.base_generation} · candidate {transaction.candidate_digest[:12]}…",
-                    objectName="muted",
-                )
+            generation = (snapshot.config_result.get("generation")
+                          if transaction.state is ConfigTransactionState.ACTIVE
+                          else transaction.base_generation)
+            details = QLabel(
+                self._language_manager.translate("配置修订：{generation}（成功写入后递增）").format(generation=generation),
+                objectName="muted",
             )
+            details.setProperty(SKIP_TRANSLATION_PROPERTY, True)
+            details.setToolTip(f"candidate digest: {transaction.candidate_digest}")
+            details.setWordWrap(True)
+            layout.addWidget(details)
         if transaction.technical:
             technical = QLabel(transaction.technical, objectName="muted")
             technical.setWordWrap(True)
             layout.addWidget(technical)
 
-        buttons = QHBoxLayout()
+        buttons = QHBoxLayout() if show_prepare else QVBoxLayout()
         if transaction.state is ConfigTransactionState.AWAITING_CONFIRMATION:
-            confirm = QPushButton("确认写入设备", objectName="primary")
+            confirm = QPushButton("确认写入设备", objectName="confirmConfigurationWrite")
+            confirm.setProperty("buttonRole", "primary")
+            confirm.setEnabled(self._view_model.model.state is AppState.READY)
             confirm.clicked.connect(self._confirm_device_write)
             buttons.addWidget(confirm)
             cancel = QPushButton("取消", objectName="secondary")
@@ -4035,6 +4348,7 @@ class MainWindow(QMainWindow):
                 and not base_changed
                 and not errors
                 and writable
+                and self._view_model.model.state is AppState.READY
             )
             prepare.clicked.connect(self._prepare_device_write)
             buttons.addWidget(prepare)
@@ -4057,6 +4371,7 @@ class MainWindow(QMainWindow):
             "确认写入 BORING 设备",
             (
                 f"设备已验证候选配置。即将写入 {changes} 项本地修改。\n\n"
+                f"目标设备：{transaction.device_serial}\n"
                 f"base generation: {transaction.base_generation}\n"
                 f"candidate digest: {transaction.candidate_digest}\n\n"
                 "写入后将等待设备激活并读回确认；连接异常时不会自动重试写入。"
@@ -4169,6 +4484,7 @@ class MainWindow(QMainWindow):
             return None
         try:
             return _MappingEditingState(
+                device_identity=tuple(card.property("deviceIdentity")),
                 control_id=control_id,
                 short_name=short_name.text(),
                 action=action_editor.action(),
@@ -5147,8 +5463,8 @@ def _short_value(value: object) -> str:
 
 
 def _next_action(snapshot: DeviceSnapshot, state: AppState) -> str:
-    if state is AppState.DISCONNECTED:
-        return "下一步：重新连接并读取设备；下方保留的是断开前的只读快照。"
+    if state not in {AppState.READY, AppState.READ_ONLY}:
+        return "离线草稿可继续编辑；重新连接并读取设备后，由你确认应用。"
     if snapshot.status.get("activation_failed") is True:
         return "下一步：重启设备后再读取；若仍失败，使用设备的物理恢复流程。"
     if snapshot.status.get("pending") is not None:
@@ -5158,6 +5474,12 @@ def _next_action(snapshot: DeviceSnapshot, state: AppState) -> str:
     if snapshot.is_read_only:
         return "当前设备仅允许读取。可检查配置与技术详情。"
     return "下一步：点击下方任一按键、旋钮或摇杆，直接调整动作。"
+
+
+def _shortcut_display_platform(snapshot: DeviceSnapshot) -> str:
+    # The protocol has one device platform, not a platform field per profile.
+    # Capture uses host Qt semantics separately; display never changes HID usages.
+    return str(snapshot.status.get("platform", ""))
 
 
 def _mode_label(mode: str) -> str:
@@ -5312,16 +5634,36 @@ def _lighting_device_preview(snapshot: DeviceSnapshot, editor: PreferencesEditor
     return stage
 
 
+class _Matrix12Shell(QFrame):
+    def remember_control_geometry(self):
+        self._face = self.findChild(QFrame, "deviceFace")
+        self._controls = [(child, child.geometry()) for child in self._face.findChildren(QWidget, options=Qt.FindDirectChildrenOnly)]
+
+    def scale_to(self, side: int):
+        if side == self.width():
+            return
+        ratio = side / 420
+        self.setFixedSize(side, side)
+        self._face.setGeometry(0, 0, side, side)
+        self._face.setAttribute(Qt.WA_StyledBackground, True)
+        self._face.setStyleSheet(f"QFrame#deviceFace {{ background: #1C1B19; border: none; border-radius: {round(64 * ratio)}px; }}")
+        for child, geometry in self._controls:
+            child.setFixedSize(round(geometry.width() * ratio), round(geometry.height() * ratio))
+            child.move(round(geometry.x() * ratio), round(geometry.y() * ratio))
+            if child.property("controlId") == "display":
+                child.setStyleSheet(f"QFrame#displayControl {{ background: #23241F; border: 2px solid #A7B6E4; border-radius: {child.width() // 2}px; }}")
+
+
 def _device_shell_widget(
-    snapshot: DeviceSnapshot,
+    snapshot: DeviceSnapshot | None,
     *,
     mappings: dict[str, dict],
     on_control: Callable[[str], None] | None,
     selected_control_id: str | None,
 ) -> QFrame:
-    device_shell = QFrame(objectName="deviceShell")
+    device_shell = _Matrix12Shell(objectName="deviceShell") if snapshot is None or str(snapshot.identity.get("hardware_id", "")) in MATRIX12_HARDWARE_IDS else QFrame(objectName="deviceShell")
     device_shell.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-    if str(snapshot.identity.get("hardware_id", "")) in MATRIX12_HARDWARE_IDS:
+    if snapshot is None or str(snapshot.identity.get("hardware_id", "")) in MATRIX12_HARDWARE_IDS:
         # A fixed, shared physical coordinate system (reference board: 420 × 420).
         # Layout metadata stays on each real button; no bitmap hit-map is involved.
         device_shell.setFixedSize(420, 420)
@@ -5331,7 +5673,7 @@ def _device_shell_widget(
         face.setStyleSheet("QFrame#deviceFace { background: #1C1B19; border: none; border-radius: 64px; }")
         holder = QWidget()
         grid = _matrix12_control_layout(snapshot, mappings,
-            str(snapshot.status.get("platform", "")), on_control, selected_control_id)
+            _shortcut_display_platform(snapshot) if snapshot is not None else "", on_control, selected_control_id)
         holder.setLayout(grid)
         while grid.count():
             control = grid.takeAt(0).widget()
@@ -5356,6 +5698,7 @@ def _device_shell_widget(
                 control.move(80 + column * 67, 80 + row * 67)
             control.show()
         holder.deleteLater()
+        device_shell.remember_control_geometry()
         return device_shell
     shell_layout = QVBoxLayout(device_shell)
     shell_layout.setContentsMargins(12, 12, 12, 12)
@@ -5382,7 +5725,7 @@ def _control_layout(
     selected_control_id: str | None = None,
 ):
     resolved_mappings = snapshot.mappings if mappings is None else mappings
-    platform = str(snapshot.status.get("platform", ""))
+    platform = _shortcut_display_platform(snapshot)
     hardware_id = str(snapshot.identity.get("hardware_id", ""))
     if hardware_id in MATRIX12_HARDWARE_IDS:
         return _matrix12_control_layout(
@@ -5403,7 +5746,7 @@ def _control_layout(
 
 
 def _matrix12_control_layout(
-    snapshot: DeviceSnapshot,
+    snapshot: DeviceSnapshot | None,
     mappings: dict[str, dict],
     platform: str,
     on_control: Callable[[str], None] | None,
@@ -5413,7 +5756,7 @@ def _matrix12_control_layout(
     grid.setHorizontalSpacing(MATRIX12_GAP)
     grid.setVerticalSpacing(MATRIX12_GAP)
     grid.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
-    mode = str(snapshot.status.get("operating_mode", ""))
+    mode = str(snapshot.status.get("operating_mode", "")) if snapshot is not None else ""
 
     _add_physical_control(grid, _display_tile(MATRIX12_UNIT), "display", 0, 0)
     positions = {
@@ -5431,9 +5774,16 @@ def _matrix12_control_layout(
         "key.12": (3, 2, 1),
     }
     for control_id, (row, column, column_span) in positions.items():
-        if control_id in snapshot.controls:
+        if snapshot is None or control_id in snapshot.controls:
             tile = _control_tile(control_id, mappings.get(control_id), platform, mode)
             _configure_control_button(tile, control_id, on_control, selected_control_id)
+            if snapshot is None:
+                for label in tile.findChildren(QLabel):
+                    if label.objectName() == "keycapInscription":
+                        label.setText(control_id.replace("key.", "K"))
+                        label.setToolTip(_physical_control_name(control_id))
+                tile.setToolTip(_physical_control_name(control_id))
+                tile.setAccessibleName(_physical_control_name(control_id))
             tile.setFixedSize(
                 MATRIX12_UNIT * column_span + MATRIX12_GAP * (column_span - 1),
                 MATRIX12_UNIT,
@@ -5504,6 +5854,10 @@ def _matrix12_control_layout(
     encoder.setFixedSize(128, 128)
     _configure_control_button(encoder, "encoder", on_control, selected_control_id)
     _configure_control_button(joystick, "joystick", on_control, selected_control_id)
+    if snapshot is None:
+        for control, title in ((encoder, "旋钮"), (joystick, "摇杆")):
+            control.setToolTip(title)
+            control.setAccessibleName(title)
     _add_physical_control(grid, encoder, "encoder", 3, 0)
     _add_physical_control(grid, joystick, "joystick", 3, 3)
     return grid
