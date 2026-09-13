@@ -21,6 +21,10 @@ SolidCompression=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
+UsePreviousAppDir=yes
+UsePreviousTasks=yes
+CloseApplications=no
+RestartApplications=no
 UninstallDisplayName=BORING Console Community
 UninstallDisplayIcon={app}\BORING Console Community.exe
 

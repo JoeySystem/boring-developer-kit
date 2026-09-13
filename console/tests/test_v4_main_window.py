@@ -11,6 +11,7 @@ from controller_config.models import AppState, ScreenModel
 from controller_config.firmware_update import FirmwareUpdateState
 from controller_config.transport.demo import DemoGateway
 from controller_config.viewmodels.main import MainViewModel
+from controller_config.views.device_silhouette import DeviceModelCanvas
 from controller_config.views.main_window import MainWindow
 from controller_config.views.v4_widgets import UsageRings, V4Card
 
@@ -33,24 +34,27 @@ def test_v4_selected_editor_fits_and_keeps_complete_keycaps(console, qtbot):
     window._select_physical_control("key.9")
     scroll = window.findChild(QScrollArea, "overviewScroll")
     qtbot.waitUntil(lambda: scroll.verticalScrollBar().maximum() == 0)
-    editor = window.findChild(V4Card, "mappingEditorCard")
-    sync = window.findChild(V4Card, "syncSummaryCard")
-    assert editor is not None and sync is not None
-    qtbot.waitUntil(lambda: editor.isVisible() and sync.isVisible()
-                    and not editor.geometry().intersects(sync.geometry()))
+    def editor_is_laid_out():
+        editor = window.findChild(V4Card, "mappingEditorCard")
+        sync = window.findChild(V4Card, "syncSummaryCard")
+        return editor is not None and sync is not None and editor.isVisible() and sync.isVisible() \
+            and not editor.geometry().intersects(sync.geometry())
+    qtbot.waitUntil(editor_is_laid_out)
     keys = [b for b in window.findChildren(QPushButton) if b.objectName() == "controlKey"]
     assert len(keys) == 12
+    canvas = window.findChild(DeviceModelCanvas, "deviceModelCanvas")
+    assert canvas is not None
     for key in keys:
         assert key.accessibleName()
-        expected_ratio = 131 / 64 if key.property("controlId") == "key.8" else 1
-        assert abs(key.width() / key.height() - expected_ratio) < .05
+        control_id = key.property("controlId")
+        assert key.height() == max(24, round(canvas.control_rect(control_id).height()))
         assert all(not label.isVisible() for label in key.findChildren(QLabel, "controlId"))
         if key.property("role") == "agent":
             assert key.findChild(QLabel, "keycapInscription") is None
     assert not vm.draft.is_dirty
 
 
-def test_home_quota_update_does_not_rebuild_editor_or_fake_missing_window(console):
+def test_home_quota_update_does_not_rebuild_editor_or_fake_missing_window(console, qtbot):
     window, vm = console
     window._select_physical_control("key.9")
     editor = window.findChild(V4Card, "mappingEditorCard")
@@ -67,6 +71,12 @@ def test_home_quota_update_does_not_rebuild_editor_or_fake_missing_window(consol
     window._update_home_usage(CodexUsageSnapshot.unavailable())
     assert rings.seven_day is None and rings.five_hour is None
     assert not vm.draft.is_dirty
+    for width, height in ((1280, 800), (1920, 1080), (1100, 700), (1280, 800)):
+        window.resize(width, height)
+        qtbot.wait(40)
+        rings = window.findChild(UsageRings, "homeUsageRings")
+        assert rings.isVisible(), "Resizing must retain the original quota dial"
+        assert rings.width() == rings.height()
 
 
 def test_cocoa_profile_and_action_popups_follow_moved_reopened_window(console, qapp, qtbot):
@@ -142,7 +152,7 @@ def test_settings_group_uses_application_version_and_reset_guard(console):
 def test_authentication_failure_is_not_presented_as_disconnected(console):
     window, _ = console
     window.render(ScreenModel(AppState.AUTHENTICITY_FAILED, "证书校验失败"))
-    assert "无法确认是 BORING 设备" in window._device_auth_summary.text()
+    assert "BORING 身份未确认" in window._device_auth_summary.text()
     assert "UNTRUSTED" in window._device_auth_summary.text()
     assert window._device_auth_summary.property("trust") == "untrusted"
 

@@ -21,12 +21,24 @@ class ClaudeStatusSettings(QFrame):
         )
         description.setWordWrap(True)
         layout.addWidget(description)
+        self.status = QLabel(objectName="claudeStatusSummary")
+        self.status.setWordWrap(True)
+        layout.addWidget(self.status)
+        details_toggle = QPushButton("技术详情", objectName="claudeStatusDetailsToggle")
+        details_toggle.setCheckable(True)
+        layout.addWidget(details_toggle)
+        details = QFrame(objectName="claudeStatusTechnical")
+        details_layout = QVBoxLayout(details)
+        details_layout.setContentsMargins(0, 0, 0, 0)
+        details.hide()
+        details_toggle.toggled.connect(details.setVisible)
+        layout.addWidget(details)
         self.detail = QLabel(objectName="claudeStatusDetail")
         self.detail.setWordWrap(True)
-        layout.addWidget(self.detail)
+        details_layout.addWidget(self.detail)
         self.sessions = QLabel(objectName="claudeStatusSessions")
         self.sessions.setWordWrap(True)
-        layout.addWidget(self.sessions)
+        details_layout.addWidget(self.sessions)
         note = QLabel(
             "只传事件与进程身份，不传提示词、回复正文或工具参数。USB 与蓝牙共用当前已认证的设备连接；"
             "蓝牙链路待实机验收，Windows 原生和 WSL 待独立验证。120 秒无新事件会清除陈旧状态，"
@@ -34,7 +46,7 @@ class ClaudeStatusSettings(QFrame):
             objectName="muted",
         )
         note.setWordWrap(True)
-        layout.addWidget(note)
+        details_layout.addWidget(note)
         buttons = QHBoxLayout()
         self.detect = QPushButton("检测 Claude Code", objectName="detectClaudeStatus")
         self.enable_button = QPushButton("启用状态联动…", objectName="enableClaudeStatus")
@@ -69,6 +81,10 @@ class ClaudeStatusSettings(QFrame):
 
     def refresh(self):
         inspection = self.bridge.inspection
+        summary = [tr(self.bridge.message)]
+        if inspection and inspection.problem:
+            summary.append(tr(inspection.problem))
+        self.status.setText("\n".join(summary))
         lines = [tr(self.bridge.message)]
         if inspection is not None:
             lines.extend(filter(None, [inspection.executable, inspection.version,

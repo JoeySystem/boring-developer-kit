@@ -138,6 +138,8 @@ Requests use flags `0x00`. Every valid request produces either `ACK` with flags
 | `0x19` | `SET_PROMPT` | Create or replace one stored UTF-8 prompt |
 | `0x1A` | `DELETE_PROMPT` | Delete one stored prompt |
 | `0x1B` | `GET_PROMPT_EVENT` | Poll for the next physical prompt-trigger event |
+| `0x1C` | `BLE_NAME_GET` | Read saved, active and default Bluetooth names |
+| `0x1D` | `BLE_NAME_SET` | Persist a Bluetooth name for the next normal reboot |
 | `0x20` | `CALIBRATION_START` | Axis/session parameters |
 | `0x21` | `CALIBRATION_SAMPLE` | Request current bounded sample window |
 | `0x22` | `CALIBRATION_CONFIRM` | Candidate calibration for normal config transaction |
@@ -409,6 +411,69 @@ ready. The sibling `CAPABILITIES.result.device_authentication` object always
 describes protocol version `1` and signature algorithm
 `rsa-pss-sha256-salt32`, so development software can understand the protocol
 without treating an unprovisioned sample as authenticated.
+
+## Bluetooth device name
+
+`CAPABILITIES.result.features.ble_name=true` enables `BLE_NAME_GET` and
+`BLE_NAME_SET`; `result.limits.ble_name_max_utf8_bytes` is `24`. Missing/false
+capability means unsupported: clients must not send these commands. Shared
+constants are `WMP_BLE_NAME_MAX_UTF8_BYTES=24u` and
+`WMP_BLE_NAME_DEFAULT="Boring Mist"`.
+
+GET accepts exactly `{}`; SET accepts exactly `{"name":"我的键盘"}`. Both
+return an ACK with the usual `command` and the same result fields:
+
+```json
+{"command":"BLE_NAME_SET","result":{"saved_name":"我的键盘","active_name":"Boring Mist","default_name":"Boring Mist","restart_required":true}}
+```
+
+`saved_name` is the effective persisted name for the next boot, falling back
+to `default_name` when no preference is stored. `active_name` is the name
+used for BLE initialization in this boot, not a host's cached display name.
+`restart_required` is exactly `saved_name != active_name`. Saving the active
+name again clears it. Restore default sends SET with GET's `default_name`;
+no separate reset command is added. An unchanged saved name succeeds without
+rewriting NVS.
+
+Names contain 1–24 UTF-8 bytes (excluding the storage NUL terminator), must
+decode to Unicode scalar values, and are never truncated, trimmed or
+normalized. Reject C0 controls U+0000–U+001F, DEL/C1 U+007F–U+009F, and line/
+paragraph separators U+2028/U+2029 anywhere. Leading and trailing whitespace
+use this exact Unicode White_Space set: U+0009–U+000D, U+0020, U+0085, U+00A0,
+U+1680, U+2000–U+200A, U+2028, U+2029, U+202F, U+205F, U+3000. Other internal
+whitespace is permitted. Chinese, English, digits and ordinary symbols are
+accepted within the byte limit. Invalid fields, types, UTF-8, lengths or
+characters return existing `VALIDATION_FAILED` (9). Invalid JSON framing
+retains the existing `INVALID_JSON` behavior.
+
+SET ACK means persistence succeeded; it does not reboot, disconnect BLE or
+change the active advertisement. The saved name takes effect at the next
+normal reboot. Reconnecting alone does not guarantee activation; host name
+caches may lag even after activation. Storage failure returns
+`STORAGE_FAILURE` (12), or `INTERNAL` (15) for an internal failure, never a
+success ACK. Mutually exclusive writes, including upgrade/factory reset,
+use `BUSY` (11). Writes run on the existing serialized main-loop/storage
+path. Existing HELLO, USB/BLE transport and console device-authentication
+rules apply unchanged; these commands introduce no authentication bypass.
+
+SET is queued by the receive callback and acknowledged only after main-loop
+persistence. There is one pending name write: another SET returns `BUSY`.
+An identical pending request ID/payload waits for the original response;
+reusing that ID with different content returns `DUPLICATE_REQUEST_MISMATCH`.
+Completed requests use the existing response replay cache. GET does not wait
+for a queued SET, so clients must wait for SET's ACK before confirmation GET.
+A fresh HELLO, transport release or session reset cancels an unexecuted name
+write without persisting it or sending a response into the new session. This
+is a session-cancellation exception to the usual request/response rule; after
+reconnecting, GET establishes whether the old write had already completed.
+
+This is a single device preference shared by all slots and operating modes,
+outside configuration JSON, generations and configuration digest semantics.
+Power cycles, ordinary OTA, Profile changes and configuration imports preserve
+it. Successful factory-default activation restores the default name; failed
+activation must retain the saved name. Resetting this preference does not
+clear identity or pairing. USB identity, BLE addresses, service/characteristic
+UUIDs and HID behavior remain unchanged; the nickname is not device identity.
 
 ## Device authentication
 

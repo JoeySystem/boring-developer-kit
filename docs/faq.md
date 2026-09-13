@@ -2,7 +2,7 @@
 
 ## 现在可以下载 SDK 开始运行吗？
 
-可以下载源码、SDK wheel 和示例。可以直接下载 [0.1.13 M 系列 Mac 测试版安装包](install-console.md)，或从 [控制台源码](../console/README.md) 自行运行 API 1.0 / Runner 宿主；两者同源，但公开适配和验收范围不同。请看 [版本与下载](versions.md)。
+可以下载源码、SDK wheel 和示例。可以直接下载 [0.1.13 M 系列 Mac 测试版安装包](install-console.md)，或从 [控制台源码](../console/README.md) 自行运行 API 1.0 / Runner 宿主；安装包仍是 0.1.13，源码已到 0.1.24，公开适配和验收范围不同。请看 [版本与下载](versions.md)。
 
 ## 点击 Code → Download ZIP，为什么不能导入控制台？
 

@@ -260,7 +260,7 @@ def test_all_review_reasons_translate(qapp, qtbot):
     try:
         for reason in REASONS:
             widget._rejected(reason)
-            assert "Existing content is unchanged" in widget.message.text()
+            assert "Existing content retained" in widget.message.text()
         widget.start("unused")
         assert "Checking image" in widget.message.text()
         widget.cancel()

@@ -362,11 +362,11 @@ def test_unresolved_exit_dialog_explains_unknown_result_in_both_languages(
     # macOS deliberately omits QMessageBox window titles; verify the catalog too.
     title = translate_ui_text("原设备未连接，写入结果未知")
     if language == ENGLISH:
-        assert "Write Outcome Unknown" in title
+        assert "Save Unconfirmed" in title
         assert "does not cancel" in message
-        assert "Export and Quit" in buttons
+        assert "Export Draft and Quit" in buttons
     else:
-        assert "写入结果未知" in title
+        assert "保存结果未确认" in title
         assert "退出不会取消" in message
-        assert "导出未决草稿后退出" in buttons
+        assert "导出草稿并退出" in buttons
     window._language_manager.set_language(SIMPLIFIED_CHINESE)

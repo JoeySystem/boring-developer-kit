@@ -302,7 +302,7 @@ def test_unsupported_shortcut_does_not_turn_into_released_modifier(
 
     assert editor.action() == {"type": "key", "usage": 4}
     assert record.text() == "取消录制"
-    assert "按下一个按键" in message.text()
+    assert "按下按键或组合键" in message.text()
 
     qtbot.keyClick(record, Qt.Key.Key_V)
     assert editor.action() == {"type": "key", "usage": 25}

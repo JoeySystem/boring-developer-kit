@@ -13,7 +13,8 @@
       "all_prompt_body_bytes": 49152,
       "frame_payload_bytes": 20480,
       "firmware_chunk_bytes": 4096,
-      "firmware_image_bytes": 2097152
+      "firmware_image_bytes": 2097152,
+      "ble_name_max_utf8_bytes": 24
     },
     "controls": [
       "key.1",
@@ -71,7 +72,8 @@
       "ble_configuration": true,
       "device_authentication": false,
       "firmware_signature_required": false,
-      "ble_host_slots": 3
+      "ble_host_slots": 3,
+      "ble_name": true
     },
     "screen_glyphs": {
       "version": 1,

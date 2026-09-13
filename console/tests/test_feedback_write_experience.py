@@ -84,7 +84,7 @@ def test_mapping_write_has_one_confirmation_in_side_rail(session, selected):
     vm.rename_profile(snapshot.active_profile_id, 'Changed')
     vm.prepare_device_write()
     gateway.command_completed.emit('VALIDATE_CONFIG', _ack('VALIDATE_CONFIG'))
-    buttons = [b for b in window.findChildren(QPushButton) if b.text() == '确认写入设备']
+    buttons = [b for b in window.findChildren(QPushButton) if b.objectName() == 'confirmConfigurationWrite']
     assert len(buttons) == 1
     rail = window.findChild(QScrollArea, 'overviewScroll').findChild(QPushButton, 'confirmConfigurationWrite')
     assert rail is buttons[0]
@@ -98,7 +98,7 @@ def test_mode_context_identifies_edited_profile_without_switching_it(session):
         context = window.findChild(QLabel, 'mappingModeContext')
         assert context is not None
         assert vm.draft.profile(vm.draft.config['active_profile'])['name'] in context.text()
-        assert 'NORMAL' in context.text()
+        assert '普通模式按键' in context.text()
         assert vm.draft.config == config
 
 

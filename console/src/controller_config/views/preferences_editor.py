@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QSlider,
     QScrollArea,
@@ -24,14 +25,168 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from controller_config.protocol.contract import ConfigEditorRules
+from controller_config.protocol.contract import ConfigEditorRules, validate_ble_name
 from controller_config.i18n import (
+    SKIP_TRANSLATION_PROPERTY,
     set_translatable_accessible_name,
     set_translatable_text,
+    translate_ui_text,
 )
 from controller_config.views.v4_widgets import V4Card, UsageRings
 from controller_config.views.digital_label import Boring5RLabel
 from controller_config.views.screen_icon_editor import ScreenIconDraft, ScreenIconEditor
+
+
+class BleNameEditor(QWidget):
+    """Edit the connected device's independent preference, not its Profile."""
+
+    def __init__(self, view_model, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("bleNameEditor")
+        self._vm = view_model
+        self._session = view_model.ble_name
+        self._local_error = ""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 12, 0, 0)
+        title = QLabel(objectName="inspectorTitle")
+        set_translatable_text(title, "蓝牙名称")
+        layout.addWidget(title)
+        self.identity = QLabel(objectName="bleNameSerial")
+        self.identity.setTextFormat(Qt.PlainText)
+        self.identity.setProperty(SKIP_TRANSLATION_PROPERTY, True)
+        layout.addWidget(self.identity)
+        self.name_input = QLineEdit(objectName="bleNameInput")
+        # The protocol limit is UTF-8 bytes. Never truncate QLineEdit to 24 characters.
+        self.name_input.setMaxLength(32767)
+        self.name_input.setProperty(SKIP_TRANSLATION_PROPERTY, True)
+        layout.addWidget(self.name_input)
+        self.counter = QLabel(objectName="bleNameByteCount")
+        self.counter.setProperty(SKIP_TRANSLATION_PROPERTY, True)
+        help_toggle = QPushButton(objectName="bleNameHelpToggle")
+        set_translatable_text(help_toggle, "名称长度说明")
+        help_toggle.setCheckable(True)
+        layout.addWidget(help_toggle)
+        self.counter.hide()
+        help_toggle.toggled.connect(self.counter.setVisible)
+        layout.addWidget(self.counter)
+        rules = QLabel(objectName="muted")
+        set_translatable_text(rules, "按 UTF-8 字节计数；中文通常占 3 字节。名称不能为空，不能有首尾空白、换行或控制字符。")
+        rules.setWordWrap(True)
+        rules.hide()
+        help_toggle.toggled.connect(rules.setVisible)
+        layout.addWidget(rules)
+        self.validation = QLabel(objectName="bleNameValidation")
+        self.validation.setWordWrap(True)
+        layout.addWidget(self.validation)
+        form = QFormLayout()
+        self.saved = QLabel(objectName="bleNameSaved")
+        self.active = QLabel(objectName="bleNameActive")
+        for source, value in (("已保存名称", self.saved), ("本次运行名称", self.active)):
+            caption = QLabel()
+            set_translatable_text(caption, source)
+            value.setWordWrap(True)
+            value.setTextFormat(Qt.PlainText)
+            value.setProperty(SKIP_TRANSLATION_PROPERTY, True)
+            form.addRow(caption, value)
+        layout.addLayout(form)
+        self.restart = QLabel(objectName="bleNameRestart")
+        self.restart.setWordWrap(True)
+        layout.addWidget(self.restart)
+        explanation = QLabel(objectName="muted")
+        set_translatable_text(explanation, "保存不会重启或断开设备；新名称在下次正常重启后生效。仅断连重连不保证生效，系统蓝牙列表也可能暂时缓存旧名称。")
+        explanation.setWordWrap(True)
+        layout.addWidget(explanation)
+        self.reason = QLabel(objectName="bleNameBlockReason")
+        self.reason.setWordWrap(True)
+        layout.addWidget(self.reason)
+        self.message = QLabel(objectName="bleNameMessage")
+        self.message.setWordWrap(True)
+        layout.addWidget(self.message)
+        self.technical = QLabel(objectName="bleNameTechnical")
+        self.technical.setProperty(SKIP_TRANSLATION_PROPERTY, True)
+        self.technical.setTextFormat(Qt.PlainText)
+        self.technical.setWordWrap(True)
+        self.technical.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.technical_toggle = QPushButton(objectName="bleNameDetailsToggle")
+        set_translatable_text(self.technical_toggle, "技术详情")
+        self.technical_toggle.setCheckable(True)
+        self.technical_toggle.toggled.connect(self.technical.setVisible)
+        layout.addWidget(self.technical_toggle)
+        layout.addWidget(self.technical)
+        actions = QHBoxLayout()
+        self.save_button = QPushButton(objectName="saveBleName")
+        self.default_button = QPushButton(objectName="restoreBleName")
+        self.read_button = QPushButton(objectName="readBleName")
+        for button, source, operation in (
+            (self.save_button, "保存名称", "save"),
+            (self.default_button, "恢复默认名称", "restore_default"),
+            (self.read_button, "重新读取名称", "read"),
+        ):
+            set_translatable_text(button, source)
+            button.clicked.connect(lambda _checked=False, method=operation: self._invoke(method))
+            actions.addWidget(button)
+        layout.addLayout(actions)
+        self.name_input.textEdited.connect(self._edit)
+        self._session.changed.connect(self._session_changed)
+        self._vm.changed.connect(self.refresh)
+        self.refresh()
+
+    def _session_changed(self) -> None:
+        self._local_error = ""
+        self.refresh()
+
+    def _edit(self, text: str) -> None:
+        self._local_error = ""
+        self._session.edit(text)
+
+    def _invoke(self, operation: str) -> None:
+        self._local_error = ""
+        try:
+            getattr(self._session, operation)()
+        except ValueError as exc:
+            self._local_error = str(exc)
+        self.refresh()
+
+    def refresh(self, *_args) -> None:
+        session = self._session
+        if self.name_input.text() != session.draft:
+            self.name_input.setText(session.draft)
+        self.identity.setText(session.serial or "—")
+        error = ""
+        try:
+            validate_ble_name(session.draft, session.max_bytes)
+            byte_count = len(session.draft.encode("utf-8"))
+        except ValueError as exc:
+            error = str(exc)
+            byte_count = len(session.draft.encode("utf-8", errors="replace"))
+        self.counter.setText(f"{byte_count} / {session.max_bytes} UTF-8 bytes")
+        set_translatable_text(self.validation, error if session.serial and session.supported
+                              and (session.result or session.draft) else "")
+        self.validation.setVisible(bool(self.validation.text()))
+        result = session.result or {}
+        self.saved.setText(str(result.get("saved_name", "—")))
+        self.active.setText(str(result.get("active_name", "—")))
+        set_translatable_text(self.restart, (
+            "已保存，下次正常重启生效" if result.get("restart_required")
+            else "已保存名称与本次运行名称一致" if result else "尚未读取蓝牙名称"
+        ))
+        reason = self._vm.ble_name_write_block_reason()
+        set_translatable_text(self.reason, reason)
+        self.reason.setVisible(bool(reason))
+        set_translatable_text(self.message, self._local_error or session.message)
+        self.message.setVisible(bool(self.message.text()))
+        self.technical.setText(session.technical)
+        self.technical_toggle.setVisible(bool(session.technical))
+        self.technical.setVisible(bool(session.technical) and self.technical_toggle.isChecked())
+        self.name_input.setEnabled(bool(session.serial) and session.supported and not session.busy)
+        can_write = not reason and not session.busy and session.connected and session.supported
+        self.save_button.setEnabled(can_write and session.dirty and not error)
+        self.default_button.setEnabled(can_write and bool(result) and (
+            result.get("saved_name") != result.get("default_name")
+            or session.draft != result.get("default_name")
+        ))
+        can_read = not reason or reason == "设备当前只读，不能保存蓝牙名称"
+        self.read_button.setEnabled(session.connected and session.supported and not session.busy and can_read)
 
 
 class RgbButton(QPushButton):
@@ -72,7 +227,7 @@ class RgbButton(QPushButton):
             return
         self._dialog_original = self._rgb
         dialog = QColorDialog(QColor(*self._rgb), self)
-        dialog.setWindowTitle(self._label)
+        dialog.setWindowTitle(translate_ui_text(self._label))
         dialog.currentColorChanged.connect(self._preview_color)
         dialog.rejected.connect(self._restore_dialog_color)
         dialog.finished.connect(self._finish_color_dialog)
@@ -106,7 +261,7 @@ class RgbButton(QPushButton):
         text_color = "#ffffff" if red * 299 + green * 587 + blue * 114 < 128000 else "#202324"
         compact = self.property("compactSwatch") is True
         set_translatable_text(self, "" if compact else f"{self._label}\n{red}, {green}, {blue}")
-        self.setToolTip(f"{self._label} · RGB {red}, {green}, {blue}")
+        self.setToolTip(f"{translate_ui_text(self._label)} · RGB {red}, {green}, {blue}")
         set_translatable_accessible_name(
             self, f"{self._label}：{red}, {green}, {blue}"
         )
@@ -612,7 +767,7 @@ class PreferencesEditor(QWidget):
                     or control_id in self._agent_status_control_ids
                 ):
                     continue
-                button = RgbButton(control_id, value, control_id=control_id)
+                button = RgbButton(f"白色动作键 {index + 1}", value, control_id=control_id)
                 button.setProperty("underKeyIndex", index)
                 button.value_changed.connect(self._emit_lighting_changed)
                 self._under_key_colors.append((index, button))

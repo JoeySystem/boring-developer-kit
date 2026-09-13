@@ -118,6 +118,7 @@ def test_write_happy_path_validates_confirms_polls_and_rebases_draft(contract) -
     assert view_model.write_transaction.state is ConfigTransactionState.ACTIVE
     assert view_model.model.snapshot.config_result["generation"] == generation
     assert view_model.draft is not None and not view_model.draft.is_dirty
+    assert view_model.pending_dirty_workspaces() == ()
     assert gateway.poll_intervals[-1] == 500
 
 

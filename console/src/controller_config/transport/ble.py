@@ -44,10 +44,11 @@ def _looks_like_boring_device(info: QBluetoothDeviceInfo) -> bool:
 
 
 def _ble_identifier(info: QBluetoothDeviceInfo) -> str:
-    device_uuid = info.deviceUuid().toString(QUuid.WithoutBraces).lower()
-    if device_uuid:
-        return device_uuid
-    return info.address().toString().lower()
+    device_uuid = info.deviceUuid()
+    if not device_uuid.isNull():
+        return device_uuid.toString(QUuid.WithoutBraces).lower()
+    address = info.address()
+    return "" if address.isNull() else address.toString().lower()
 
 
 if sys.platform == "darwin":
@@ -63,11 +64,23 @@ if sys.platform == "darwin":
             return self
 
         def centralManagerDidUpdateState_(self, manager: object) -> None:
-            self._owner._manager_state_changed(manager)
+            if self._owner is not None:
+                self._owner._manager_state_changed(manager)
+
+        def centralManager_didDiscoverPeripheral_advertisementData_RSSI_(
+            self, manager: object, peripheral: object, advertisement: object, rssi: object
+        ) -> None:
+            if self._owner is not None:
+                self._owner._peripheral_discovered(peripheral, advertisement)
 
 
 class MacConnectedDeviceFinder(QObject):
-    """Return BLE peripherals already owned by macOS, including BLE HID links."""
+    """Discover BLE using CoreBluetooth, including existing macOS HID links.
+
+    Qt discovery first calls legacy IOBluetoothHostController on the main thread;
+    on affected macOS installations that call waits forever. CoreBluetooth uses
+    asynchronous state/discovery callbacks without initializing that controller.
+    """
 
     device_found = Signal(str, str)
     finished = Signal()
@@ -77,6 +90,8 @@ class MacConnectedDeviceFinder(QObject):
         self._manager = None
         self._delegate = None
         self._finished = False
+        self._scanning = False
+        self._found: set[str] = set()
 
     def start(self) -> None:
         if sys.platform != "darwin":
@@ -90,30 +105,63 @@ class MacConnectedDeviceFinder(QObject):
     def _manager_state_changed(self, manager: object) -> None:
         if self._finished:
             return
-        if manager.state() != CoreBluetooth.CBManagerStatePoweredOn:
+        state = manager.state()
+        if state in (CoreBluetooth.CBManagerStateUnknown, CoreBluetooth.CBManagerStateResetting):
+            return  # Wait for a usable state; BleWorker's timer still bounds this.
+        if state != CoreBluetooth.CBManagerStatePoweredOn:
             self._finish()
             return
-        found: set[str] = set()
+        if self._scanning:
+            return
         for service_uuid in connected_service_uuid_texts():
             service = CoreBluetooth.CBUUID.UUIDWithString_(service_uuid)
             for peripheral in manager.retrieveConnectedPeripheralsWithServices_([service]):
                 identifier = str(peripheral.identifier().UUIDString()).lower()
-                if identifier in found:
+                if identifier in self._found:
                     continue
                 name = str(peripheral.name() or "").strip()
-                if not name.casefold().startswith(("boring ", "mist ", "codex micro ")):
+                # The configuration service identifies a candidate even after
+                # renaming. The generic HID fallback still requires a BORING
+                # legacy name; all candidates authenticate during bootstrap.
+                if (service_uuid != SERVICE_UUID_TEXT
+                        and not name.casefold().startswith(("boring ", "mist ", "codex micro "))):
                     continue
-                found.add(identifier)
+                self._found.add(identifier)
                 self.device_found.emit(identifier, name)
-        self._finish()
+        # An unfiltered BLE scan preserves the existing name-prefix fallback for
+        # firmware that does not advertise the configuration service UUID.
+        self._scanning = True
+        manager.scanForPeripheralsWithServices_options_(None, None)
+
+    def _peripheral_discovered(self, peripheral: object, advertisement: object) -> None:
+        if self._finished:
+            return
+        name = str(advertisement.get(CoreBluetooth.CBAdvertisementDataLocalNameKey)
+                   or peripheral.name() or "").strip()
+        services = advertisement.get(CoreBluetooth.CBAdvertisementDataServiceUUIDsKey, ())
+        has_service = any(str(service.UUIDString()).lower() == SERVICE_UUID_TEXT for service in services)
+        if not has_service and not name.casefold().startswith(("boring ", "mist ", "codex micro ")):
+            return
+        identifier = str(peripheral.identifier().UUIDString()).lower()
+        if identifier in self._found:
+            return
+        self._found.add(identifier)
+        self.device_found.emit(identifier, name)
 
     def cancel(self) -> None:
         self._finished = True
+        if self._manager is not None:
+            if self._scanning:
+                self._manager.stopScan()
+                self._scanning = False
+            self._manager.setDelegate_(None)
+        if self._delegate is not None:
+            self._delegate._owner = None
 
     def _finish(self) -> None:
         if self._finished:
             return
-        self._finished = True
+        self.cancel()
         self.finished.emit()
 
 
@@ -317,14 +365,12 @@ class BleWorker(SerialWorker):
         self.progress.emit("正在查找已配对的 BORING 蓝牙设备…")
         self._candidates_by_port.clear()
         self._device_info_by_port.clear()
-        self._scan_sources_pending = 2 if sys.platform == "darwin" else 1
-
-        discovery = QBluetoothDeviceDiscoveryAgent(self)
-        discovery.deviceDiscovered.connect(self._add_discovered_device)
-        discovery.finished.connect(self._scan_source_finished)
-        discovery.errorOccurred.connect(self._scan_source_finished)
-        self._discovery = discovery
-        discovery.start(QBluetoothDeviceDiscoveryAgent.LowEnergyMethod)
+        self._scan_sources_pending = 1
+        self._scan_timer = QTimer(self)
+        self._scan_timer.setSingleShot(True)
+        self._scan_timer.setInterval(6000)
+        self._scan_timer.timeout.connect(self.stop_scan)
+        self._scan_timer.start()
 
         if sys.platform == "darwin":
             finder = MacConnectedDeviceFinder(self)
@@ -332,12 +378,13 @@ class BleWorker(SerialWorker):
             finder.finished.connect(self._scan_source_finished)
             self._connected_finder = finder
             finder.start()
-
-        self._scan_timer = QTimer(self)
-        self._scan_timer.setSingleShot(True)
-        self._scan_timer.setInterval(6000)
-        self._scan_timer.timeout.connect(self.stop_scan)
-        self._scan_timer.start()
+        else:
+            discovery = QBluetoothDeviceDiscoveryAgent(self)
+            discovery.deviceDiscovered.connect(self._add_discovered_device)
+            discovery.finished.connect(self._scan_source_finished)
+            discovery.errorOccurred.connect(self._scan_source_finished)
+            self._discovery = discovery
+            discovery.start(QBluetoothDeviceDiscoveryAgent.LowEnergyMethod)
 
     @Slot()
     def stop_scan(self) -> None:
@@ -379,6 +426,7 @@ class BleWorker(SerialWorker):
     @Slot(str, str)
     def _add_connected_device(self, identifier: str, name: str) -> None:
         info = QBluetoothDeviceInfo(QUuid(identifier), name, 0)
+        info.setCoreConfigurations(QBluetoothDeviceInfo.CoreConfiguration.LowEnergyCoreConfiguration)
         self._store_device(identifier, info)
 
     def _store_device(self, identifier: str, info: QBluetoothDeviceInfo) -> None:

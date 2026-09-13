@@ -66,7 +66,7 @@ def test_first_visible_window_shows_guide_once(
     for expected_step in range(1, len(ONBOARDING_STEPS)):
         qtbot.mouseClick(next_button, Qt.MouseButton.LeftButton)
         assert dialog.step_index == expected_step
-    assert next_button.text() == "开始配置"
+    assert next_button.text() == "开始设置"
     qtbot.mouseClick(next_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(lambda: window._onboarding_dialog is None, timeout=1000)
     assert settings.value(ONBOARDING_COMPLETED_KEY, False, type=bool) is True
@@ -112,13 +112,13 @@ def test_guide_is_fully_available_in_english(qtbot, qapp, tmp_path) -> None:
 
     assert dialog.findChild(QLabel, "onboardingProgress").text() == "Step 1 of 7"
     assert dialog.findChild(QLabel, "onboardingTitle").text() == (
-        "Connect Your BORING Device"
+        "Connect Your Device"
     )
     next_button = dialog.findChild(QPushButton, "onboardingNext")
     assert next_button is not None
     for _ in range(len(ONBOARDING_STEPS) - 1):
         qtbot.mouseClick(next_button, Qt.MouseButton.LeftButton)
-    assert next_button.text() == "Start Configuring"
+    assert next_button.text() == "Get Started"
 
 
 @pytest.mark.parametrize("step_index", range(len(ONBOARDING_STEPS)))
@@ -165,6 +165,6 @@ def test_guide_explains_missing_device_without_blocking(qtbot, qapp, contract, t
     assert window._view_model.draft is None
     window._open_onboarding_page("lighting")
     assert window._view_model.page == "overview"
-    assert messages == ["连接设备并读取配置后，即可调整外观与反馈。"]
+    assert messages == ["连接并读取设备后，可调整外观与反馈。"]
     window._open_onboarding_page("settings")
     assert window._view_model.page == "settings"

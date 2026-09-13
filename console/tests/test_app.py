@@ -40,7 +40,7 @@ def test_background_mode_is_an_explicit_startup_option() -> None:
 def test_packaged_firmware_source_and_explicit_sample_channel() -> None:
     from controller_config.firmware_release import default_firmware_source
     source = default_firmware_source()
-    assert source["channel"] == "stable"
+    assert source == {"manifest_url": "", "channel": "stable"}
     assert isinstance(source["manifest_url"], str)
     assert build_parser().parse_args(["--firmware-channel", "sample"]).firmware_channel == "sample"
 
@@ -56,7 +56,7 @@ def test_authenticity_failure_is_available_for_ui_qa() -> None:
     (("linux", False, False), ("darwin", True, True)),
 )
 def test_application_quit_always_shuts_down_device_gateway(
-    monkeypatch, platform: str, usage_enabled: bool, live_device: bool
+    monkeypatch, qapp, platform: str, usage_enabled: bool, live_device: bool
 ) -> None:
     shutdowns = []
     integrations = []
@@ -96,12 +96,18 @@ def test_application_quit_always_shuts_down_device_gateway(
         def setOrganizationName(self, _name: str) -> None:  # noqa: N802
             pass
 
+        def setWindowIcon(self, _icon) -> None:  # noqa: N802
+            pass
+
         def clipboard(self):
             return object()
 
         def exec(self) -> int:
             self.aboutToQuit.emit()
             return 0
+
+        def quit(self) -> None:
+            self.aboutToQuit.emit()
 
     class FakeInstance:
         def __init__(self) -> None:
@@ -210,9 +216,23 @@ def test_application_quit_always_shuts_down_device_gateway(
     monkeypatch.setattr(app_module, "MacLaunchAgent", lambda *_args: object())
     monkeypatch.setattr(app_module, "MainWindow", lambda *_args, **_kwargs: FakeWindow())
     monkeypatch.setattr(app_module.sys, "platform", platform)
+    from types import SimpleNamespace
+    import controller_config.desktop_update as update_module
+    import controller_config.views.desktop_update as update_ui_module
+    monkeypatch.setattr(update_ui_module, 'DesktopUpdateUi', lambda _window: SimpleNamespace(
+        prepare_restart=lambda: True, attach=lambda _updater: None,
+    ))
+    monkeypatch.setattr(update_module, 'create_desktop_updater', lambda *_args, **_kwargs: SimpleNamespace(
+        quit_requested=FakeSignal(), start=lambda: None,
+        shutdown=lambda: shutdowns.append('desktop-updater'),
+    ))
 
     arguments = [] if live_device else ["--demo", "ready"]
     assert app_module.main(arguments) == 0
+
+    if live_device:
+        assert shutdowns.count('desktop-updater') == 1
+        shutdowns.remove('desktop-updater')
 
     expected_shutdowns = [
         "codex-usage-started",

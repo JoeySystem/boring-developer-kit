@@ -236,7 +236,7 @@ def test_haptic_card_translates_and_fits(qtbot, qapp, contract, tmp_path, langua
     assert card.width() == width
     assert card.rect().contains(card.childrenRect())
     if language == "en_US":
-        assert editor._haptic_channels["on_encoder"].text() == "Knob rotation feedback"
+        assert editor._haptic_channels["on_encoder"].text() == "Knob Feedback"
         assert all("固件" not in label.text() for label in card.findChildren(QLabel))
     for checkbox in card.findChildren(QCheckBox):
         assert checkbox.width() >= checkbox.sizeHint().width()

@@ -45,7 +45,7 @@ def test_mapping_stacks_before_columns_collide(session, qtbot):
 
 @pytest.mark.parametrize('page', ['overview', 'prompts', 'lighting', 'actions', 'settings', 'firmware', 'diagnostics'])
 @pytest.mark.parametrize('width,height', [(1280, 720), (1024, 768), (780, 560)])
-@pytest.mark.parametrize('language', ['zh_CN', 'en_US'])
+@pytest.mark.parametrize('language', ['zh_CN', 'en_US', 'ja_JP'])
 def test_pages_do_not_hide_horizontal_content(session, qtbot, tmp_path, page, width, height, language):
     window, vm, _gateway, _snapshot, _store = session
     window._language_manager.set_language(language)
@@ -64,7 +64,7 @@ def test_pages_do_not_hide_horizontal_content(session, qtbot, tmp_path, page, wi
     assert window.grab().save(str(tmp_path / f'{page}-{width}.png'))
 
 
-@pytest.mark.parametrize('language', ['zh_CN', 'en_US'])
+@pytest.mark.parametrize('language', ['zh_CN', 'en_US', 'ja_JP'])
 def test_open_inspector_and_profile_menu_fit(session, qtbot, tmp_path, language):
     window, vm, _gateway, _snapshot, _store = session
     window._language_manager.set_language(language)
@@ -103,7 +103,7 @@ def test_open_inspector_and_profile_menu_fit(session, qtbot, tmp_path, language)
     menu.close()
 
 
-@pytest.mark.parametrize('language', ['zh_CN', 'en_US'])
+@pytest.mark.parametrize('language', ['zh_CN', 'en_US', 'ja_JP'])
 def test_playground_sections_fit_small_window(session, qtbot, language):
     window, vm, *_ = session
     window._language_manager.set_language(language)
@@ -162,7 +162,7 @@ def test_returning_from_compact_layout_does_not_keep_stacked_height(session, qtb
         assert workspace.height() <= initial_height + 20
 
 
-@pytest.mark.parametrize('language', ['zh_CN', 'en_US'])
+@pytest.mark.parametrize('language', ['zh_CN', 'en_US', 'ja_JP'])
 def test_unselected_inspector_cards_fit_their_rail(session, qtbot, language):
     window, *_ = session
     window._language_manager.set_language(language)

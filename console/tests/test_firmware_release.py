@@ -3,7 +3,14 @@ from __future__ import annotations
 from dataclasses import replace
 import hashlib
 import json
+from pathlib import Path
 import struct
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+from controller_config import firmware_signature
+from controller_config.firmware_signature import sign_manifest, verify_manifest_signature, FirmwareSignatureError
 
 import pytest
 from PySide6.QtCore import QObject, QUrl
@@ -35,6 +42,25 @@ from controller_config.firmware_update import (
 from controller_config.transport.demo import DemoGateway, _power_v2_snapshot
 from controller_config.viewmodels.main import MainViewModel
 from controller_config.views.main_window import MainWindow
+
+
+# Test-only ephemeral authority; no production signing key is loaded by these tests.
+_TEST_SIGNING_KEY = Ed25519PrivateKey.generate()
+
+
+@pytest.fixture(autouse=True)
+def trust_test_signing_key(monkeypatch):
+    monkeypatch.setattr(
+        firmware_signature, "default_firmware_public_key",
+        lambda: _TEST_SIGNING_KEY.public_key().public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw
+        ),
+    )
+
+
+def _resign(bundle):
+    bundle.manifest.update(sign_manifest(bundle.manifest, _TEST_SIGNING_KEY))
+    return bundle
 
 
 class FakeReleaseSource(FirmwareReleaseSource):
@@ -77,6 +103,9 @@ class FakeManifestReply(QObject):
 
     def property(self, name: str):
         return super().property(name)
+
+    def attribute(self, _name):
+        return None
 
     def error(self):
         return QNetworkReply.NetworkError.NoError
@@ -129,7 +158,7 @@ def _bundle(
         "git_dirty": git_dirty,
     }
     return RemoteFirmwareBundle(
-        manifest=manifest,
+        manifest=sign_manifest(manifest, _TEST_SIGNING_KEY),
         image_data=bytes(image),
         manifest_url="https://updates.example.test/firmware-manifest.json",
     )
@@ -374,7 +403,8 @@ def test_same_version_uses_numeric_project_build_sequence(contract, offered, ins
 
 def test_sample_channel_preserves_real_package_state_and_cannot_enter_stable(contract):
     bundle = _bundle(contract, validation_state="sample-verified", git_dirty=True)
-    bundle.manifest.update(channel="sample", minimum_app_version="0.1.0", signature="")
+    bundle.manifest.update(channel="sample", minimum_app_version="0.1.16")
+    _resign(bundle)
     snapshot = _power_v2_snapshot(contract, read_only=False)
     assert _validate_release_manifest(bundle.manifest, snapshot, channel="sample")["git_dirty"] is True
     package = load_remote_firmware_bundle(replace(bundle, channel="sample"), contract)
@@ -390,12 +420,12 @@ def test_sample_channel_preserves_real_package_state_and_cannot_enter_stable(con
     ("hardware_revision", "REV_A", "不一致"),
     ("device_model", "BORING-01", "不一致"),
     ("download_url", "http://example.test/app.bin", "HTTPS"),
-    ("signature", "not-verified", "验签"),
     ("mandatory", "false", "类型"),
 ])
 def test_contract_rejects_unusable_online_metadata(contract, field, value, error):
     bundle = _bundle(contract)
     bundle.manifest[field] = value
+    _resign(bundle)
     with pytest.raises(FirmwareReleaseError, match=error):
         _validate_release_manifest(bundle.manifest, _power_v2_snapshot(contract, read_only=False))
 
@@ -438,3 +468,125 @@ def test_release_for_previous_hardware_is_not_offered(qtbot, contract):
         assert "型号已改变" in model.remote_firmware.technical
     finally:
         model.shutdown()
+
+
+def test_cancelled_request_cannot_consume_new_reply_or_emit_progress(qapp, contract):
+    from PySide6.QtCore import Signal
+    class Reply(FakeManifestReply):
+        finished = Signal()
+        downloadProgress = Signal(int, int)
+        def abort(self):
+            pass  # Model a completion already queued before cancellation.
+    bundle = _bundle(contract)
+    url = 'https://example.com/firmware-manifest.json'
+    old, new = [Reply(json.dumps(bundle.manifest).encode(), url) for _ in range(2)]
+    class Network:
+        def __init__(self): self.replies = [old, new]
+        def get(self, _request): return self.replies.pop(0)
+    source = HttpFirmwareReleaseSource(url, network=Network())
+    found, progress = [], []
+    source.release_found.connect(found.append)
+    source.download_progress.connect(lambda *_: progress.append(True))
+    snapshot = _power_v2_snapshot(contract, read_only=False)
+    source.check(snapshot)
+    source.cancel()
+    source.check(snapshot)
+    old.finished.emit()
+    source._on_download_progress(old, 100, 200, 200, '固件镜像')
+    assert source._reply is new
+    assert found == [] and progress == []
+    new.finished.emit()
+    assert len(found) == 1
+    assert source._reply is None
+
+
+@pytest.mark.parametrize("channel", ["stable", "sample"])
+@pytest.mark.parametrize("signature", [None, "", "ed25519-v2:AAAA", "not-verified"])
+def test_online_unsigned_or_unknown_signature_format_is_rejected(contract, channel, signature):
+    bundle = _bundle(
+        contract, validation_state="released" if channel == "stable" else "built",
+        git_dirty=channel == "sample",
+    )
+    bundle = replace(bundle, channel=channel)
+    bundle.manifest["channel"] = channel
+    _resign(bundle)
+    if signature is None:
+        bundle.manifest.pop("signature")
+    else:
+        bundle.manifest["signature"] = signature
+    with pytest.raises(FirmwareReleaseError):
+        _validate_release_manifest(
+            bundle.manifest, _power_v2_snapshot(contract, read_only=False), channel=channel,
+        )
+    # The downloaded-package entry point must independently enforce the same rule.
+    with pytest.raises(FirmwareReleaseError):
+        load_remote_firmware_bundle(bundle, contract)
+
+
+def test_signature_from_untrusted_publisher_is_rejected(contract):
+    bundle = _bundle(contract)
+    unknown_key = Ed25519PrivateKey.generate()
+    bundle.manifest.update(sign_manifest(bundle.manifest, unknown_key))
+    with pytest.raises(FirmwareSignatureError):
+        verify_manifest_signature(bundle.manifest)
+    with pytest.raises(FirmwareReleaseError):
+        _validate_release_manifest(bundle.manifest, _power_v2_snapshot(contract, read_only=False))
+    with pytest.raises(FirmwareReleaseError):
+        load_remote_firmware_bundle(bundle, contract)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("version", "0.3.0-alpha.3"),
+    ("product_id", "other-product"),
+    ("hardware_id", "WMP-S3-MATRIX12-V1"),
+    ("build_id", "20260912.99-attacker"),
+    ("download_url", "https://attacker.example/app.bin"),
+    ("sha256", "0" * 64),
+    ("minimum_app_version", "0.1.0"),
+    ("release_notes", "替换后的发布说明"),
+])
+def test_signature_binds_firmware_identity_download_and_integrity(contract, field, value):
+    bundle = _bundle(contract)
+    bundle.manifest[field] = value
+    with pytest.raises(FirmwareSignatureError):
+        verify_manifest_signature(bundle.manifest)
+    with pytest.raises(FirmwareReleaseError):
+        _validate_release_manifest(bundle.manifest, _power_v2_snapshot(contract, read_only=False))
+    with pytest.raises(FirmwareReleaseError):
+        load_remote_firmware_bundle(bundle, contract)
+
+
+def test_replacing_image_and_recalculating_digest_cannot_forge_release(contract):
+    bundle = _bundle(contract)
+    changed_image = bytearray(bundle.image_data)
+    changed_image[-1] ^= 1  # Keep all image headers/identities valid.
+    bundle = replace(bundle, image_data=bytes(changed_image))
+    bundle.manifest["sha256"] = hashlib.sha256(bundle.image_data).hexdigest()
+    bundle.manifest["size"] = len(bundle.image_data)
+    with pytest.raises(FirmwareReleaseError):
+        load_remote_firmware_bundle(bundle, contract)
+
+
+def test_signing_is_stable_across_json_formatting_and_does_not_mutate_input(contract):
+    bundle = _bundle(contract)
+    manifest = {key: value for key, value in bundle.manifest.items() if key != "signature"}
+    manifest["release_notes"] = "固件发布说明"
+    signed = sign_manifest(manifest, _TEST_SIGNING_KEY)
+    assert "signature" not in manifest
+    roundtrip = json.loads(json.dumps(dict(reversed(list(signed.items()))), ensure_ascii=True, indent=4))
+    verify_manifest_signature(roundtrip)
+
+
+def test_signed_sample_passes_online_validation_and_package_loader(contract):
+    bundle = _bundle(contract, validation_state="built", git_dirty=True)
+    bundle.manifest.update(channel="sample", download_url="https://example.test/firmware.bin")
+    _resign(bundle)
+    checked = _validate_release_manifest(
+        bundle.manifest, _power_v2_snapshot(contract, read_only=False), channel="sample",
+    )
+    package = load_remote_firmware_bundle(RemoteFirmwareBundle(
+        manifest=checked, image_data=bundle.image_data,
+        manifest_url="https://example.test/firmware-manifest.json", channel="sample",
+    ), contract)
+    assert package.build_id == bundle.manifest["build_id"]
+    assert package.validation_state == "built"

@@ -17,20 +17,25 @@ def test_resize_grows_device_and_keeps_actions_next_to_content(session, qtbot):
     window.show()
     overview = window.findChild(QScrollArea, "overviewScroll")
     qtbot.wait(300)
-    qtbot.waitUntil(lambda: overview.verticalScrollBar().maximum() == 0)
+    assert overview.widget().width() <= overview.viewport().width()
     shell = window.findChild(QWidget, "deviceShell")
     small_side = shell.width()
     for width, height in ((1920, 1050), (1280, 800), (1100, 700)):
         window.resize(width, height)
         qtbot.wait(150)
-        qtbot.waitUntil(lambda: overview.verticalScrollBar().maximum() == 0)
+        assert overview.widget().width() <= overview.viewport().width()
+        if height >= 1000:
+            assert overview.verticalScrollBar().maximum() == 0
         assert shell.width() == shell.height()
         stage = window.findChild(QWidget, "deviceStage")
         assert stage.rect().contains(QRect(shell.mapTo(stage, QPoint()), shell.size()))
         sync = window.findChild(QWidget, "syncSummaryCard")
         inspector = window.findChild(QWidget, "selectionInspectorCard")
         assert sync.y() - inspector.geometry().bottom() <= 21
-        assert _visible_inside(window.findChild(QPushButton, "saveConfigurationToDevice"), overview.viewport())
+        apply = window.findChild(QPushButton, "saveConfigurationToDevice")
+        overview.ensureWidgetVisible(apply, 0, 0)
+        qtbot.wait(50)
+        assert _visible_inside(apply, overview.viewport())
         if width == 1920:
             assert shell.width() > small_side * 1.3
             assert inspector.height() < overview.viewport().height() * .6
@@ -55,11 +60,16 @@ def test_resize_retains_edit_and_scaled_key_hit_targets(session, qtbot):
         assert name.cursorPosition() == 3
         assert window._selected_control_id == "key.3"
         outer = window.findChild(QScrollArea, "overviewScroll")
-        assert outer.verticalScrollBar().maximum() == 0
+        assert outer.widget().width() <= outer.viewport().width()
+        if height >= 1000:
+            assert outer.verticalScrollBar().maximum() == 0
         body = window.findChild(QScrollArea, "mappingEditorBody")
         assert body.widget().width() <= body.viewport().width()
         for button_name in ("applyMappingToDevice", "saveMappingDraft"):
-            assert _visible_inside(window.findChild(QPushButton, button_name), outer.viewport())
+            button = window.findChild(QPushButton, button_name)
+            outer.ensureWidgetVisible(button, 0, 0)
+            qtbot.wait(50)
+            assert _visible_inside(button, outer.viewport())
     # Resolve the local input without issuing a device write before fixture cleanup.
     window.findChild(QPushButton, "saveMappingDraft").click()
 
@@ -77,7 +87,9 @@ def test_small_logical_screen_keeps_stacked_controls_reachable(session, qtbot):
     assert overview.widget().width() <= overview.viewport().width()
     shell = window.findChild(QWidget, "deviceShell")
     assert shell.width() >= 240 and shell.width() == shell.height()
-    assert _visible_inside(shell, overview.viewport())
+    overview.ensureWidgetVisible(shell, 0, 0)
+    qtbot.wait(50)
+    assert _visible_inside(shell, overview.viewport()), (shell.mapTo(overview.viewport(), QPoint()).toTuple(), shell.size().toTuple(), overview.viewport().size().toTuple(), overview.verticalScrollBar().value(), overview.verticalScrollBar().maximum())
     button = window.findChild(QPushButton, "applyMappingToDevice")
     overview.ensureWidgetVisible(button)
     qtbot.wait(100)

@@ -15,9 +15,10 @@ from PySide6.QtNetwork import QSslCertificate
 import pytest
 
 import controller_config.firmware_release as releases
+from controller_config.i18n import translate_ui_text
 from controller_config.firmware_update import FirmwareUpdateState
 from controller_config.viewmodels.main import MainViewModel
-from test_firmware_release import _bundle, RecordingDemoGateway
+from test_firmware_release import _bundle, _resign, RecordingDemoGateway, trust_test_signing_key
 
 
 @pytest.fixture
@@ -90,9 +91,10 @@ def test_https_discovery_download_validation_install_and_reconnect(qtbot, contra
     bundle.manifest.update(
         device_model=contract.product_id, hardware_revision=bundle.manifest["hardware_id"],
         channel="sample", download_url=base_url + "/build/wired_macro_pad.bin",
-        minimum_app_version="0.1.0", mandatory=False, signature="",
+        minimum_app_version="0.1.16", mandatory=False,
         release_notes="HTTPS integration test", published_at="2026-09-09T00:00:00Z",
     )
+    _resign(bundle)
     (root / "firmware-manifest.json").write_text(json.dumps(bundle.manifest))
     (root / "build").mkdir()
     image = bytearray(bundle.image_data)
@@ -107,6 +109,21 @@ def test_https_discovery_download_validation_install_and_reconnect(qtbot, contra
         qtbot.waitUntil(lambda: model.remote_firmware.state in {releases.RemoteFirmwareState.AVAILABLE, releases.RemoteFirmwareState.FAILED}, timeout=5000)
         assert model.remote_firmware.state is releases.RemoteFirmwareState.AVAILABLE, model.remote_firmware.technical
         assert requests == ["/firmware-manifest.json"]
+        model.model.snapshot.versions["build_id"] = "20260908.01"
+        # Check the ordinary maintenance page exposes current and target data.
+        from PySide6.QtWidgets import QLabel
+        from controller_config.views.main_window import MainWindow
+        window = MainWindow(model)
+        qtbot.addWidget(window)
+        model.navigate("firmware")
+        texts = "\n".join(label.text() for label in window.findChildren(QLabel))
+        assert translate_ui_text(f"当前固件版本：{model.model.snapshot.versions['firmware']}。") in texts
+        assert translate_ui_text(f"当前构建：{model.model.snapshot.versions['build_id']}。") in texts
+        assert translate_ui_text(f"版本：{bundle.manifest['version']}") in texts
+        assert f"build_id: {bundle.manifest['build_id']}" in texts
+        # The surrounding release block is translated; server-provided notes
+        # must remain present and unchanged in the maintenance page.
+        assert "HTTPS integration test" in texts
         model.download_remote_firmware()
         qtbot.waitUntil(lambda: model.remote_firmware.state in {releases.RemoteFirmwareState.DOWNLOADED, releases.RemoteFirmwareState.FAILED}, timeout=5000)
         assert requests == ["/firmware-manifest.json", "/build/wired_macro_pad.bin"]
@@ -114,6 +131,7 @@ def test_https_discovery_download_validation_install_and_reconnect(qtbot, contra
         if corrupt:
             assert model.remote_firmware.state is releases.RemoteFirmwareState.FAILED
             assert "SHA-256" in model.remote_firmware.technical
+            assert model.remote_firmware.message == "固件校验未通过，未安装。"
             assert model.firmware_update.package is None
             return
         assert model.remote_firmware.state is releases.RemoteFirmwareState.DOWNLOADED, model.remote_firmware.technical
@@ -124,5 +142,92 @@ def test_https_discovery_download_validation_install_and_reconnect(qtbot, contra
         assert model.model.snapshot.versions["firmware"] == bundle.manifest["version"]
         assert model.model.snapshot.versions["build_id"] == bundle.manifest["build_id"]
         assert gateway.commands[-1].name == "FW_STATUS"
+    finally:
+        model.shutdown()
+
+
+def test_https_404_keeps_retry_available_without_claiming_current(qtbot, contract, https_server):
+    from PySide6.QtWidgets import QLabel, QPushButton
+    from controller_config.views.main_window import MainWindow
+    _, base_url, requests = https_server
+    source = releases.HttpFirmwareReleaseSource(base_url + '/not-published/firmware-manifest.json', channel='sample')
+    gateway = RecordingDemoGateway(contract, 'ready')
+    model = MainViewModel(gateway, contract, firmware_release_source=source)
+    window = MainWindow(model)
+    qtbot.addWidget(window)
+    try:
+        model.start()
+        qtbot.waitUntil(lambda: model.remote_firmware.state is releases.RemoteFirmwareState.UNPUBLISHED, timeout=5000)
+        model.navigate('firmware')
+        assert 'HTTP 404' in model.remote_firmware.technical
+        assert '尚未发布' in model.remote_firmware.technical
+        assert model.remote_firmware.release is None
+        assert model.firmware_update.package is None
+        assert window.findChild(QPushButton, 'checkRemoteFirmware').isEnabled()
+        assert not window.findChild(QPushButton, 'downloadRemoteFirmware')
+        texts = [label.text() for label in window.findChildren(QLabel)]
+        assert '暂无可用的固件发布' in model.remote_firmware.message
+        assert '已连接更新服务' in model.remote_firmware.message
+        assert '失败' not in model.remote_firmware.message
+        technical = window.findChild(QLabel, 'remoteFirmwareTechnical')
+        toggle = window.findChild(QPushButton, 'remoteFirmwareDetailsToggle')
+        assert technical.isHidden()
+        assert 'HTTP 404' in technical.text()
+        assert window.findChild(QPushButton, 'checkRemoteFirmware').text() == '重新检查'
+        toggle.click()
+        assert not technical.isHidden()
+        toggle.click()
+        assert technical.isHidden()
+        assert not any('已是最新' in text or '已安装并读回' in text for text in texts)
+        window.findChild(QPushButton, 'checkRemoteFirmware').click()
+        qtbot.waitUntil(lambda: len(requests) == 2 and model.remote_firmware.state is releases.RemoteFirmwareState.UNPUBLISHED, timeout=5000)
+        assert not any(command.name.startswith('FW_') for command in gateway.commands)
+    finally:
+        model.shutdown()
+
+
+def test_untrusted_https_certificate_is_rejected_before_manifest(qtbot, contract, https_server, monkeypatch):
+    from PySide6.QtNetwork import QNetworkRequest
+    _, base_url, requests = https_server
+    # A normal request trusts the system CA set, not the fixture's temporary CA.
+    monkeypatch.setattr(releases, '_request', QNetworkRequest)
+    source = releases.HttpFirmwareReleaseSource(base_url + '/firmware-manifest.json', channel='sample')
+    gateway = RecordingDemoGateway(contract, 'ready')
+    model = MainViewModel(gateway, contract, firmware_release_source=source)
+    try:
+        model.start()
+        qtbot.waitUntil(lambda: model.remote_firmware.state is releases.RemoteFirmwareState.FAILED, timeout=5000)
+        assert model.remote_firmware.release is None
+        assert model.firmware_update.package is None
+        assert model.remote_firmware.message == "暂时无法连接更新服务，请检查网络后重试。"
+        assert requests == []  # TLS failed before an HTTP request reached the server.
+        assert not any(command.name.startswith('FW_') for command in gateway.commands)
+    finally:
+        model.shutdown()
+
+
+def test_public_default_source_is_unconfigured():
+    assert releases.default_firmware_source() == {'manifest_url': '', 'channel': 'stable'}
+
+
+def test_missing_image_is_download_failure_not_empty_channel(qtbot, contract, https_server):
+    root, base_url, requests = https_server
+    bundle = _bundle(contract, validation_state='sample-verified', git_dirty=True)
+    bundle.manifest.update(channel='sample', download_url=base_url + '/missing.bin')
+    _resign(bundle)
+    (root / 'firmware-manifest.json').write_text(json.dumps(bundle.manifest))
+    source = releases.HttpFirmwareReleaseSource(base_url + '/firmware-manifest.json', channel='sample')
+    gateway = RecordingDemoGateway(contract, 'ready')
+    model = MainViewModel(gateway, contract, firmware_release_source=source)
+    try:
+        model.start()
+        qtbot.waitUntil(lambda: model.remote_firmware.state is releases.RemoteFirmwareState.AVAILABLE, timeout=5000)
+        model.download_remote_firmware()
+        qtbot.waitUntil(lambda: model.remote_firmware.state is releases.RemoteFirmwareState.FAILED, timeout=5000)
+        assert model.remote_firmware.message == '固件下载暂不可用，未安装。请重新检查发布信息。'
+        assert 'HTTP 404' in model.remote_firmware.technical
+        assert model.remote_firmware.release is not None  # Explicit check/download retry remains possible.
+        assert model.firmware_update.package is None
+        assert not any(command.name.startswith('FW_') for command in gateway.commands)
     finally:
         model.shutdown()

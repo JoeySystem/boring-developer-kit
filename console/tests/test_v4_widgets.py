@@ -63,9 +63,10 @@ def test_focus_card_has_no_orange_outline_or_glow(qapp):
 
 @pytest.mark.parametrize("name", ["promptDirectionCard", "encoderControl", "joystickControl", "controlKey"])
 def test_selected_controls_do_not_restore_legacy_orange_borders(qapp, name):
-    from controller_config.views.main_window import APP_STYLE, _KeycapButton
+    from controller_config.views.device_silhouette import KeycapButton
+    from controller_config.views.main_window import APP_STYLE
 
-    button_type = _KeycapButton if name == "controlKey" else QPushButton
+    button_type = KeycapButton if name == "controlKey" else QPushButton
     button = button_type(objectName=name)
     button.setProperty("selected", True)
     button.setStyleSheet(APP_STYLE + V4_STYLE)

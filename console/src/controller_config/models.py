@@ -34,11 +34,12 @@ class PortCandidate:
 
     @property
     def display_name(self) -> str:
+        suffix = f" · {self.serial_number[-6:]}" if self.serial_number else ""
         if self.transport == "bluetooth":
             detail = self.description or self.manufacturer or DEVICE_DISPLAY_NAME
-            return f"{detail} · 蓝牙"
+            return f"{detail} · 蓝牙{suffix}"
         detail = self.description or self.manufacturer or "USB CDC"
-        return f"{detail} · {self.port_name}"
+        return f"{detail} · USB · {self.port_name}{suffix}"
 
 
 @dataclass(frozen=True)

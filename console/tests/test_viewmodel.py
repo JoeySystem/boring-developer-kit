@@ -246,7 +246,8 @@ def test_disconnect_preserves_last_snapshot(qtbot) -> None:
     view_model = MainViewModel(gateway)
     snapshot = SimpleNamespace(is_read_only=False, config_status_label="已同步 · 可配置",
                                identity={"serial": "test-device", "hardware_id": "test-board"},
-                               capabilities={"features": {}}, port_name="test-port")
+                               capabilities={"features": {}}, port_name="test-port",
+                               trust=SimpleNamespace(is_authenticated=False))
 
     gateway.snapshot_ready.emit(snapshot)
     assert view_model.model.state is AppState.READY
@@ -261,7 +262,8 @@ def test_disconnected_device_is_polled_and_reconnected_when_it_returns(qtbot) ->
     view_model = MainViewModel(gateway)
     snapshot = SimpleNamespace(is_read_only=False, config_status_label="已同步 · 可配置",
                                identity={"serial": "test-device", "hardware_id": "test-board"},
-                               capabilities={"features": {}}, port_name="test-port")
+                               capabilities={"features": {}}, port_name="test-port",
+                               trust=SimpleNamespace(is_authenticated=False))
     gateway.snapshot_ready.emit(snapshot)
     gateway.disconnected.emit("port gone")
 

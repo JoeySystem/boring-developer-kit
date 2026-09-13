@@ -26,7 +26,7 @@ from controller_config.qt_bootstrap import prepare_qt_platform_plugins
 
 prepare_qt_platform_plugins()
 
-from PySide6.QtCore import QSettings  # noqa: E402
+from PySide6.QtCore import QSettings, QTimer  # noqa: E402
 from PySide6.QtWidgets import QApplication, QMessageBox, QStyle  # noqa: E402
 
 from controller_config.protocol.contract import Contract, ContractError
@@ -120,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
     manifest_url = args.firmware_manifest_url or firmware_source["manifest_url"]
     release_source = (
         HttpFirmwareReleaseSource(manifest_url, channel=args.firmware_channel or firmware_source["channel"])
-        if manifest_url
+        if manifest_url and not args.demo
         else None
     )
     prompt_helper = (
@@ -174,6 +174,16 @@ def main(argv: list[str] | None = None) -> int:
         background_controller=background,
         onboarding_settings=ui_settings,
     )
+    from controller_config.desktop_update import create_desktop_updater
+    from controller_config.views.desktop_update import DesktopUpdateUi
+    if not args.demo:
+        update_ui = DesktopUpdateUi(window)
+        window._desktop_update_ui = update_ui
+        updater = create_desktop_updater(update_ui.prepare_restart, parent=app)
+        update_ui.attach(updater)
+        updater.quit_requested.connect(app.quit)
+        app.aboutToQuit.connect(updater.shutdown)
+        QTimer.singleShot(1500, updater.start)
     background.attach_window(window)
     instance.activate_requested.connect(background.show_window)
     app.aboutToQuit.connect(view_model.shutdown)

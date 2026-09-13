@@ -44,7 +44,7 @@
       "required": ["id", "name", "mappings"],
       "properties": {
         "id": {"type": "integer", "minimum": 0, "maximum": 7},
-        "name": {"type": "string", "minLength": 1, "maxLength": 24},
+        "name": {"type": "string", "minLength": 1, "maxLength": 24, "description": "At most 24 Unicode code points (up to 96 UTF-8 bytes)."},
         "mappings": {
           "type": "array", "minItems": 1, "maxItems": 20,
           "items": {
@@ -52,7 +52,7 @@
             "required": ["control_id", "short_name", "action"],
             "properties": {
               "control_id": {"$ref": "#/$defs/control_id"},
-              "short_name": {"type": "string", "maxLength": 12},
+              "short_name": {"type": "string", "maxLength": 12, "description": "At most 12 Unicode code points (up to 48 UTF-8 bytes)."},
               "action": {"$ref": "#/$defs/action"}
             }
           }
@@ -83,7 +83,7 @@
       "required": ["id", "name", "steps"],
       "properties": {
         "id": {"type": "integer", "minimum": 0, "maximum": 31},
-        "name": {"type": "string", "minLength": 1, "maxLength": 24},
+        "name": {"type": "string", "minLength": 1, "maxLength": 24, "description": "At most 24 Unicode code points (up to 96 UTF-8 bytes)."},
         "steps": {"type": "array", "minItems": 1, "maxItems": 128, "items": {"$ref": "#/$defs/macro_step"}}
       }
     },

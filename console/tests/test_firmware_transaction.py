@@ -10,6 +10,9 @@ from zipfile import ZipFile
 import pytest
 from PySide6.QtCore import QObject, Signal
 
+from controller_config.firmware_signature import sign_manifest
+from test_firmware_release import _TEST_SIGNING_KEY, trust_test_signing_key
+
 from controller_config.firmware_update import (
     APP_DESC_OFFSET,
     CUSTOM_DESC_OFFSET,
@@ -90,6 +93,7 @@ def _package(root: Path, contract, *, build_id: str = "next-build") -> Path:
         ),
         encoding="utf-8",
     )
+    manifest_path.write_text(json.dumps(sign_manifest(json.loads(manifest_path.read_text()), _TEST_SIGNING_KEY)))
     return manifest_path
 
 
@@ -494,3 +498,40 @@ def test_abort_waits_for_in_flight_chunk_then_sends_fw_abort(
         "FW_ABORT", {"command": "FW_ABORT", "result": {"state": "IDLE"}}
     )
     assert view_model.firmware_update.state is FirmwareUpdateState.PACKAGE_READY
+
+
+def test_failed_begin_can_be_explicitly_retried(qtbot, contract, tmp_path):
+    gateway = FirmwareGateway()
+    vm = MainViewModel(gateway, contract)
+    gateway.snapshot_ready.emit(_power_v2_snapshot(contract, read_only=False))
+    package = vm.load_firmware_package(_package(tmp_path, contract))
+    vm.start_firmware_update()
+    gateway.command_completed.emit("FW_STATUS", _status(package, "IDLE"))
+    assert gateway.commands[-1].name == "FW_BEGIN"
+    gateway.command_failed.emit("FW_BEGIN", BootstrapError(
+        BootstrapKind.READ_FAILED, "NACK", "could not prepare inactive slot", error_name="INTERNAL_ERROR"))
+    assert vm.firmware_update.state is FirmwareUpdateState.FAILED
+    vm.start_firmware_update()  # User Retry, with device still reporting FAILED.
+    gateway.command_completed.emit("FW_STATUS", _status(package, "FAILED"))
+    assert gateway.commands[-1].name == "FW_BEGIN"
+    assert vm.firmware_update.state is FirmwareUpdateState.BEGINNING
+    gateway.command_completed.emit("FW_BEGIN", {"command": "FW_BEGIN", "result": {
+        "state": "RECEIVING", "offset": 0, "chunk_bytes": 4096, "target_partition": "ota_1"}})
+    assert gateway.commands[-1].name == "FW_DATA"
+    assert not any(command.name == "FW_ABORT" for command in gateway.commands)
+    vm.shutdown()
+
+
+def test_failed_current_attempt_does_not_auto_restart(qtbot, contract, tmp_path):
+    gateway = FirmwareGateway()
+    vm = MainViewModel(gateway, contract)
+    gateway.snapshot_ready.emit(_power_v2_snapshot(contract, read_only=False))
+    package = vm.load_firmware_package(_package(tmp_path, contract))
+    vm.start_firmware_update()
+    gateway.command_completed.emit("FW_STATUS", _status(package, "IDLE"))
+    gateway.command_failed.emit("FW_BEGIN", BootstrapError(
+        BootstrapKind.READ_FAILED, "timeout", "lost ACK", error_name="TRANSPORT_TIMEOUT"))
+    gateway.command_completed.emit("FW_STATUS", _status(package, "FAILED"))
+    assert vm.firmware_update.state is FirmwareUpdateState.FAILED
+    assert sum(command.name == "FW_BEGIN" for command in gateway.commands) == 1
+    vm.shutdown()

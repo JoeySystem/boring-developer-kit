@@ -38,7 +38,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "controller_config.assets" = ["*.json", "*.md", "*.svg", "*.png", "*.icns", "*.ico"]
-"controller_config.translations" = ["*.ts", "*.qm"]
+"controller_config.translations" = ["*.json", "*.md"]
 
 [tool.setuptools.dynamic]
 version = {attr = "controller_config.__version__"}

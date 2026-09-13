@@ -1,0 +1,1512 @@
+{
+  "rules": [
+    {
+      "message": "control.rotary_tooltip",
+      "match": "点击设置旋钮\\n逆时针 · (.*?)（(.*?)）\\n顺时针 · (.*?)（(.*?)）\\n按 · (.*?)（(.*?)）",
+      "translate": [
+        1,
+        3,
+        5
+      ]
+    },
+    {
+      "message": "control.joystick_tooltip",
+      "match": "点击设置摇杆\\n↑/↓ · (.*?)（(.*?)）\\n←/→ · (.*?)（(.*?)）\\n按 · (.*?)（(.*?)）",
+      "split": {
+        "1": "/",
+        "3": "/"
+      },
+      "translate": [
+        5
+      ]
+    },
+    {
+      "message": "control.tooltip_details",
+      "match": "点击设置([^\\n]+)\\n(.+)",
+      "translate": [
+        1
+      ],
+      "split": {
+        "2": "\n"
+      }
+    },
+    {
+      "message": "control.action_row",
+      "match": "(逆时针|顺时针|按|↑/↓|←/→) · (.*?)（(.*?)）",
+      "translate": [
+        1,
+        2
+      ]
+    },
+    {
+      "message": "local.5",
+      "match": "应用更新暂不可用：(.+)"
+    },
+    {
+      "message": "local.4",
+      "match": "无法保留草稿，已取消重启：(.+)"
+    },
+    {
+      "message": "local.3",
+      "match": "草稿保留在本地，暂无法恢复：(.+)"
+    },
+    {
+      "message": "local.2",
+      "match": "导出未完成，原工作区仍保留：(.+)"
+    },
+    {
+      "message": "local.1",
+      "match": "更新草稿暂无法恢复：(.+)"
+    },
+    {
+      "message": "workspace.exit",
+      "match": "设备 (.+) 的草稿只保留在本进程中。可以先导出草稿，或丢弃后关闭。"
+    },
+    {
+      "message": "prompt.slot_pending",
+      "match": "提示词槽位 (\\d+) 尚未写入设备；请先在快捷提示词页填写、写入并读回。"
+    },
+    {
+      "message": "prompt.slot_mapping",
+      "match": "提示词槽位 (\\d+) 不在四向提示词盘中；请先在设备按键配置中设置并写入触发映射。"
+    },
+    {
+      "message": "prompt.slot_setup",
+      "match": "提示词槽位 (\\d+) · 需重新配置"
+    },
+    {
+      "message": "workflow.steps_passed",
+      "match": "步骤测试通过；(.*)",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "workflow.stopped",
+      "match": "已停止：(.*)"
+    },
+    {
+      "message": "quota.multiline",
+      "match": "(7D 外环 · 5H 内环 · 剩余额度)\\n(.*)",
+      "translate": [
+        1
+      ],
+      "split": {
+        "2": "\n"
+      }
+    },
+    {
+      "message": "device.trust_detail",
+      "match": "(信任状态)  (.+)",
+      "translate": [
+        1,
+        2
+      ]
+    },
+    {
+      "message": "device.detail",
+      "match": "(设备|硬件 ID|序列号|端口|固件)  (.+)",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "platform.unavailable",
+      "match": "(.+) · (当前系统不可用)",
+      "translate": [
+        1,
+        2
+      ]
+    },
+    {
+      "message": "list.bullet",
+      "match": "(• |\\+ )(.*)",
+      "translate": [
+        2
+      ]
+    },
+    {
+      "message": "list.numbered",
+      "match": "(\\d{2}  )(.*)",
+      "translate": [
+        2
+      ]
+    },
+    {
+      "message": "lighting.rgb",
+      "match": "(Agent 状态键|白色动作键) (\\d+)\\n(.+)",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "lighting.accessible",
+      "match": "(Agent 状态键|白色动作键) (\\d+)：(.+)",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "macro.capacity",
+      "match": "(\\d+)/(\\d+) 条按键序列\\n(\\d+)/(\\d+) 字节"
+    },
+    {
+      "message": "prompt.direction_selected",
+      "match": "([↑→↓←]) (上|右|下|左) · 快捷提示词 ([1-4])",
+      "translate": [
+        2
+      ]
+    },
+    {
+      "message": "prompt.direction_card",
+      "match": "([↑→↓←])  (上|右|下|左)\\n(.+)\\n(.+)",
+      "translate": [
+        2,
+        4
+      ]
+    },
+    {
+      "message": "action.current",
+      "match": "当前动作：(.+)",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "macro.summary",
+      "match": "(\\d+) 个步骤 · 编码 (\\d+)/(\\d+) 字节 · 显式延时 (.+) · (容量内|已超限)",
+      "translate": [
+        5
+      ]
+    },
+    {
+      "message": "keypad.as400",
+      "match": "数字键盘 =（AS/400）"
+    },
+    {
+      "message": "keypad.key",
+      "match": "数字键盘 (.*)"
+    },
+    {
+      "message": "control.action",
+      "match": "动作\\ ·\\ (.*)",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "control.press",
+      "match": "按\\ ·\\ (.*)",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "control.turn",
+      "match": "转\\ ·\\ (.*)",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "binding.generation",
+      "match": "绑定 (.+) · generation (.+)"
+    },
+    {
+      "message": "action.actual_name",
+      "match": "实际动作：(.+)\\n功能名称：(.+)",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "action.function_name",
+      "match": "功能名称：(.+)"
+    },
+    {
+      "message": "control.white",
+      "match": "白色按键 (\\d+)"
+    },
+    {
+      "message": "control.transparent",
+      "match": "透明状态键 (\\d+)"
+    },
+    {
+      "message": "joystick.axes",
+      "match": "X  (.+)    死区 (.+)\\nY  (.+)    死区 (.+)"
+    },
+    {
+      "message": "config.status",
+      "match": "配置状态：(.+)。",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "device.hardware",
+      "match": "硬件身份：(.+)。"
+    },
+    {
+      "message": "device.mode",
+      "match": "运行模式：(.+)。"
+    },
+    {
+      "message": "status.001",
+      "match": "^(\\d+)  处未写入改动$"
+    },
+    {
+      "message": "status.002",
+      "match": "^更新于 (.+)$"
+    },
+    {
+      "message": "status.003",
+      "match": "^第 (\\d+) 步，共 (\\d+) 步$"
+    },
+    {
+      "message": "status.004",
+      "match": "^under_key 必须包含 (\\d+) 项$"
+    },
+    {
+      "message": "status.005",
+      "match": "^under_key\\[(\\d+)\\] 必须只包含 r、g、b$"
+    },
+    {
+      "message": "status.006",
+      "match": "^under_key\\[(\\d+)\\]\\.([rgb]) 必须是 0\\.\\.255 的整数$"
+    },
+    {
+      "message": "status.007",
+      "match": "^自动化总数 (\\d+)  ·  当前可用 (\\d+)  ·  已绑定控件 (\\d+)$"
+    },
+    {
+      "message": "status.008",
+      "match": "^已测试 (\\d+) / (\\d+)$"
+    },
+    {
+      "message": "status.009",
+      "match": "^按键 (\\d+)/(\\d+)  ·  旋钮 (\\d+)/(\\d+)  ·  摇杆 (\\d+)/(\\d+)$"
+    },
+    {
+      "message": "status.010",
+      "match": "^下一步：按下并松开按键 (\\d+)。$"
+    },
+    {
+      "message": "status.011",
+      "match": "^设备没有进入安全诊断：(.+)$"
+    },
+    {
+      "message": "status.012",
+      "match": "^下一步：操作 (.+) 一次。$"
+    },
+    {
+      "message": "status.013",
+      "match": "^(\\d+) 个已安装 · (\\d+) 个运行中$"
+    },
+    {
+      "message": "status.014",
+      "match": "^提示词槽位 (\\d+)$"
+    },
+    {
+      "message": "status.015",
+      "match": "^(\\d+)/4 个方向已配置$"
+    },
+    {
+      "message": "status.016",
+      "match": "^当前方向绑定快捷提示词 (\\d+)$"
+    },
+    {
+      "message": "status.017",
+      "match": "^粘贴提示词 (\\d+)$"
+    },
+    {
+      "message": "status.018",
+      "match": "^当前 (\\d+) · 已配对$"
+    },
+    {
+      "message": "status.019",
+      "match": "^槽位 (\\d+) · 等待配对$"
+    },
+    {
+      "message": "status.020",
+      "match": "^还有 (\\d+) 项差异…$"
+    },
+    {
+      "message": "status.021",
+      "match": "^还有 (\\d+) 项更改…$"
+    },
+    {
+      "message": "status.022",
+      "match": "^配置方案名称最多 (\\d+) 个字符。$"
+    },
+    {
+      "message": "status.023",
+      "match": "^确定从本地草稿删除“(.+)”吗？删除后仍需保存到设备才会生效。$"
+    },
+    {
+      "message": "status.024",
+      "match": "^(\\d+) 条按键序列$"
+    },
+    {
+      "message": "status.025",
+      "match": "^运行按键序列 (\\d+)$"
+    },
+    {
+      "message": "status.026",
+      "match": "^(\\d+) 个步骤 · 编码 (\\d+) 字节 · 显式延时 (.+)$"
+    },
+    {
+      "message": "status.027",
+      "match": "^(\\d+) / (\\d+) 字节 · %p%$"
+    },
+    {
+      "message": "status.028",
+      "match": "^当前固件版本：(.+)。$"
+    },
+    {
+      "message": "status.029",
+      "match": "^固件签名能力：当前构建未要求签名。$"
+    },
+    {
+      "message": "status.030",
+      "match": "^(\\d{2}) · 空槽位$"
+    },
+    {
+      "message": "status.031",
+      "match": "^(\\d{2}) · 槽位$"
+    },
+    {
+      "message": "status.032",
+      "match": "^(\\d+)/(\\d+) UTF-8 字节$"
+    },
+    {
+      "message": "status.033",
+      "match": "^(\\d+)/(\\d+) 条 · (\\d+)/(\\d+) UTF-8 字节$"
+    },
+    {
+      "message": "status.034",
+      "match": "^收到实体事件 (\\d+)，正在读取提示词 (\\d+)$"
+    },
+    {
+      "message": "status.035",
+      "match": "^已处理事件 (\\d+) · 提示词 (\\d+) · (\\d+) UTF-8 字节$"
+    },
+    {
+      "message": "status.036",
+      "match": "^事件 (\\d+) 已读取提示词 (\\d+)，但粘贴失败$"
+    },
+    {
+      "message": "status.037",
+      "match": "^事件 (\\d+) 的提示词读取失败，本次未粘贴$"
+    },
+    {
+      "message": "status.038",
+      "match": "^已保存本地脚本：(.+)$"
+    },
+    {
+      "message": "status.039",
+      "match": "^提示词槽位 (\\d+) 已绑定其他本地脚本$"
+    },
+    {
+      "message": "status.040",
+      "match": "^已启动：(.+)$"
+    },
+    {
+      "message": "status.041",
+      "match": "^运行完成：(.+)$"
+    },
+    {
+      "message": "status.042",
+      "match": "^运行失败：(.+) · exit (-?\\d+)$"
+    },
+    {
+      "message": "status.043",
+      "match": "^本地脚本启动失败：(.+)$"
+    },
+    {
+      "message": "status.044",
+      "match": "^事件 (\\d+) 已交给本地脚本：(.+)$"
+    },
+    {
+      "message": "status.045",
+      "match": "^脚本文件不存在：(.+)$"
+    },
+    {
+      "message": "status.046",
+      "match": "^已保存自动化：(.+)$"
+    },
+    {
+      "message": "status.047",
+      "match": "^自动化运行完成：(.+)$"
+    },
+    {
+      "message": "status.048",
+      "match": "^第 (\\d+) 步完成：(.+)$"
+    },
+    {
+      "message": "status.049",
+      "match": "^第 (\\d+) 步失败：(.+)$"
+    },
+    {
+      "message": "actions.line_275",
+      "match": "运行按键序列\\ (.*?)"
+    },
+    {
+      "message": "actions.line_277",
+      "match": "粘贴提示词\\ (.*?)"
+    },
+    {
+      "message": "actions.line_279",
+      "match": "切换到\\ Profile\\ (.*?)"
+    },
+    {
+      "message": "actions.line_285",
+      "match": "未知动作\\ (.*?)"
+    },
+    {
+      "message": "actions.line_325",
+      "match": "键盘\\ Usage\\ (.*?)"
+    },
+    {
+      "message": "actions.line_271",
+      "match": "媒体\\ Usage\\ (.*?)"
+    },
+    {
+      "message": "actions.line_282",
+      "match": "设备功能\\ (.*?)"
+    },
+    {
+      "message": "actions.line_365",
+      "match": "鼠标键\\ (.*?)"
+    },
+    {
+      "message": "actions.line_357",
+      "match": "滚轮(.*?)",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "actions.line_360",
+      "match": "横滚(.*?)",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "actions.line_362",
+      "match": "移动\\ (.*?),(.*?)"
+    },
+    {
+      "message": "actions.line_166",
+      "match": "当前高级值\\ ·\\ Usage\\ (.*?)"
+    },
+    {
+      "message": "app.line_192",
+      "match": "Claude\\ Code\\ 状态联动未启动：(.*?)"
+    },
+    {
+      "message": "automation.line_113",
+      "match": "触发提示词槽位必须在\\ 1–(.*?)\\ 范围内"
+    },
+    {
+      "message": "automation.line_180",
+      "match": "无法保存本地脚本：(.*?)"
+    },
+    {
+      "message": "automation.line_248",
+      "match": "BORING\\ 私有扩展运行器不可用：(.*?)"
+    },
+    {
+      "message": "automation.line_522",
+      "match": "事件\\ (.*?)\\ 已交给本地脚本：(.*?)"
+    },
+    {
+      "message": "automation.line_615",
+      "match": "已处理事件\\ (.*?)\\ ·\\ 提示词\\ (.*?)\\ ·\\ (.*?)\\ UTF\\-8\\ 字节"
+    },
+    {
+      "message": "automation.line_627",
+      "match": "本地脚本\\ ID\\ 重复：(.*?)"
+    },
+    {
+      "message": "automation.line_630",
+      "match": "提示词槽位\\ (.*?)\\ 已绑定其他本地脚本"
+    },
+    {
+      "message": "automation.line_157",
+      "match": "无法读取本地脚本：(.*?)"
+    },
+    {
+      "message": "automation.line_554",
+      "match": "运行失败：(.*?)\\ ·\\ exit\\ (.*?)"
+    },
+    {
+      "message": "background_helper.line_385",
+      "match": "无法建立控制台单实例通道：(.*?)"
+    },
+    {
+      "message": "claude_hooks.line_90",
+      "match": "(.*?)\\ 必须是\\ JSON\\ 对象；未修改原文件。"
+    },
+    {
+      "message": "claude_hooks.line_234",
+      "match": "Claude\\ Code\\ (.*?)\\ Hooks\\ 格式不正确；未修改原设置。"
+    },
+    {
+      "message": "codex_usage.line_325",
+      "match": "(.*?)；本地会话日志也没有可用额度。"
+    },
+    {
+      "message": "config_files.line_88",
+      "match": "配置文件超过\\ (.*?)\\ KiB\\ 导入上限"
+    },
+    {
+      "message": "config_files.line_85",
+      "match": "无法读取配置文件：(.*?)"
+    },
+    {
+      "message": "device_events.line_47",
+      "match": "不支持设备事件\\ schema_version\\ (.*?)"
+    },
+    {
+      "message": "device_events.line_125",
+      "match": "(.*?)\\ source\\ 必须是\\ (.*?)"
+    },
+    {
+      "message": "device_events.line_143",
+      "match": "prompt_id\\ 必须位于\\ 1\\.\\.(.*?)"
+    },
+    {
+      "message": "device_events.line_223",
+      "match": "缺少\\ (.*?)"
+    },
+    {
+      "message": "device_events.line_225",
+      "match": "未知字段\\ (.*?)"
+    },
+    {
+      "message": "device_events.line_227",
+      "match": "(.*?)\\ payload\\ 字段不完整："
+    },
+    {
+      "message": "device_events.line_59",
+      "match": "不支持设备事件\\ kind：(.*?)"
+    },
+    {
+      "message": "drafts.line_155",
+      "match": "Profile\\ (.*?)\\ 不存在"
+    },
+    {
+      "message": "drafts.line_209",
+      "match": "(.*?)\\ 副本"
+    },
+    {
+      "message": "drafts.line_247",
+      "match": "按键序列\\ (.*?)\\ 不存在"
+    },
+    {
+      "message": "drafts.line_559",
+      "match": "按键序列\\ (.*?)\\ 结束时仍有未释放的\\ Usage:\\ (.*?)"
+    },
+    {
+      "message": "drafts.line_218",
+      "match": "配置方案名称最多\\ (.*?)\\ 个字符。"
+    },
+    {
+      "message": "drafts.line_261",
+      "match": "当前\\ Schema\\ 最多支持\\ (.*?)\\ 条按键序列"
+    },
+    {
+      "message": "drafts.line_354",
+      "match": "设备最多支持\\ (.*?)\\ 个\\ Profile"
+    },
+    {
+      "message": "drafts.line_395",
+      "match": "(.*?)\\ 不在设备\\ CAPABILITIES\\ 中"
+    },
+    {
+      "message": "drafts.line_398",
+      "match": "设备不支持\\ (.*?)\\ 动作"
+    },
+    {
+      "message": "drafts.line_488",
+      "match": "全部按键序列共\\ (.*?)\\ 字节，超过\\ (.*?)\\ 字节总限制"
+    },
+    {
+      "message": "drafts.line_494",
+      "match": "配置共\\ (.*?)\\ 字节，超过\\ (.*?)\\ 字节限制"
+    },
+    {
+      "message": "drafts.line_454",
+      "match": "Profile\\ (.*?)\\ 中的\\ control_id\\ 不能重复"
+    },
+    {
+      "message": "drafts.line_478",
+      "match": "按键序列\\ (.*?)\\ 编码后\\ (.*?)\\ 字节，超过单条\\ (.*?)\\ 字节限制"
+    },
+    {
+      "message": "drafts.line_548",
+      "match": "按键序列\\ (.*?)\\ 第\\ (.*?)\\ 步重复按下\\ Usage\\ (.*?)"
+    },
+    {
+      "message": "drafts.line_465",
+      "match": "控件引用的按键序列\\ (.*?)\\ 不存在"
+    },
+    {
+      "message": "drafts.line_468",
+      "match": "按键引用的\\ Profile\\ (.*?)\\ 不存在"
+    },
+    {
+      "message": "drafts.line_554",
+      "match": "按键序列\\ (.*?)\\ 第\\ (.*?)\\ 步释放了未按下的\\ Usage\\ (.*?)"
+    },
+    {
+      "message": "extensions.action_router.line_135",
+      "match": "已把实体事件交给扩展\\ action：(.*?)"
+    },
+    {
+      "message": "extensions.bindings.line_104",
+      "match": "无法保存扩展\\ action\\ 绑定：(.*?)"
+    },
+    {
+      "message": "extensions.bindings.line_74",
+      "match": "无法读取扩展\\ action\\ 绑定：(.*?)"
+    },
+    {
+      "message": "extensions.contracts.line_787",
+      "match": "(.*?)\\ 不是可序列化的\\ JSON\\ 值"
+    },
+    {
+      "message": "extensions.contracts.line_645",
+      "match": "(.*?)\\ 缺少字段：(.*?)"
+    },
+    {
+      "message": "extensions.contracts.line_649",
+      "match": "(.*?)\\ 包含未声明字段：(.*?)"
+    },
+    {
+      "message": "extensions.contracts.line_657",
+      "match": "(.*?)\\ 必须是\\ JSON\\ object"
+    },
+    {
+      "message": "extensions.contracts.line_663",
+      "match": "(.*?)\\ 必须是\\ JSON\\ array"
+    },
+    {
+      "message": "extensions.contracts.line_669",
+      "match": "(.*?)\\ 必须是字符串"
+    },
+    {
+      "message": "extensions.contracts.line_676",
+      "match": "(.*?)\\ 不能为空"
+    },
+    {
+      "message": "extensions.contracts.line_688",
+      "match": "(.*?)\\ 必须是整数"
+    },
+    {
+      "message": "extensions.contracts.line_690",
+      "match": "(.*?)\\ 不得小于\\ (.*?)"
+    },
+    {
+      "message": "extensions.contracts.line_692",
+      "match": "(.*?)\\ 不得大于\\ (.*?)"
+    },
+    {
+      "message": "extensions.contracts.line_698",
+      "match": "(.*?)\\ 必须是布尔值"
+    },
+    {
+      "message": "extensions.contracts.line_704",
+      "match": "(.*?)\\ 必须是\\ (.*?)"
+    },
+    {
+      "message": "extensions.contracts.line_710",
+      "match": "(.*?)\\ 格式无效"
+    },
+    {
+      "message": "extensions.contracts.line_733",
+      "match": "(.*?)\\ 不得重复"
+    },
+    {
+      "message": "extensions.contracts.line_740",
+      "match": "不支持\\ (.*?)\\ schema_version\\ (.*?)"
+    },
+    {
+      "message": "extensions.contracts.line_73",
+      "match": "不支持扩展\\ API\\ major\\ (.*?)；当前只支持\\ (.*?)"
+    },
+    {
+      "message": "extensions.contracts.line_77",
+      "match": "不支持扩展\\ API\\ (.*?)\\.(.*?)；当前最高为\\ (.*?)\\.(.*?)"
+    },
+    {
+      "message": "extensions.contracts.line_134",
+      "match": "不支持扩展\\ manifest_version\\ (.*?)"
+    },
+    {
+      "message": "extensions.contracts.line_449",
+      "match": "action\\ (.*?)\\ 未在\\ manifest\\ 中声明"
+    },
+    {
+      "message": "extensions.contracts.line_499",
+      "match": "action\\ result\\ status\\ (.*?)\\ 不受支持"
+    },
+    {
+      "message": "extensions.contracts.line_565",
+      "match": "control_id\\ (.*?)\\ 不在当前\\ Schema\\ 中"
+    },
+    {
+      "message": "extensions.contracts.line_618",
+      "match": "set_mapping\\ proposal\\ result\\ status\\ (.*?)\\ 不受支持"
+    },
+    {
+      "message": "extensions.contracts.line_748",
+      "match": "(.*?)\\ 不得公开字段\\ (.*?)"
+    },
+    {
+      "message": "extensions.contracts.line_778",
+      "match": "(.*?)\\ 不得使用非有限数值"
+    },
+    {
+      "message": "extensions.development_prompt.line_11",
+      "match": "请为\\ BORING\\ 控制台开发一个本地\\ Python\\ 扩展。\\\n\\\n先用普通用户能理解的语言问我最多\\ 3\\ 个问题，只确认：\\\n1\\.\\ 我希望实体操作最终完成什么；\\\n2\\.\\ 希望由哪个提示词槽位或实体动作触发；\\\n3\\.\\ 完成后需要什么可见反馈。\\\n不要询问串口、HID\\ Usage、线程、IPC\\ 或打包细节；这些由你按下面的合同决定。\\\n\\\n当前设备上下文：\\\n\\-\\ device_serial:\\ (.*?)\\\n\\-\\ hardware_id:\\ (.*?)\\\n\\-\\ BORING\\ Extension\\ API:\\ 1\\.0\\\n\\\n交付要求：\\\n\\-\\ 交付一个目录或\\ ZIP，根目录必须包含\\ boring\\-extension\\.json\\ 与\\ manifest\\ 指定的\\ \\.py\\ 入口；\\\n\\-\\ manifest_version=1，声明唯一反向域名\\ id、name、version、api_version、entrypoint、observer_events\\ 和\\ actions；\\\n\\-\\ V1\\ 只使用\\ Python\\ 标准库与\\ boring_console_sdk；\\\n\\-\\ 可使用\\ get_context\\(\\)\\ 读取只读上下文；\\\n\\-\\ observer\\ 可订阅\\ prompt\\.triggered，但不能阻止默认动作；\\\n\\-\\ 需要承接实体动作时，在\\ manifest\\ 声明\\ action，并用\\ next_action\\(\\)/respond_action\\(\\)\\ 返回\\ accepted、rejected、completed\\ 或\\ failed；\\\n\\-\\ 需要修改按键映射时，只提交\\ set_mapping\\ proposal，由用户在控制台审阅并走现有写入确认；\\\n\\-\\ 禁止打开设备串口、发送原始协议命令、调用固件维护、绕过用户确认写设备；\\\n\\-\\ 不依赖用户电脑预装\\ Python，也不要调用\\ sys\\.executable；扩展由\\ BORING\\ 私有\\ Runner\\ 启动；\\\n\\-\\ 给出\\ README，说明功能、所需实体绑定、测试步骤和失败时的回退行为。\\\n\\\n完成提问并理解需求后，直接生成完整扩展包文件内容，不要求我决定技术实现细节。\\\n"
+    },
+    {
+      "message": "extensions.manager.line_75",
+      "match": "未找到扩展\\ (.*?)"
+    },
+    {
+      "message": "extensions.manager.line_84",
+      "match": "扩展包不存在：(.*?)"
+    },
+    {
+      "message": "extensions.manager.line_125",
+      "match": "扩展入口缺失：(.*?)"
+    },
+    {
+      "message": "extensions.manager.line_207",
+      "match": "\\.zip\\ 扩展包必须仅包含一个\\ (.*?)"
+    },
+    {
+      "message": "extensions.manager.line_99",
+      "match": "扩展\\ ID\\ (.*?)\\ 已安装"
+    },
+    {
+      "message": "extensions.manager.line_103",
+      "match": "受管安装目录已存在，不会覆盖：(.*?)"
+    },
+    {
+      "message": "extensions.manager.line_192",
+      "match": "扩展目录根部缺少\\ (.*?)"
+    },
+    {
+      "message": "extensions.manager.line_203",
+      "match": "无法读取扩展包：(.*?)"
+    },
+    {
+      "message": "extensions.manager.line_235",
+      "match": "扩展包缺少\\ (.*?)"
+    },
+    {
+      "message": "extensions.manager.line_237",
+      "match": "无法读取扩展\\ manifest：(.*?)"
+    },
+    {
+      "message": "extensions.manager.line_241",
+      "match": "扩展\\ manifest\\ 无效：(.*?)"
+    },
+    {
+      "message": "extensions.manager.line_161",
+      "match": "扩展已移除，但无法清理临时目录\\ (.*?)：(.*?)"
+    },
+    {
+      "message": "extensions.platform.line_209",
+      "match": "已导入扩展\\ (.*?)\\ (.*?)"
+    },
+    {
+      "message": "extensions.platform.line_304",
+      "match": "已绑定提示词槽位\\ (.*?)\\ →\\ (.*?)"
+    },
+    {
+      "message": "extensions.platform.line_272",
+      "match": "action\\ (.*?)\\ 未在扩展\\ manifest\\ 中声明"
+    },
+    {
+      "message": "extensions.platform.line_386",
+      "match": "扩展状态未更改，但\\ action\\ 绑定回滚失败：(.*?)"
+    },
+    {
+      "message": "extensions.platform.line_451",
+      "match": "无法广播设备语义事件：(.*?)"
+    },
+    {
+      "message": "extensions.proposals.line_105",
+      "match": "提案\\ ID\\ 已存在：(.*?)"
+    },
+    {
+      "message": "extensions.registry.line_109",
+      "match": "无法保存扩展注册表：(.*?)"
+    },
+    {
+      "message": "extensions.registry.line_46",
+      "match": "扩展注册表中的\\ manifest\\ 无效：(.*?)"
+    },
+    {
+      "message": "extensions.registry.line_68",
+      "match": "无法读取扩展注册表：(.*?)"
+    },
+    {
+      "message": "extensions.runtime.line_132",
+      "match": "扩展入口不存在：(.*?)"
+    },
+    {
+      "message": "extensions.runtime.line_268",
+      "match": "扩展进程退出，exit_code=(.*?)"
+    },
+    {
+      "message": "firmware_release.line_456",
+      "match": "(.*?)超过允许大小"
+    },
+    {
+      "message": "firmware_release.line_385",
+      "match": "无法比较版本号：(.*?)"
+    },
+    {
+      "message": "firmware_release.line_394",
+      "match": "请先升级\\ BORING\\ 桌面端至\\ (.*?)\\ 或更新版本"
+    },
+    {
+      "message": "firmware_release.line_438",
+      "match": "(.*?)下载失败：(.*?)"
+    },
+    {
+      "message": "firmware_release.line_441",
+      "match": "(.*?)为空"
+    },
+    {
+      "message": "firmware_release.line_290",
+      "match": "设备没有返回\\ (.*?)"
+    },
+    {
+      "message": "firmware_release.line_349",
+      "match": "在线固件\\ (.*?)\\ 与\\ (.*?)\\ 不一致"
+    },
+    {
+      "message": "firmware_release.line_352",
+      "match": "在线固件\\ (.*?)\\ 类型错误"
+    },
+    {
+      "message": "firmware_update.line_99",
+      "match": "不支持的固件包格式：(.*?)"
+    },
+    {
+      "message": "firmware_update.line_163",
+      "match": "固件包目标为\\ (.*?)，当前设备为\\ (.*?)"
+    },
+    {
+      "message": "firmware_update.line_353",
+      "match": "无法读取\\ ZIP\\ 固件维护包：(.*?)"
+    },
+    {
+      "message": "firmware_update.line_377",
+      "match": "无法读取\\ ZIP\\ 固件镜像：(.*?)"
+    },
+    {
+      "message": "firmware_update.line_97",
+      "match": "固件\\ manifest\\ 字段\\ (.*?)\\ 缺失或类型错误"
+    },
+    {
+      "message": "firmware_update.line_82",
+      "match": "无法读取固件\\ manifest：(.*?)"
+    },
+    {
+      "message": "firmware_update.line_132",
+      "match": "无法读取固件镜像：(.*?)"
+    },
+    {
+      "message": "host_actions.line_89",
+      "match": "不支持的内置步骤：(.*?)"
+    },
+    {
+      "message": "host_selection.line_112",
+      "match": "目标目录不存在：(.*?)"
+    },
+    {
+      "message": "host_selection.line_132",
+      "match": "系统无法打开目标：(.*?)"
+    },
+    {
+      "message": "host_selection.line_171",
+      "match": "无法(.*?)。请允许\\ BORING\\ 控制台使用辅助功能：(.*?)"
+    },
+    {
+      "message": "host_selection.line_120",
+      "match": "无法追加到文件：(.*?)"
+    },
+    {
+      "message": "host_selection.line_129",
+      "match": "要打开的目标不存在：(.*?)"
+    },
+    {
+      "message": "host_selection.line_167",
+      "match": "无法(.*?)：(.*?)"
+    },
+    {
+      "message": "lighting_preview.line_81",
+      "match": "under_key\\ 必须包含\\ (.*?)\\ 项"
+    },
+    {
+      "message": "lighting_preview.line_123",
+      "match": "未知灯光预览命令\\ (.*?)"
+    },
+    {
+      "message": "lighting_preview.line_125",
+      "match": "响应\\ command\\ 与请求\\ (.*?)\\ 不匹配"
+    },
+    {
+      "message": "lighting_preview.line_86",
+      "match": "under_key\\[(.*?)\\]\\ 必须只包含\\ r、g、b"
+    },
+    {
+      "message": "models.line_39",
+      "match": "(.*) · 蓝牙(.*)"
+    },
+    {
+      "message": "models.line_225",
+      "match": "(.*?)\\ 的动作\\ (.*?)\\ 不在\\ CAPABILITIES\\ actions\\ 中"
+    },
+    {
+      "message": "packaging.line_31",
+      "match": "协议资源目标已存在：(.*?)"
+    },
+    {
+      "message": "packaging.line_47",
+      "match": "设备信任策略目标已存在：(.*?)"
+    },
+    {
+      "message": "prompt_device.line_328",
+      "match": "正在写入提示词槽位\\ (.*?)；完成后会立即读回确认"
+    },
+    {
+      "message": "prompt_device.line_344",
+      "match": "正在删除设备提示词槽位\\ (.*?)；完成后会重新读取列表确认"
+    },
+    {
+      "message": "prompt_device.line_407",
+      "match": "事件\\ (.*?)\\ 的提示词读取失败，本次未粘贴"
+    },
+    {
+      "message": "prompt_device.line_822",
+      "match": "(.*?)\\ 响应\\ command\\ 不匹配"
+    },
+    {
+      "message": "prompt_device.line_231",
+      "match": "助手离线；(.*?)"
+    },
+    {
+      "message": "prompt_device.line_586",
+      "match": "收到实体事件\\ (.*?)，正在读取提示词\\ (.*?)"
+    },
+    {
+      "message": "prompt_device.line_702",
+      "match": "助手暂时暂停；(.*?)完成后会自动恢复监听"
+    },
+    {
+      "message": "prompt_helper.line_70",
+      "match": "提示词已复制到剪贴板，但无法粘贴到当前输入框。请允许\\ BORING\\ 控制台使用辅助功能：(.*?)"
+    },
+    {
+      "message": "prompt_helper.line_86",
+      "match": "设备触发了提示词\\ (.*?)，但电脑端没有它的已确认读回内容"
+    },
+    {
+      "message": "prompt_library.line_269",
+      "match": "本地提示词草稿\\ (.*?)\\ 必须是数组"
+    },
+    {
+      "message": "prompt_library.line_278",
+      "match": "提示词槽位必须在\\ 1–(.*?)\\ 范围内"
+    },
+    {
+      "message": "prompt_library.line_55",
+      "match": "提示词名称最多\\ (.*?)\\ 个\\ UTF\\-8\\ 字节"
+    },
+    {
+      "message": "prompt_library.line_61",
+      "match": "提示词正文最多\\ (.*?)\\ 个\\ UTF\\-8\\ 字节"
+    },
+    {
+      "message": "prompt_library.line_200",
+      "match": "全部提示词正文合计最多\\ (.*?)\\ 个\\ UTF\\-8\\ 字节"
+    },
+    {
+      "message": "prompt_library.line_262",
+      "match": "提示词槽位\\ (.*?)\\ 重复"
+    },
+    {
+      "message": "prompt_library.line_289",
+      "match": "(.*?)包含不支持的控制字符"
+    },
+    {
+      "message": "protocol.bootstrap.line_468",
+      "match": "响应类型\\ 0x(.*?)\\ 不是\\ ACK/NACK"
+    },
+    {
+      "message": "protocol.bootstrap.line_221",
+      "match": "请连接\\ USB\\ 数据线后重新扫描，认证成功后进入「设置\\ →\\ 固件维护」检查更新。\\\n连接：蓝牙；固件：(.*?)；失败步骤：(.*?)；(.*?)"
+    },
+    {
+      "message": "protocol.bootstrap.line_235",
+      "match": "(.*?)\\ 未在超时前返回"
+    },
+    {
+      "message": "protocol.bootstrap.line_152",
+      "match": "当前固件的蓝牙认证可能导致设备重启，已停止连接。请连接\\ USB\\ 数据线后重新扫描，认证成功后进入「设置\\ →\\ 固件维护」更新。\\\n连接：蓝牙；固件：(.*?)；停止步骤：HELLO（尚未发送认证请求）"
+    },
+    {
+      "message": "protocol.contract.line_168",
+      "match": "(.*?)\\ 不符合当前\\ Schema（(.*?)）：(.*?)"
+    },
+    {
+      "message": "protocol.contract.line_444",
+      "match": "共享协议资产必须是\\ JSON\\ object:\\ (.*?)"
+    },
+    {
+      "message": "protocol.contract.line_357",
+      "match": "CAPABILITIES\\ limits\\ 缺少控制台必需字段：(.*?)"
+    },
+    {
+      "message": "protocol.contract.line_409",
+      "match": "(.*?)\\.generation\\ 必须是非负整数"
+    },
+    {
+      "message": "protocol.contract.line_442",
+      "match": "无法读取共享协议资产\\ (.*?):\\ (.*?)"
+    },
+    {
+      "message": "protocol.contract.line_530",
+      "match": "配置\\ Schema\\ 缺少控制台所需约束：(.*?)"
+    },
+    {
+      "message": "protocol.contract.line_99",
+      "match": "共享协议资产结构无效：(.*?)"
+    },
+    {
+      "message": "protocol.contract.line_229",
+      "match": "GET_STATUS\\ action_engine\\.(.*?)\\ 必须是非空字符串"
+    },
+    {
+      "message": "protocol.contract.line_255",
+      "match": "GET_STATUS\\ diagnostic_capture\\.(.*?)\\ 必须是非负整数"
+    },
+    {
+      "message": "protocol.device_auth.line_383",
+      "match": "设备认证响应\\ command\\ 必须为\\ (.*?)"
+    },
+    {
+      "message": "protocol.device_auth.line_442",
+      "match": "(.*?)\\ 必须是无填充\\ base64url"
+    },
+    {
+      "message": "protocol.device_auth.line_232",
+      "match": "设备证书签发方不在当前信任范围：(.*?)"
+    },
+    {
+      "message": "protocol.device_auth.line_451",
+      "match": "(.*?)\\ 不是有效\\ base64url"
+    },
+    {
+      "message": "protocol.device_auth.line_95",
+      "match": "设备信任根\\ roots\\[(.*?)\\]\\ 缺少公开密钥字段"
+    },
+    {
+      "message": "protocol.device_auth.line_100",
+      "match": "设备信任根\\ roots\\[(.*?)\\]\\ 必须使用\\ (.*?)"
+    },
+    {
+      "message": "protocol.device_auth.line_107",
+      "match": "设备信任根\\ issuer_key_id\\ 重复：(.*?)"
+    },
+    {
+      "message": "protocol.device_auth.line_327",
+      "match": "设备证书\\ (.*?)\\ 必须是非空字符串"
+    },
+    {
+      "message": "protocol.device_auth.line_340",
+      "match": "设备证书\\ (.*?)\\ 与\\ HELLO\\ 身份不一致"
+    },
+    {
+      "message": "protocol.device_auth.line_105",
+      "match": "设备信任根\\ roots\\[(.*?)\\]\\ 公钥无效：(.*?)"
+    },
+    {
+      "message": "protocol.framing.line_49",
+      "match": "协议禁止非有限数值\\ (.*?)"
+    },
+    {
+      "message": "protocol.framing.line_62",
+      "match": "请求\\ payload\\ 无法编码：(.*?)"
+    },
+    {
+      "message": "protocol.framing.line_42",
+      "match": "响应\\ payload\\ 不是有效\\ UTF\\-8\\ JSON：(.*?)"
+    },
+    {
+      "message": "protocol.framing.line_128",
+      "match": "响应\\ protocol\\ major\\ (.*?)\\ 不受支持"
+    },
+    {
+      "message": "protocol.framing.line_130",
+      "match": "响应\\ protocol\\ minor\\ (.*?)\\ 不受支持"
+    },
+    {
+      "message": "transport.ble.line_423",
+      "match": "正在通过蓝牙连接\\ (.*?)…"
+    },
+    {
+      "message": "transport.ble.line_291",
+      "match": "蓝牙配置通信失败：(.*?)"
+    },
+    {
+      "message": "transport.qt_serial.line_116",
+      "match": "正在连接\\ (.*?)…"
+    },
+    {
+      "message": "transport.qt_serial.line_122",
+      "match": "(.*?)。请关闭其他\\ BORING\\ 控制台或串口工具后重新扫描。"
+    },
+    {
+      "message": "transport.qt_serial.line_205",
+      "match": "正在读取：(.*?)"
+    },
+    {
+      "message": "transport.qt_serial.line_268",
+      "match": "端口\\ (.*?)\\ 已消失"
+    },
+    {
+      "message": "viewmodels.main.line_373",
+      "match": "提示词槽位\\ (.*?)\\ 尚未写入设备；请先在快捷提示词页填写、写入并读回。"
+    },
+    {
+      "message": "viewmodels.main.line_381",
+      "match": "提示词槽位\\ (.*?)\\ 不在四向提示词盘中；请先在设备按键配置中设置并写入触发映射。"
+    },
+    {
+      "message": "viewmodels.main.line_610",
+      "match": "未知页面\\ (.*?)"
+    },
+    {
+      "message": "viewmodels.main.line_1369",
+      "match": "发现发布版本\\ (.*?)，可由你决定是否下载"
+    },
+    {
+      "message": "viewmodels.main.line_1395",
+      "match": "正在下载发布版本\\ (.*?)"
+    },
+    {
+      "message": "viewmodels.main.line_1456",
+      "match": "发布版本\\ (.*?)\\ 已下载并完成校验，可以安装"
+    },
+    {
+      "message": "viewmodels.main.line_1471",
+      "match": "在线固件(.*?)失败",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "viewmodels.main.line_2862",
+      "match": "(.*?)\\ 响应缺少\\ result\\ object"
+    },
+    {
+      "message": "viewmodels.main.line_3055",
+      "match": "正在传输固件：(.*?)\\ /\\ (.*?)\\ 字节"
+    },
+    {
+      "message": "viewmodels.main.line_1361",
+      "match": "没有更新的在线固件（服务端版本\\ (.*?)）"
+    },
+    {
+      "message": "viewmodels.main.line_3020",
+      "match": "从设备确认的\\ (.*?)\\ 字节位置继续传输"
+    },
+    {
+      "message": "viewmodels.main.line_1614",
+      "match": "发布版本\\ (.*?)\\ 尚未安装，可重新下载"
+    },
+    {
+      "message": "viewmodels.main.line_3229",
+      "match": "在线发布版本\\ (.*?)\\ 已安装并读回确认"
+    },
+    {
+      "message": "views.action_editor.line_651",
+      "match": "(.*?)\\ 编辑器不可用"
+    },
+    {
+      "message": "views.action_editor.line_660",
+      "match": "(.*?)\\ 不能包含重复值"
+    },
+    {
+      "message": "views.action_editor.line_662",
+      "match": "(.*?)\\ 最多允许\\ (.*?)\\ 项"
+    },
+    {
+      "message": "views.action_editor.line_547",
+      "match": "当前动作\\ (.*?)\\ 不在设备能力中"
+    },
+    {
+      "message": "views.action_editor.line_633",
+      "match": "逗号分隔，可选范围\\ (.*?)–(.*?)"
+    },
+    {
+      "message": "views.action_editor.line_658",
+      "match": "(.*?)\\ 必须使用逗号分隔的整数"
+    },
+    {
+      "message": "views.action_editor.line_665",
+      "match": "(.*?)\\ 必须在\\ (.*?)–(.*?)\\ 范围内"
+    },
+    {
+      "message": "views.actions.line_185",
+      "match": "自动化总数\\ (.*?)\\ \\ ·\\ \\ 当前可用\\ (.*?)\\ \\ ·\\ \\ 已绑定控件\\ (.*?)"
+    },
+    {
+      "message": "views.actions.line_167",
+      "match": "未知自动化分区\\ (.*?)"
+    },
+    {
+      "message": "views.actions.line_312",
+      "match": "提示词槽位\\ (.*?)"
+    },
+    {
+      "message": "views.automation.line_123",
+      "match": "提示词\\ (.*?)\\ ·\\ (.*?)"
+    },
+    {
+      "message": "views.diagnostics.line_643",
+      "match": "下一步：按下并松开按键\\ (.*?)。"
+    },
+    {
+      "message": "views.diagnostics.line_428",
+      "match": "已测试\\ (.*?)\\ /\\ (.*?)"
+    },
+    {
+      "message": "views.diagnostics.line_441",
+      "match": "按键\\ (.*?)/(.*?)\\ \\ ·\\ \\ 旋钮\\ (.*?)/(.*?)\\ \\ ·\\ \\ 摇杆\\ (.*?)/(.*?)"
+    },
+    {
+      "message": "views.extensions.line_387",
+      "match": "(.*?)\\ 个已安装\\ ·\\ (.*?)\\ 个运行中"
+    },
+    {
+      "message": "views.macro_editor.line_227",
+      "match": "(.*?)\\ 个步骤\\ ·\\ 编码\\ (.*?)/(.*?)\\ 字节\\ ·\\ 显式延时\\ (.*?)\\ ms\\ ·\\ (.*?)"
+    },
+    {
+      "message": "views.macro_editor.line_195",
+      "match": "上移第\\ (.*?)\\ 个按键序列步骤"
+    },
+    {
+      "message": "views.macro_editor.line_200",
+      "match": "下移第\\ (.*?)\\ 个按键序列步骤"
+    },
+    {
+      "message": "views.main_window.line_5189",
+      "match": "当前构建：(.*?)。"
+    },
+    {
+      "message": "views.main_window.line_5190",
+      "match": "固件签名能力：(.*?)。",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "views.main_window.line_6157",
+      "match": "设置(.*?)",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "views.main_window.line_2926",
+      "match": "设备序列号：(.*?)\\\n当前版本：(.*?)\\\n目标版本：(.*?)\\\n目标\\ build_id：(.*?)\\\n软件包验证状态：(.*?)\\\ngit_dirty：(.*?)\\\n\\\n继续后会向设备非活动\\ OTA\\ 分区传输完整镜像。请保持\\ USB\\ 连接；断线后控制台只按\\ FW_STATUS\\ 对账续传，不会盲目从头重写。"
+    },
+    {
+      "message": "views.main_window.line_3537",
+      "match": "清除蓝牙槽位\\ (.*?)"
+    },
+    {
+      "message": "views.main_window.line_3739",
+      "match": "用于辅助识别这个控件，最多\\ (.*?)\\ 个字符"
+    },
+    {
+      "message": "views.main_window.line_3983",
+      "match": "(.*?)/(.*?)\\ 条按键序列\\\n(.*?)/(.*?)\\ 字节"
+    },
+    {
+      "message": "views.main_window.line_4373",
+      "match": "设备已验证候选配置。即将写入\\ (.*?)\\ 项本地修改。\\\n\\\n目标设备：(.*?)\\\nbase\\ generation:\\ (.*?)\\\ncandidate\\ digest:\\ (.*?)\\\n\\\n写入后将等待设备激活并读回确认；连接异常时不会自动重试写入。"
+    },
+    {
+      "message": "views.main_window.line_4411",
+      "match": "当前完整草稿与设备最新配置有\\ (.*?)\\ 项差异。\\\n\\\n继续后不会自动合并或写入；草稿将绑定到设备最新\\ generation，你仍需重新验证并再次确认整份配置。"
+    },
+    {
+      "message": "views.main_window.line_4752",
+      "match": "\\\n•\\ 还有\\ (.*?)\\ 项差异"
+    },
+    {
+      "message": "views.main_window.line_4757",
+      "match": "文件类型：(.*?)\\\n创建工具：(.*?)\\\n检测到\\ (.*?)\\ 项差异。\\\n\\\n(.*?)\\\n\\\n导入只替换本地草稿，不会写入设备。"
+    },
+    {
+      "message": "views.main_window.line_5174",
+      "match": "当前配置的摇杆状态：(.*?)。",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "views.main_window.line_5423",
+      "match": "透明状态键\\ (.*?)"
+    },
+    {
+      "message": "views.main_window.line_5425",
+      "match": "白色按键\\ (.*?)"
+    },
+    {
+      "message": "views.main_window.line_5532",
+      "match": "协议\\ /\\ Schema\\ \\ (.*?)\\ /\\ (.*?)"
+    },
+    {
+      "message": "views.main_window.line_5534",
+      "match": "设备真实性\\ \\ \\ \\ \\ (.*?)"
+    },
+    {
+      "message": "views.main_window.line_5535",
+      "match": "认证签发方\\ \\ \\ \\ \\ (.*?)"
+    },
+    {
+      "message": "views.main_window.line_5538",
+      "match": "配置摘要\\ \\ \\ \\ \\ \\ \\ (.*?)"
+    },
+    {
+      "message": "views.main_window.line_6159",
+      "match": "点击设置(.*?)",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "views.main_window.line_2650",
+      "match": "版本：(.*?)\\\nbuild_id：(.*?)\\\n下载大小：(.*?)\\ 字节\\\n渠道：(.*?)\\\n最低桌面端版本：(.*?)\\\n发布时间：(.*?)\\\n发布说明：(.*?)"
+    },
+    {
+      "message": "views.main_window.line_2672",
+      "match": "(.*?)\\ /\\ (.*?)\\ 字节\\ ·\\ %p%"
+    },
+    {
+      "message": "views.main_window.line_2737",
+      "match": "版本：(.*?)\\\nbuild_id：(.*?)\\\n目标硬件：(.*?)\\\n镜像：(.*?)\\ ·\\ (.*?)\\ 字节\\\n验证状态：(.*?)"
+    },
+    {
+      "message": "views.main_window.line_3520",
+      "match": "KEY\\ 3\\ \\+\\ KEY\\ (.*?)\\ →\\ 槽位\\ (.*?)"
+    },
+    {
+      "message": "views.main_window.line_4574",
+      "match": "还有\\ (.*?)\\ 项更改…"
+    },
+    {
+      "message": "views.main_window.line_3205",
+      "match": "(.*?)\\ \\ 处未写入改动"
+    },
+    {
+      "message": "views.main_window.line_3784",
+      "match": "按键序列\\ (.*?)"
+    },
+    {
+      "message": "views.main_window.line_3800",
+      "match": "当前高级提示词\\ (.*?)\\ ·\\ (.*?)"
+    },
+    {
+      "message": "views.main_window.line_3804",
+      "match": "(.*?)\\ (.*?)\\ ·\\ 未设置"
+    },
+    {
+      "message": "views.main_window.line_3807",
+      "match": "当前高级提示词\\ (.*?)"
+    },
+    {
+      "message": "views.onboarding.line_185",
+      "match": "第\\ (.*?)\\ 步，共\\ (.*?)\\ 步"
+    },
+    {
+      "message": "views.preferences_editor.line_595",
+      "match": "状态灯\\ (.*?)"
+    },
+    {
+      "message": "views.prompt_library_editor.line_274",
+      "match": "(.*?)/4\\ 个方向已配置"
+    },
+    {
+      "message": "views.prompt_library_editor.line_621",
+      "match": "(.*?)\\ (.*?)\\ ·\\ 快捷提示词\\ (.*?)",
+      "translate": [
+        2
+      ]
+    },
+    {
+      "message": "views.prompt_library_editor.line_685",
+      "match": "未知快捷提示词\\ (.*?)"
+    },
+    {
+      "message": "views.prompt_library_editor.line_690",
+      "match": "(.*?)/(.*?)\\ UTF\\-8\\ 字节"
+    },
+    {
+      "message": "views.prompt_library_editor.line_746",
+      "match": "将覆盖设备的(.*?)方向快捷提示词，随后立即读回全文确认。是否继续？",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "views.prompt_library_editor.line_762",
+      "match": "将删除设备的(.*?)方向快捷提示词。该方向在重新配置前不会执行提示词。是否继续？",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "views.workflows.line_144",
+      "match": "(.*?)\\ ·\\ 当前\\ Profile：(.*?)"
+    },
+    {
+      "message": "workflow_runtime.line_195",
+      "match": "第\\ (.*?)\\ 步失败：(.*?)"
+    },
+    {
+      "message": "workflow_runtime.line_213",
+      "match": "第\\ (.*?)\\ 步完成：(.*?)"
+    },
+    {
+      "message": "workflows.line_44",
+      "match": "(.*?)\\ 的参数字段不完整或包含未知字段"
+    },
+    {
+      "message": "workflows.line_259",
+      "match": "自动化\\ ID\\ 重复：(.*?)"
+    },
+    {
+      "message": "workflows.line_47",
+      "match": "(.*?)\\.(.*?)\\ 参数类型错误"
+    },
+    {
+      "match": "蓝牙名称需要 1–(\\d+) 个 UTF-8 字节",
+      "message": "ble_name_byte_limit"
+    }
+  ]
+}

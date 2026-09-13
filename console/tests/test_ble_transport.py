@@ -3,8 +3,10 @@ from __future__ import annotations
 from dataclasses import replace
 from types import SimpleNamespace
 
-from PySide6.QtBluetooth import QLowEnergyCharacteristic, QLowEnergyService
-from PySide6.QtCore import QObject, Signal
+import pytest
+
+from PySide6.QtBluetooth import QBluetoothAddress, QBluetoothDeviceInfo, QLowEnergyCharacteristic, QLowEnergyService
+from PySide6.QtCore import QObject, QUuid, Signal
 
 from controller_config.models import PortCandidate
 from controller_config.protocol.contract import Contract
@@ -104,6 +106,85 @@ def test_snapshot_reports_bluetooth_connection(contract: Contract) -> None:
 
     assert snapshot.connection_kind == "usb"
     assert replace(snapshot, port_name="ble:device-id").connection_kind == "bluetooth"
+
+
+@pytest.mark.parametrize("address_based", (False, True))
+def test_custom_names_use_service_and_keep_same_name_devices_separate(qtbot, contract, address_based):
+    from controller_config.transport import ble
+
+    identifiers = (
+        (QBluetoothAddress("AA:BB:CC:DD:EE:01"), QBluetoothAddress("AA:BB:CC:DD:EE:02"))
+        if address_based else
+        (QUuid("12345678-1234-1234-1234-123456789ab1"),
+         QUuid("12345678-1234-1234-1234-123456789ab2"))
+    )
+    worker = BleWorker(contract)
+    for identifier in identifiers:
+        info = QBluetoothDeviceInfo(identifier, "办公室键盘", 0)
+        info.setServiceUuids([ble.SERVICE_UUID])
+        worker._add_discovered_device(info)
+        worker._add_discovered_device(info)  # Duplicate advertisements are one candidate.
+
+    candidates = tuple(worker._candidates_by_port.values())
+    assert len(candidates) == 2
+    assert {item.description for item in candidates} == {"办公室键盘"}
+    assert len({item.port_name for item in candidates}) == 2
+    assert all(not item.serial_number for item in candidates)
+    if address_based:
+        assert {item.port_name for item in candidates} == {
+            "ble:aa:bb:cc:dd:ee:01", "ble:aa:bb:cc:dd:ee:02",
+        }
+
+
+@pytest.mark.parametrize("name,accepted", (
+    ("BORING MIST", True), ("Mist Legacy", True), ("Codex Micro TEST", True),
+    ("Other keyboard", False), ("办公室键盘", False),
+))
+def test_name_fallback_only_accepts_legacy_prefixes_without_config_service(qtbot, contract, name, accepted):
+    from controller_config.transport import ble
+
+    info = QBluetoothDeviceInfo(QUuid("12345678-1234-1234-1234-123456789abc"), name, 0)
+    info.setServiceUuids([ble.QBluetoothUuid(0x1812)])
+    worker = BleWorker(contract)
+    worker._add_discovered_device(info)
+    assert bool(worker._candidates_by_port) is accepted
+
+
+def test_native_connected_config_service_accepts_custom_names_but_hid_stays_filtered(qtbot, monkeypatch):
+    from controller_config.transport import ble
+
+    core = SimpleNamespace(
+        CBManagerStateUnknown=0, CBManagerStateResetting=1, CBManagerStatePoweredOn=5,
+        CBUUID=SimpleNamespace(UUIDWithString_=lambda value: value),
+    )
+    monkeypatch.setattr(ble, "CoreBluetooth", core, raising=False)
+
+    def peripheral(identifier, name):
+        return SimpleNamespace(identifier=lambda: SimpleNamespace(UUIDString=lambda: identifier),
+                               name=lambda: name)
+
+    first = peripheral("AA", "办公室键盘")
+    second = peripheral("BB", "办公室键盘")
+    legacy = peripheral("CC", "BORING MIST")
+    unrelated = peripheral("DD", "Other keyboard")
+    queries = []
+
+    def connected(services):
+        queries.append(services[0])
+        return [first, second] if services[0] == ble.SERVICE_UUID_TEXT else [first, legacy, unrelated]
+
+    manager = SimpleNamespace(
+        state=lambda: 5,
+        retrieveConnectedPeripheralsWithServices_=connected,
+        scanForPeripheralsWithServices_options_=lambda *_: None,
+    )
+    finder = ble.MacConnectedDeviceFinder()
+    found = []
+    finder.device_found.connect(lambda identifier, name: found.append((identifier, name)))
+    finder._manager_state_changed(manager)
+
+    assert queries == list(ble.connected_service_uuid_texts())
+    assert found == [("aa", "办公室键盘"), ("bb", "办公室键盘"), ("cc", "BORING MIST")]
 
 
 def test_device_gateway_prefers_usb_candidates(qtbot, contract: Contract) -> None:
@@ -218,3 +299,124 @@ def test_authentication_disconnect_emits_failure_instead_of_reconnect_signal(con
         BleWorker._on_serial_error(worker, QSerialPort.ResourceError)
         assert failures[-1].kind is BootstrapKind.AUTHENTICATION_INTERRUPTED
         assert command in failures[-1].technical
+
+
+def test_macos_discovery_does_not_initialize_legacy_qt_agent(qtbot, contract, monkeypatch):
+    from controller_config.transport import ble
+    monkeypatch.setattr(ble, "sys", SimpleNamespace(platform="darwin"))
+    monkeypatch.setattr(ble, "QBluetoothDeviceDiscoveryAgent",
+                        lambda *_: (_ for _ in ()).throw(AssertionError("legacy IOBluetooth discovery must not run")))
+
+    class NativeFinder(QObject):
+        device_found = Signal(str, str)
+        finished = Signal()
+        def start(self):
+            self.cancelled = False
+            self.device_found.emit("12345678-1234-1234-1234-123456789abc", "BORING MIST")
+        def cancel(self):
+            self.cancelled = True
+
+    monkeypatch.setattr(ble, "MacConnectedDeviceFinder", NativeFinder)
+    worker = BleWorker(contract)
+    found = []
+    worker.candidates_found.connect(found.append)
+    worker.scan()
+    finder = worker._connected_finder
+    assert worker._discovery is None
+    assert worker._scan_timer.isActive()
+    assert found == []
+    worker._scan_timer.timeout.emit()
+    assert finder.cancelled
+    assert len(found) == 1
+    assert found[0][0].port_name == "ble:12345678-1234-1234-1234-123456789abc"
+    worker.stop_scan()
+    assert len(found) == 1
+
+
+def test_windows_discovery_retains_qt_low_energy_path(qtbot, contract, monkeypatch):
+    from controller_config.transport import ble
+    monkeypatch.setattr(ble, "sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(ble, "MacConnectedDeviceFinder",
+                        lambda *_: (_ for _ in ()).throw(AssertionError("Windows must not initialize CoreBluetooth")))
+
+    class Discovery(QObject):
+        deviceDiscovered = Signal(object)
+        finished = Signal()
+        errorOccurred = Signal(object)
+        LowEnergyMethod = object()
+        def start(self, method):
+            assert method is self.LowEnergyMethod
+            self.active = True
+        def isActive(self):
+            return self.active
+        def stop(self):
+            self.active = False
+
+    monkeypatch.setattr(ble, "QBluetoothDeviceDiscoveryAgent", Discovery)
+    worker = BleWorker(contract)
+    worker.scan()
+    discovery = worker._discovery
+    assert discovery.active
+    assert worker._connected_finder is None
+    worker.stop_scan()
+    assert not discovery.active
+
+
+def test_native_scan_waits_for_power_and_filters_deduplicates_advertisements(qtbot, monkeypatch):
+    from controller_config.transport import ble
+    core = SimpleNamespace(CBManagerStateUnknown=0, CBManagerStateResetting=1,
+                           CBManagerStatePoweredOn=5,
+                           CBAdvertisementDataLocalNameKey="name",
+                           CBAdvertisementDataServiceUUIDsKey="services",
+                           CBUUID=SimpleNamespace(UUIDWithString_=lambda value: value))
+    monkeypatch.setattr(ble, "CoreBluetooth", core, raising=False)
+    def peripheral(identifier, name):
+        return SimpleNamespace(identifier=lambda: SimpleNamespace(UUIDString=lambda: identifier),
+                               name=lambda: name)
+    connected = peripheral("AA", "BORING MIST")
+    other = peripheral("BB", "Other keyboard")
+    class Manager:
+        current_state = 0
+        scans = 0
+        stops = 0
+        def state(self):
+            return self.current_state
+        def retrieveConnectedPeripheralsWithServices_(self, services):
+            assert services[0] in ble.connected_service_uuid_texts()
+            return [connected] if services[0] == ble.SERVICE_UUID_TEXT else [connected, other]
+        def scanForPeripheralsWithServices_options_(self, services, options):
+            assert services is None  # Keep legacy name-only BORING advertisements.
+            self.scans += 1
+        def stopScan(self):
+            self.stops += 1
+        def setDelegate_(self, delegate):
+            self.delegate = delegate
+    finder = ble.MacConnectedDeviceFinder()
+    manager = Manager()
+    finder._manager = manager
+    found, finished = [], []
+    finder.device_found.connect(lambda identifier, name: found.append((identifier, name)))
+    finder.finished.connect(lambda: finished.append(True))
+    finder._manager_state_changed(manager)
+    assert not found and not finished and manager.scans == 0
+    manager.current_state = 1
+    finder._manager_state_changed(manager)
+    assert not finished
+    manager.current_state = 5
+    finder._manager_state_changed(manager)
+    assert found == [("aa", "BORING MIST")]
+    assert manager.scans == 1 and not finished
+    finder._manager_state_changed(manager)
+    assert manager.scans == 1
+    finder._peripheral_discovered(connected, {"name": "BORING MIST"})
+    finder._peripheral_discovered(other, {"name": "Other keyboard"})
+    finder._peripheral_discovered(peripheral("CC", None), {"name": "Codex Micro TEST"})
+    finder._peripheral_discovered(peripheral("DD", "Custom label"), {
+        "services": [SimpleNamespace(UUIDString=lambda: ble.SERVICE_UUID_TEXT.upper())]})
+    assert found == [("aa", "BORING MIST"), ("cc", "Codex Micro TEST"), ("dd", "Custom label")]
+    manager.current_state = 4  # Powered off: finish once, cancel and ignore callbacks.
+    finder._manager_state_changed(manager)
+    assert finished == [True] and manager.stops == 1 and manager.delegate is None
+    finder._peripheral_discovered(peripheral("EE", "BORING MIST"), {})
+    finder._manager_state_changed(manager)
+    assert len(found) == 3 and finished == [True]

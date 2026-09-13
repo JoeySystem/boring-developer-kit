@@ -2,7 +2,7 @@ import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QPushButton, QScrollArea, QWidget
 
-from controller_config.views.main_window import _KeycapButton
+from controller_config.views.device_silhouette import KeycapButton
 from controller_config.views.preferences_editor import PreferencesEditor, RgbButton
 from test_session_recovery import session
 
@@ -49,14 +49,14 @@ def test_lighting_workspace_layout_preview_and_controls(session, qtbot, tmp_path
     assert window.findChild(QPushButton, "savePreferencesToDevice").isVisible()
     assert window.findChild(QPushButton, "expandScreenIcons").isVisible()
     assert not window.findChild(QWidget, "screenIconOptions").isVisible()
-    key = next(k for k in stage.findChildren(_KeycapButton) if k.property("controlId") == "key.3")
+    key = next(k for k in stage.findChildren(KeycapButton) if k.property("controlId") == "key.3")
     swatch = next(b for b in editor.findChildren(RgbButton) if b.property("controlId") == "key.3")
     editor._lighting_brightness.setValue(4)
     swatch._set_rgb((230, 120, 40), emit=True)
     assert key.property("lightingColor").red() == 255
     assert key.property("lightingColor").alpha() == round(235 * (230 / 255) ** .45)
     assert window.findChild(QLabel, "preferencesSyncSummary").text() == (
-        "Current settings have not been applied to the device" if language == "en_US" else "当前设置尚未应用到设备"
+        "Settings Not Applied" if language == "en_US" else "设置尚未应用到设备"
     )
     before = len(gateway.commands)
     qtbot.mouseClick(key, Qt.LeftButton)
@@ -99,7 +99,7 @@ def test_zero_lighting_preview_does_not_invent_agent_state(session, qtbot):
     editor = window.findChild(PreferencesEditor)
     stage = window.findChild(QWidget, "lightingDevicePreview")
     editor._lighting_brightness.setValue(0)
-    for key in stage.findChildren(_KeycapButton):
+    for key in stage.findChildren(KeycapButton):
         assert key.property("lightingColor").alpha() == 0
 
 
@@ -111,7 +111,7 @@ def test_preview_boost_preserves_color_values_and_level_order(session, qtbot, tm
     vm.navigate("lighting")
     qtbot.wait(100)
     editor = window.findChild(PreferencesEditor)
-    key = next(k for k in window.findChildren(_KeycapButton) if k.property("controlId") == "key.3")
+    key = next(k for k in window.findChildren(KeycapButton) if k.property("controlId") == "key.3")
     swatch = next(b for b in editor.findChildren(RgbButton) if b.property("controlId") == "key.3")
     before = len(gateway.commands)
     swatch._set_rgb(rgb, emit=True)
@@ -143,7 +143,7 @@ def test_sync_actions_remain_clickable_when_settings_are_locked(session, monkeyp
     vm.prepare_device_write()
     gateway.command_completed.emit("VALIDATE_CONFIG", _ack("VALIDATE_CONFIG"))
     confirm = next(b for b in window.findChild(QWidget, "lightingSyncCard").findChildren(QPushButton)
-                   if b.text() == "确认写入设备")
+                   if b.text() == "确认保存到设备")
     assert confirm.isEnabled()
     monkeypatch.setattr(QMessageBox, "warning", lambda *_: QMessageBox.Yes)
     confirm.click()
@@ -152,6 +152,6 @@ def test_sync_actions_remain_clickable_when_settings_are_locked(session, monkeyp
     vm._write_transaction = replace(vm.write_transaction, state=ConfigTransactionState.UNKNOWN)
     vm.changed.emit(vm.model)
     sync = window.findChild(QWidget, "lightingSyncCard")
-    reconcile = next(b for b in sync.findChildren(QPushButton) if b.text() == "重新对账")
+    reconcile = next(b for b in sync.findChildren(QPushButton) if b.text() == "重新确认")
     assert reconcile.isEnabled()
     assert window.findChild(QLabel, "preferencesSyncSummary").text() != "已同步 · 没有本地变更"

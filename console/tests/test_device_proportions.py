@@ -9,14 +9,19 @@ from test_session_recovery import session
 def assert_physical_proportions(window):
     shell = window.findChild(QWidget, 'deviceShell')
     assert shell.width() == shell.height()
+    canvas = shell.findChild(QWidget, 'deviceModelCanvas')
     display = shell.findChild(QWidget, 'displayControl')
-    assert display.width() == display.height()
+    expected = canvas.screen_rect()
+    assert abs(display.width() - expected.width()) <= 1
+    assert abs(display.height() - expected.height()) <= 1
     controls = {button.property('controlId'): button for button in shell.findChildren(QPushButton)}
     for name, button in controls.items():
-        if name == 'key.8':
-            assert abs(button.width() / button.height() - 131 / 64) < .05
-        else:
-            assert button.width() == button.height(), (name, button.size(), shell.size())
+        expected = canvas.control_rect(name)
+        # Preserve the Blender perspective proportions, including after style changes.
+        assert abs(button.width() - expected.width()) <= 1, name
+        assert abs(button.height() - expected.height()) <= 1, name
+        assert abs(button.x() - expected.x()) <= 1, name
+        assert abs(button.y() - expected.y()) <= 1, name
     return controls
 
 

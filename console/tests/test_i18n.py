@@ -46,7 +46,7 @@ def _settings(tmp_path) -> QSettings:
     return QSettings(str(tmp_path / "configurator.ini"), QSettings.Format.IniFormat)
 
 
-def test_language_normalization_supports_only_simplified_chinese_and_english() -> None:
+def test_language_normalization_supports_registered_languages() -> None:
     assert normalize_language("zh-CN") == SIMPLIFIED_CHINESE
     assert normalize_language("zh_Hans_CN") == SIMPLIFIED_CHINESE
     assert normalize_language("en-GB") == ENGLISH
@@ -82,21 +82,21 @@ def test_dynamic_text_can_update_in_english_and_return_to_chinese(
         "3 个步骤 · 编码 13/256 字节 · 显式延时 50 ms · 容量内",
     )
     assert label.text() == (
-        "3 steps · 13/256 encoded bytes · explicit delay 50 ms · Within Capacity"
+        "3 steps · 13/256 bytes · Delay 50 ms · Within Capacity"
     )
 
     set_translatable_text(
         label,
         "4 个步骤 · 编码 18/256 字节 · 显式延时 75 ms · 容量内",
     )
-    assert label.text().startswith("4 steps · 18/256 encoded bytes")
+    assert label.text().startswith("4 steps · 18/256 bytes")
     assert translate_ui_text("1/4 条按键序列\n12/1024 字节") == (
         "1/4 key sequences\n12/1024 bytes"
     )
 
     manager.set_language(SIMPLIFIED_CHINESE)
     manager.retranslate_widget_tree(label)
-    assert label.text() == "4 个步骤 · 编码 18/256 字节 · 显式延时 75 ms · 容量内"
+    assert label.text() == "4 步 · 18/256 字节 · 延时 75 ms · 容量内"
 
 
 def test_v4_playground_status_and_quota_copy_round_trips(qapp, tmp_path) -> None:
@@ -110,16 +110,16 @@ def test_v4_playground_status_and_quota_copy_round_trips(qapp, tmp_path) -> None
         "配置变更提案审阅": "Review Configuration Proposals",
         "通用": "General",
         "关于": "About",
-        "已认证 [ VERIFIED ]": "Authenticated [ VERIFIED ]",
-        "开发设备，未认证 [ DEV ]": "Development device, unauthenticated [ DEV ]",
-        "无法确认是 BORING 设备 [ UNTRUSTED ]": "Unable to verify BORING identity [ UNTRUSTED ]",
-        "未连接设备 [ NO LINK ]": "No device connected [ NO LINK ]",
+        "已认证 [ VERIFIED ]": "Verified [ VERIFIED ]",
+        "开发设备，未认证 [ DEV ]": "Development · Unverified [ DEV ]",
+        "无法确认是 BORING 设备 [ UNTRUSTED ]": "BORING Identity Unverified [ UNTRUSTED ]",
+        "未连接设备 [ NO LINK ]": "Disconnected [ NO LINK ]",
         "已断开 [ NO LINK ]": "Disconnected [ NO LINK ]",
         "已同步 [ SYNCED ]": "Synced [ SYNCED ]",
-        "3  处未写入改动": "3  changes not written",
+        "3  处未写入改动": "Changes Not Saved to Device: 3",
         "状态未接入": "Status Not Connected",
         "7D 外环 · 5H 内环 · 剩余额度\n更新于 09-09 10:30": (
-            "7D outer ring · 5H inner ring · Remaining quota\nUpdated 09-09 10:30"
+            "Remaining · Outer 7d / Inner 5h\nUpdated 09-09 10:30"
         ),
     }
     labels = []
@@ -131,9 +131,19 @@ def test_v4_playground_status_and_quota_copy_round_trips(qapp, tmp_path) -> None
     assert translate_ui_text("设备  BORING MIST") == "Device  BORING MIST"
     assert translate_ui_text("端口  /dev/cu.usbmodem1234") == "Port  /dev/cu.usbmodem1234"
     manager.set_language(SIMPLIFIED_CHINESE)
+    chinese_copy = {
+        "配置变更提案审阅": "审阅配置提案",
+        "开发设备，未认证 [ DEV ]": "开发设备 · 未认证 [ DEV ]",
+        "无法确认是 BORING 设备 [ UNTRUSTED ]": "BORING 身份未确认 [ UNTRUSTED ]",
+        "未连接设备 [ NO LINK ]": "未连接 [ NO LINK ]",
+        "3  处未写入改动": "3 项修改未写入",
+        "7D 外环 · 5H 内环 · 剩余额度\n更新于 09-09 10:30": (
+            "剩余额度 · 外环 7 天／内环 5 小时\n更新于 09-09 10:30"
+        ),
+    }
     for label, source in labels:
         manager.retranslate_widget_tree(label)
-        assert label.text() == source
+        assert label.text() == chinese_copy.get(source, source)
 
 
 def test_device_prompt_copy_round_trips_without_prototype_wording(qapp, tmp_path) -> None:
@@ -141,18 +151,24 @@ def test_device_prompt_copy_round_trips_without_prototype_wording(qapp, tmp_path
         qapp, settings=_settings(tmp_path), initial_language=ENGLISH
     )
     expectations = {
-        "写入设备并读回确认": "Write to Device and Verify",
-        "从设备重新读取": "Read Again from Device",
+        "写入设备并读回确认": "Save to device",
+        "从设备重新读取": "Read from Device",
         "从设备删除": "Delete from Device",
         "正在读取设备提示词列表": "Reading the device prompt list",
-        "设备提示词已完整读取": "Device prompts have been read completely",
-        "设备删除已读回确认": "Device deletion confirmed by readback",
+        "设备提示词已完整读取": "Device prompts loaded",
+        "设备删除已读回确认": "Prompt removed from device",
     }
     for source, expected in expectations.items():
         assert translate_ui_text(source) == expected
     manager.set_language(SIMPLIFIED_CHINESE)
+    chinese_copy = {
+        "写入设备并读回确认": "保存到设备",
+        "从设备重新读取": "重新读取设备",
+        "设备提示词已完整读取": "设备提示词已读取",
+        "设备删除已读回确认": "提示词已从设备删除",
+    }
     for source in expectations:
-        assert translate_ui_text(source) == source
+        assert translate_ui_text(source) == chinese_copy.get(source, source)
 
 
 def test_white_key_lighting_copy_is_available_in_english(qapp, tmp_path) -> None:
@@ -162,13 +178,13 @@ def test_white_key_lighting_copy_is_available_in_english(qapp, tmp_path) -> None
         initial_language=ENGLISH,
     )
 
-    assert translate_ui_text("白色动作键灯") == "White Action Key Lights"
+    assert translate_ui_text("白色动作键灯") == "White Key Lighting"
     assert translate_ui_text("透明 Agent 状态键灯") == (
-        "Transparent Agent Status Key Lights"
+        "Agent Status Lights"
     )
     assert translate_ui_text(
         "透明键灯由 Agent 状态语义接管，不在这里作为普通 RGB 灯编辑；现有配置值保持不变。"
-    ).startswith("Transparent key lights are reserved for Agent status semantics")
+    )== "Status key lights follow task status."
 
     manager.set_language(SIMPLIFIED_CHINESE)
 
@@ -187,7 +203,7 @@ def test_automation_runtime_messages_are_available_in_english(qapp, tmp_path) ->
         "Failed: Collect context · exit 2"
     )
     assert translate_ui_text("事件 9 已交给本地脚本：Collect context") == (
-        "Event 9 dispatched to local script: Collect context"
+        "Event 9 Sent to Script: Collect context"
     )
     assert translate_ui_text("本地脚本启动失败：Collect context") == (
         "Local script failed to start: Collect context"
@@ -200,12 +216,12 @@ def test_automation_runtime_messages_are_available_in_english(qapp, tmp_path) ->
     assert translate_ui_text("已停止：Collect context") == "Stopped: Collect context"
     assert translate_ui_text(
         "提示词槽位 1 尚未写入设备；请先在快捷提示词页填写、写入并读回。"
-    ).startswith("Prompt slot 1 is not on the device.")
+    ).startswith("Prompt 1 is not saved on the device.")
     assert translate_ui_text("Claude Code 钥匙串读取超时，请完成系统授权后重新刷新。").startswith(
         "Claude Code Keychain access timed out."
     )
     assert translate_ui_text("提示词槽位 3 已绑定其他本地脚本") == (
-        "Prompt slot 3 is already bound to another local script"
+        "Slot 3 Is Bound to Another Script"
     )
 
     manager.set_language(SIMPLIFIED_CHINESE)
@@ -220,7 +236,7 @@ def test_lighting_live_preview_messages_are_available_in_english(
         initial_language=ENGLISH,
     )
 
-    assert translate_ui_text("在设备上实时预览") == "Preview Live on Device"
+    assert translate_ui_text("在设备上实时预览") == "Live Device Preview"
     assert translate_ui_text("当前固件不支持实时预览") == (
         "The current firmware does not support live preview"
     )
@@ -259,9 +275,9 @@ def test_prompt_palette_guide_and_fixed_slots_switch_languages(
         "Joystick: select\nKnob: confirm"
     )
     guide = window.findChild(QLabel, "promptPaletteGuide").text()
-    assert "hold Key12 for about 0.8 seconds" in guide
-    assert "short-press the knob to confirm" in guide
-    assert "Key3 to cancel" in guide and "10 seconds of inactivity" in guide
+    assert "Hold key 12 for about 0.8 seconds" in guide
+    assert "press the knob to confirm" in guide
+    assert "Key 3 cancels" in guide and "10 seconds" in guide
     cards = window.findChildren(QPushButton, "promptDirectionCard")
     for button in cards:
         assert f"Prompt Slot {button.property('promptId')}" in button.toolTip()
@@ -270,7 +286,7 @@ def test_prompt_palette_guide_and_fixed_slots_switch_languages(
 
     manager.set_language(SIMPLIFIED_CHINESE)
     assert window.findChild(QLabel, "promptJoystickCenter").text() == "摇杆选择\n旋钮确认"
-    assert "Key3 取消" in window.findChild(QLabel, "promptPaletteGuide").text()
+    assert "3 号按键取消" in window.findChild(QLabel, "promptPaletteGuide").text()
     assert window.findChild(QPushButton, "bindPromptDirection") is None
     view_model.shutdown()
 
@@ -321,8 +337,8 @@ def test_shortcut_recorder_is_available_in_english(
     record = editor.findChild(QPushButton, "shortcutRecordButton")
     labels = {label.text() for label in editor.findChildren(QLabel)}
     assert record is not None and record.text() == "Record New Shortcut"
-    assert "Type the Shortcut Directly" in labels
-    assert "Click Record, then press the target key or shortcut on your keyboard." in labels
+    assert "Enter Shortcut" in labels
+    assert "Select Record, then press a key or shortcut on your keyboard." in labels
 
     manager.set_language(SIMPLIFIED_CHINESE)
 
@@ -381,7 +397,7 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
         button.accessibleDescription() for button in window._nav_buttons.values()
     } == {"Switch View"}
     qtbot.waitUntil(
-        lambda: window._device_auth_summary.text() == "Development device, unauthenticated [ DEV ]",
+        lambda: window._device_auth_summary.text() == "Development · Unverified [ DEV ]",
         timeout=1000,
     )
     assert window.windowTitle() == "BORING Console Community"
@@ -406,7 +422,7 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
         button.text(): button
         for button in window.findChildren(QPushButton, "settingsLanguageButton")
     }
-    assert set(language_buttons) == {"简体中文", "English"}
+    assert set(language_buttons) == {"简体中文", "English", "日本語"}
     assert language_buttons["English"].property("active") is True
     assert language_buttons["简体中文"].property("active") is False
     view_model.navigate("overview")
@@ -425,8 +441,7 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
     assert "KEY 3 + KEY 9 → Slot 2" in overview_text
     assert "KEY 3 + KEY 10 → Slot 3" in overview_text
     assert (
-        "Press the chord to switch slots; hold it for about 3 seconds to clear "
-        "that slot and enter pairing."
+        "Press the shortcut to switch slots. Hold for about 3 seconds to clear the slot and pair again."
     ) in overview_text
 
     profile_pill = window.findChild(QPushButton, "profilePill")
@@ -441,7 +456,7 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
         QAction, "manageDeviceKeySequencesAction"
     )
     assert sequence_action is not None
-    assert sequence_action.text() == "Manage Device Key Sequences…"
+    assert sequence_action.text() == "Manage Key Sequences…"
     sequence_action.trigger()
     qtbot.waitUntil(lambda: view_model.page == "sequences", timeout=1000)
 
@@ -456,7 +471,7 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
     catalog_status = window.findChild(QLabel, "actionCatalogStatus")
     assert catalog_status is not None
     assert catalog_status.text() == (
-        "Total Automations 0  ·  Available 0  ·  Bound Controls 0"
+        "Total: 0 · Available: 0 · Bound: 0"
     )
     develop_tab = next(
         button
@@ -492,7 +507,7 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
     qtbot.waitUntil(
         lambda: (
             (guide := window.findChild(QLabel, "promptPaletteGuide")) is not None
-            and "hold Key12 for about 0.8 seconds" in guide.text()
+            and "Hold key 12 for about 0.8 seconds" in guide.text()
         ),
         timeout=1000,
     )
@@ -509,13 +524,13 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
     view_model.navigate("diagnostics")
     qtbot.waitUntil(
         lambda: any(
-            label.text() == "Diagnostics and Live Input"
+            label.text() == "Diagnostics & Live Input"
             for label in window.findChildren(QLabel)
         ),
         timeout=1000,
     )
     assert any(
-        button.text() == "Export Diagnostic Summary"
+        button.text() == "Export Summary"
         for button in window.findChildren(QPushButton)
     )
     report_issue = window.findChild(QPushButton, "reportJoystickIssue")

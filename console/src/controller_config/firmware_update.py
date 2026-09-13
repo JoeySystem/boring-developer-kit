@@ -64,6 +64,8 @@ class FirmwarePackage:
     validation_state: str = ""
     git_dirty: bool | None = None
     image_data: bytes = field(default=b"", repr=False)
+    manifest: dict[str, Any] = field(default_factory=dict, repr=False)
+    source_kind: str = "unclassified"
 
     @classmethod
     def load(cls, package_path: Path, contract: Contract) -> "FirmwarePackage":
@@ -153,6 +155,7 @@ class FirmwarePackage:
             validation_state=str(validation_state),
             git_dirty=git_dirty,
             image_data=image_data,
+            manifest=dict(raw),
         )
 
     def validate_for_device(self, snapshot: DeviceSnapshot) -> int:
@@ -167,6 +170,8 @@ class FirmwarePackage:
             raise FirmwarePackageError("设备当前处于只读兼容状态，不能执行固件维护")
         features = snapshot.capabilities.get("features")
         limits = snapshot.capabilities.get("limits")
+        if self.source_kind == "custom" and isinstance(features, dict) and features.get("firmware_signature_required") is True:
+            raise FirmwarePackageError("此设备要求设备端签名，当前不支持安装自定义固件；请使用官方固件")
         if not isinstance(features, dict) or features.get("firmware_update") is not True:
             raise FirmwarePackageError("当前设备没有通过 CAPABILITIES 声明固件更新能力")
         if not isinstance(limits, dict):
@@ -274,6 +279,7 @@ class FirmwareUpdateTransaction:
     in_flight_size: int = 0
     target_partition: str = ""
     abort_requested: bool = False
+    restart_failed: bool = False  # Only the first status check of an explicit Start/Retry.
 
     @property
     def progress_percent(self) -> int:

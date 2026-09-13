@@ -1,0 +1,36 @@
+{
+  "message_types": {"BLE_NAME_GET": 28, "BLE_NAME_SET": 29},
+  "max_utf8_bytes": 24,
+  "default_name": "Boring Mist",
+  "legacy_capability_fixture": "capabilities-v1.json",
+  "valid_names": ["Boring Mist", "我的键盘", "123456789012345678901234", "一二三四五六七八", "Mist 🎹", "A　B"],
+  "invalid_requests": [
+    {"name": "empty", "payload": {"name": ""}},
+    {"name": "missing", "payload": {}},
+    {"name": "null", "payload": {"name": null}},
+    {"name": "number", "payload": {"name": 24}},
+    {"name": "extra field", "payload": {"name": "Mist", "reboot": true}},
+    {"name": "ASCII too long", "payload": {"name": "1234567890123456789012345"}},
+    {"name": "Chinese too long", "payload": {"name": "一二三四五六七八九"}},
+    {"name": "NUL", "payload": {"name": "Mist\u0000Hidden"}},
+    {"name": "newline", "payload": {"name": "Mist\nKeyboard"}},
+    {"name": "tab", "payload": {"name": "Mist\tKeyboard"}},
+    {"name": "DEL", "payload": {"name": "Mist\u007f"}},
+    {"name": "C1 control", "payload": {"name": "Mist\u0080"}},
+    {"name": "line separator", "payload": {"name": "Mist\u2028Keyboard"}},
+    {"name": "paragraph separator", "payload": {"name": "Mist\u2029Keyboard"}},
+    {"name": "unpaired surrogate", "payload": {"name": "Mist\ud800"}},
+    {"name": "leading space", "payload": {"name": " Mist"}},
+    {"name": "leading nonbreaking space", "payload": {"name": "\u00a0Mist"}},
+    {"name": "trailing ideographic space", "payload": {"name": "Mist　"}}
+  ],
+  "exchanges": [
+    {"case": "default", "command": "BLE_NAME_GET", "request": {}, "result": {"saved_name": "Boring Mist", "active_name": "Boring Mist", "default_name": "Boring Mist", "restart_required": false}},
+    {"case": "saved pending reboot", "command": "BLE_NAME_SET", "request": {"name": "我的键盘"}, "result": {"saved_name": "我的键盘", "active_name": "Boring Mist", "default_name": "Boring Mist", "restart_required": true}},
+    {"case": "read pending reboot", "command": "BLE_NAME_GET", "request": {}, "result": {"saved_name": "我的键盘", "active_name": "Boring Mist", "default_name": "Boring Mist", "restart_required": true}},
+    {"case": "normal reboot applied", "command": "BLE_NAME_GET", "request": {}, "result": {"saved_name": "我的键盘", "active_name": "我的键盘", "default_name": "Boring Mist", "restart_required": false}},
+    {"case": "restore default pending reboot", "command": "BLE_NAME_SET", "request": {"name": "Boring Mist"}, "result": {"saved_name": "Boring Mist", "active_name": "我的键盘", "default_name": "Boring Mist", "restart_required": true}},
+    {"case": "save active name cancels pending", "command": "BLE_NAME_SET", "request": {"name": "我的键盘"}, "result": {"saved_name": "我的键盘", "active_name": "我的键盘", "default_name": "Boring Mist", "restart_required": false}}
+  ],
+  "errors": {"invalid_input": {"name": "VALIDATION_FAILED", "code": 9}, "busy": {"name": "BUSY", "code": 11}, "storage": {"name": "STORAGE_FAILURE", "code": 12}, "internal": {"name": "INTERNAL", "code": 15}}
+}

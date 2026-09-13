@@ -17,6 +17,43 @@ class ContractError(RuntimeError):
     """The shared protocol assets are missing or internally unusable."""
 
 
+BLE_NAME_GET = 0x1C
+BLE_NAME_SET = 0x1D
+BLE_NAME_MAX_UTF8_BYTES = 24
+_BLE_NAME_WHITESPACE = frozenset(
+    [*range(0x09, 0x0E), 0x20, 0x85, 0xA0, 0x1680,
+     *range(0x2000, 0x200B), 0x2028, 0x2029, 0x202F, 0x205F, 0x3000]
+)
+
+
+def validate_ble_name(name: object, max_bytes: int = BLE_NAME_MAX_UTF8_BYTES) -> None:
+    """Device preference: protocol Unicode White_Space and UTF-8 byte limit."""
+    if not isinstance(name, str):
+        raise ValueError("蓝牙名称必须为文本")
+    try:
+        size = len(name.encode("utf-8"))
+    except UnicodeEncodeError as exc:
+        raise ValueError("蓝牙名称必须是有效的 UTF-8 文本") from exc
+    if not 1 <= size <= max_bytes:
+        raise ValueError(f"蓝牙名称需要 1–{max_bytes} 个 UTF-8 字节")
+    if any(ord(c) < 0x20 or 0x7F <= ord(c) <= 0x9F or ord(c) in (0x2028, 0x2029) for c in name):
+        raise ValueError("蓝牙名称不能包含换行或控制字符")
+    if ord(name[0]) in _BLE_NAME_WHITESPACE or ord(name[-1]) in _BLE_NAME_WHITESPACE:
+        raise ValueError("蓝牙名称不能以空白开头或结尾")
+
+
+def validate_ble_name_response(payload: dict, max_bytes: int = BLE_NAME_MAX_UTF8_BYTES) -> dict:
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        raise ValueError("BLE_NAME result must be an object")
+    for field in ("saved_name", "active_name", "default_name"):
+        validate_ble_name(result.get(field), max_bytes)
+    restart = result.get("restart_required")
+    if type(restart) is not bool or restart != (result["saved_name"] != result["active_name"]):
+        raise ValueError("BLE_NAME restart_required disagrees with saved_name/active_name")
+    return {field: result[field] for field in ("saved_name", "active_name", "default_name", "restart_required")}
+
+
 def validate_agent_press(value: object) -> None:
     if not isinstance(value, dict) or not {"sequence", "agent", "transport"} <= value.keys():
         raise ValueError("GET_STATUS codex_agent_press 必须是 object")
@@ -368,6 +405,10 @@ class Contract:
             raise ContractError("CAPABILITIES actions 必须是非空字符串数组")
         if not isinstance(features, dict):
             raise ContractError("CAPABILITIES features 必须是 object")
+        if "ble_name" in features and type(features["ble_name"]) is not bool:
+            raise ContractError("CAPABILITIES features.ble_name 必须是布尔值")
+        if features.get("ble_name") is True and limits.get("ble_name_max_utf8_bytes") != BLE_NAME_MAX_UTF8_BYTES:
+            raise ContractError("CAPABILITIES ble_name_max_utf8_bytes 必须为 24")
         authentication_enabled = features.get("device_authentication")
         if authentication_enabled is not None and not isinstance(
             authentication_enabled, bool

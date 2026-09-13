@@ -28,7 +28,7 @@ def test_prompt_workspace_layout_and_selection(session, qtbot, tmp_path, monkeyp
     assert stage.geometry().right() < right.geometry().left()
     assert editor.findChild(QPushButton, "savePromptDraft").isVisible()
     if language == "en_US":
-        assert editor._body.placeholderText().startswith("Enter ")
+        assert "Paste never presses Enter" in editor._body.placeholderText()
     assert window.grab().save(str(tmp_path / "prompts-wide.png"))
     preview = editor.findChild(PromptDevicePreview)
     before = len(gateway.commands)

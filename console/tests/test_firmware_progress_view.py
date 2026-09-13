@@ -64,7 +64,10 @@ def test_progress_updates_do_not_detach_or_replace_scrolled_page(qtbot, contract
         assert scroll.verticalScrollBar().value() == 500
         assert progress.value() == 88
         assert '1000448 / 1136864' in progress.format()
-        assert any('1000448 / 1136864' in label.text() for label in page.findChildren(QLabel))
+        assert any(
+            '1000448' in label.text() and '1136864' in label.text()
+            for label in page.findChildren(QLabel)
+        )
         if not download:
             assert not window.findChild(QPushButton, 'selectFirmwarePackage').isEnabled()
             for state in [FirmwareUpdateState.WAITING_RECONNECT, FirmwareUpdateState.COMPLETED]:

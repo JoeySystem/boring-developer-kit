@@ -57,6 +57,7 @@ cp -cR "$PROJECT_DIR/deploy" "$STAGE_PROJECT/deploy"
 cp -cR "$PROJECT_DIR/tools" "$STAGE_PROJECT/tools"
 xattr -cr "$STAGE_PROJECT"
 STAGE_PYTHON="$STAGE_PROJECT/.venv/bin/python"
+"$STAGE_PYTHON" "$STAGE_PROJECT/tools/stage_macos_updater.py"   --assets "$STAGE_PROJECT/src/controller_config/assets"
 APP_VERSION=$(PYTHONPATH="$STAGE_PROJECT/src" "$STAGE_PYTHON" -c \
   'from controller_config import __version__; print(__version__)')
 
@@ -65,9 +66,9 @@ PYTHONPATH="$STAGE_PROJECT/src" \
   "$STAGE_PROJECT/src/controller_config/assets/device-trust-roots.json" \
   "$STAGE_PROJECT/src/controller_config/assets/device-trust-policy.json"
 
-"$STAGE_PROJECT/.venv/bin/pyside6-lrelease" \
-  "$STAGE_PROJECT/src/controller_config/translations/boring_configurator_en_US.ts" \
-  -qm "$STAGE_PROJECT/src/controller_config/translations/boring_configurator_en_US.qm"
+# UI copy is loaded directly from the packaged JSON catalog.
+PYTHONPATH="$STAGE_PROJECT/src" "$STAGE_PYTHON" -c \
+  'from controller_config.text_catalog import get_text_catalog; get_text_catalog()'
 
 PYTHONPATH="$STAGE_PROJECT/src:$STAGE_PROJECT/sdk/python" \
 "$STAGE_PYTHON" -m nuitka \
@@ -114,8 +115,33 @@ PYTHONPATH="$STAGE_PROJECT/src" \
 /usr/libexec/PlistBuddy -c \
   "Add :NSBluetoothAlwaysUsageDescription string BORING Console Community uses Bluetooth to authenticate and configure your paired BORING device." \
   "$APP_TARGET/Contents/Info.plist"
+"$STAGE_PYTHON" "$STAGE_PROJECT/tools/stage_macos_updater.py"   --assets "$STAGE_PROJECT/src/controller_config/assets" --bundle "$APP_TARGET"
+# Qt's standard buttons/dialogs use Qt catalogs, separate from our JSON copy.
+QT_TRANSLATIONS=$("$STAGE_PYTHON" -c 'from PySide6.QtCore import QLibraryInfo; print(QLibraryInfo.path(QLibraryInfo.TranslationsPath))')
+mkdir -p "$APP_TARGET/Contents/MacOS/PySide6/Qt/translations"
+for language in zh_CN ja; do
+  cp "$QT_TRANSLATIONS/qtbase_$language.qm" "$APP_TARGET/Contents/MacOS/PySide6/Qt/translations/"
+done
 xattr -cr "$APP_TARGET"
-/usr/bin/codesign -s - --force --deep "$APP_TARGET"
+for language in zh_CN ja; do
+  /usr/bin/codesign --force -s "${BORING_MACOS_SIGN_IDENTITY:--}" \
+    "$APP_TARGET/Contents/MacOS/PySide6/Qt/translations/qtbase_$language.qm"
+done
+if [ -n "${BORING_MACOS_SIGN_IDENTITY:-}" ]; then
+  # Sign nested Sparkle helpers first, retaining their declared entitlements.
+  if [ -d "$APP_TARGET/Contents/Frameworks/Sparkle.framework" ]; then
+    find "$APP_TARGET/Contents/Frameworks/Sparkle.framework/Versions/B"       -depth \( -name '*.xpc' -o -name '*.app' \) -exec       /usr/bin/codesign --force --options runtime --timestamp       --preserve-metadata=entitlements -s "$BORING_MACOS_SIGN_IDENTITY" {} \;
+    /usr/bin/codesign --force --options runtime --timestamp       -s "$BORING_MACOS_SIGN_IDENTITY" "$APP_TARGET/Contents/Frameworks/Sparkle.framework"
+  fi
+  /usr/bin/codesign --force --deep --options runtime --timestamp \
+    --preserve-metadata=entitlements -s "$BORING_MACOS_SIGN_IDENTITY" "$APP_TARGET"
+  # Apply PyObjC JIT permission only to the host executable, not Sparkle helpers.
+  /usr/bin/codesign --force --options runtime --timestamp \
+    --entitlements "$STAGE_PROJECT/deploy/macos-entitlements.plist" \
+    -s "$BORING_MACOS_SIGN_IDENTITY" "$APP_TARGET"
+else
+  /usr/bin/codesign -s - --force --deep "$APP_TARGET"
+fi
 /usr/bin/codesign --verify --deep --strict "$APP_TARGET"
 
 hdiutil create \
@@ -124,7 +150,12 @@ hdiutil create \
   -ov -format UDZO \
   "$STAGE_DIST/BORING-Console-Community-macOS-unsigned.dmg"
 
+if [ -n "${BORING_NOTARY_PROFILE:-}" ]; then
+  xcrun notarytool submit "$STAGE_DIST/BORING-Console-Community-macOS-unsigned.dmg"     --keychain-profile "$BORING_NOTARY_PROFILE" --wait
+  xcrun stapler staple "$STAGE_DIST/BORING-Console-Community-macOS-unsigned.dmg"
+fi
+
 cp -- "$STAGE_DIST/BORING-Console-Community-macOS-unsigned.dmg" \
   "$DIST_DIR/BORING-Console-Community-macOS-unsigned.dmg"
 
-echo "Built unsigned macOS artifacts in $DIST_DIR"
+echo "Built macOS artifacts in $DIST_DIR"

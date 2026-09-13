@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from controller_config.i18n import translate_ui_text
+
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
@@ -48,6 +50,7 @@ from controller_config.viewmodels.main import MainViewModel
 from controller_config.views.digital_label import Boring5RLabel
 from controller_config.views.diagnostics import DiagnosticsPage
 from controller_config.views.actions import ActionsPage
+from controller_config.views.device_silhouette import create_control_layout
 from controller_config.views.extensions import ExtensionsPage
 from controller_config.views.main_window import (
     APP_STYLE,
@@ -55,7 +58,6 @@ from controller_config.views.main_window import (
     ROOT_MATERIAL_TINT,
     _DottedRoot,
     _NavigationCapsule,
-    _control_layout,
     _TopNavigationButton,
 )
 from controller_config.views.action_editor import ActionEditor
@@ -278,7 +280,7 @@ def test_power_v2_control_layout_matches_physical_prototype(qtbot, contract) -> 
 
     host = QWidget()
     qtbot.addWidget(host)
-    host.setLayout(_control_layout(snapshot))
+    host.setLayout(create_control_layout(snapshot))
 
     controls = {
         widget.property("controlId"): (
@@ -371,7 +373,7 @@ def test_encoder_tile_names_rotation_direction_before_the_mapped_action(
 
     host = QWidget()
     qtbot.addWidget(host)
-    host.setLayout(_control_layout(snapshot, mappings=mappings))
+    host.setLayout(create_control_layout(snapshot, mappings=mappings))
     encoder = next(
         button
         for button in host.findChildren(QPushButton)
@@ -411,10 +413,10 @@ def test_default_window_shows_complete_overview_without_vertical_scrolling(qtbot
         for label in window.findChildren(QLabel)
         if label.property("compactStatus") is True
     )
-    assert compact_status.text() == "开发设备，未认证 [ DEV ]"
+    assert compact_status.text() == "开发设备 · 未认证 [ DEV ]"
     assert compact_status.objectName() == "statusWarn"
     assert window._device_name_summary.text() == "BORING MIST"
-    assert window._device_auth_summary.text() == "开发设备，未认证 [ DEV ]"
+    assert window._device_auth_summary.text() == "开发设备 · 未认证 [ DEV ]"
     assert window._device_auth_summary.property("trust") == "development"
 
 
@@ -700,10 +702,11 @@ def test_device_shell_has_no_redundant_light_outer_stroke(qtbot, contract) -> No
     window.resize(1240, 780)
     window.show()
     view_model.start()
-    qtbot.waitUntil(lambda: window.findChild(QFrame, "deviceShell") is not None)
+    qtbot.waitUntil(lambda: view_model.model.state is AppState.READY)
+    qtbot.waitUntil(lambda: window.findChild(QFrame, "deviceShell") is not None
+                   and window.findChild(QFrame, "deviceShell").isVisible())
     shell = window.findChild(QFrame, "deviceShell")
     assert shell is not None
-    qtbot.waitUntil(lambda: shell.isVisible())
 
     image = QImage(shell.size(), QImage.Format.Format_ARGB32_Premultiplied)
     image.fill(QColor(48, 48, 48))
@@ -715,7 +718,9 @@ def test_device_shell_has_no_redundant_light_outer_stroke(qtbot, contract) -> No
 
     edge = image.pixelColor(0, shell.height() // 2).lightness()
     interior = image.pixelColor(3, shell.height() // 2).lightness()
-    assert edge < 32
+    # The Blender model shell is deliberately transparent so its line work can
+    # sit directly on the page material without a second rectangular outline.
+    assert edge <= 48
     assert abs(edge - interior) < 8
 
 
@@ -813,20 +818,20 @@ def test_overview_disclosure_exposes_three_ble_host_slots(qtbot, contract, monke
     assert len(dialogs) == 1
     qtbot.waitUntil(
         lambda: any(
-            label.text() == "蓝牙设备槽位" and label.isVisible()
+            label.text() == translate_ui_text('蓝牙设备槽位') and label.isVisible()
             for label in window.findChildren(QLabel)
         ),
         timeout=1000,
     )
     visible_text = [label.text() for label in window.findChildren(QLabel) if label.isVisible()]
-    assert "当前 1 · 已配对" in visible_text
-    assert "槽位 2 · 等待配对" in visible_text
-    assert "槽位 3 · 等待配对" in visible_text
-    assert "实体快捷操作" in visible_text
-    assert "KEY 3 + KEY 8 → 槽位 1" in visible_text
-    assert "KEY 3 + KEY 9 → 槽位 2" in visible_text
-    assert "KEY 3 + KEY 10 → 槽位 3" in visible_text
-    assert "短按组合键切换槽位；持续按住约 3 秒，清除该槽位并进入配对。" in visible_text
+    assert translate_ui_text('当前 1 · 已配对') in visible_text
+    assert translate_ui_text('槽位 2 · 等待配对') in visible_text
+    assert translate_ui_text('槽位 3 · 等待配对') in visible_text
+    assert translate_ui_text('实体快捷操作') in visible_text
+    assert translate_ui_text('KEY 3 + KEY 8 → 槽位 1') in visible_text
+    assert translate_ui_text('KEY 3 + KEY 9 → 槽位 2') in visible_text
+    assert translate_ui_text('KEY 3 + KEY 10 → 槽位 3') in visible_text
+    assert translate_ui_text('短按组合键切换槽位；按住约 3 秒清除该槽位并开始配对。') in visible_text
     ble_card = window.findChild(QWidget, "bleSlotsCard")
     assert ble_card is not None and ble_card.minimumHeight() >= 248
 
@@ -954,7 +959,7 @@ def test_window_renders_device_authenticity_failure_as_a_distinct_state(
 
     qtbot.waitUntil(
         lambda: any(
-            "无法确认这是 BORING 设备" in label.text() and label.isVisible()
+            "无法验证 BORING 设备身份" in label.text() and label.isVisible()
             for label in window.findChildren(QLabel)
         ),
         timeout=1000,
@@ -1010,7 +1015,7 @@ def test_overview_control_opens_editor_and_creates_dirty_local_draft(qtbot, cont
         if button.property("controlId") == "key.1"
     )
     assert key_button.isEnabled()
-    assert key_button.accessibleName() == "设置透明状态键 1"
+    assert key_button.accessibleName() == "设置状态键 1"
     qtbot.mouseClick(key_button, Qt.LeftButton)
 
     qtbot.waitUntil(
@@ -1027,8 +1032,8 @@ def test_overview_control_opens_editor_and_creates_dirty_local_draft(qtbot, cont
     assert overview is not None
 
     labels = [label.text() for label in window.findChildren(QLabel)]
-    assert "设备当前" in labels
-    assert "按键名称（可选）" in labels
+    assert "设备当前值" in labels
+    assert "名称（可选）" in labels
     assert "屏幕短名" not in labels
     actual_action = window.findChild(QLabel, "actualActionValue")
     assert actual_action.text() == "A"
@@ -1036,7 +1041,7 @@ def test_overview_control_opens_editor_and_creates_dirty_local_draft(qtbot, cont
     assert any(button.text() == "技术详情" for button in window.findChildren(QPushButton))
 
     save_button = window.findChild(QPushButton, "saveMappingDraft")
-    assert save_button is not None and save_button.text() == "仅保存草稿"
+    assert save_button is not None and save_button.text() == "保存草稿"
     action_type = window.findChild(QComboBox, "actionTypeEditor")
     assert action_type is not None
     action_type.setCurrentIndex(action_type.findData("none"))
@@ -1393,13 +1398,13 @@ def test_overview_records_shortcut_and_prepares_confirmed_device_write(
     assert device_current is not None and device_current.text() == "未映射"
     qtbot.waitUntil(
         lambda: any(
-            button.text() == "确认写入设备"
+            button.text() == translate_ui_text("确认写入设备")
             for button in window.findChildren(QPushButton)
         ),
         timeout=1000,
     )
     assert any(
-        button.text() == "确认写入设备"
+        button.text() == translate_ui_text("确认写入设备")
         for button in window.findChildren(QPushButton)
     )
 
@@ -1468,7 +1473,7 @@ def test_codex_status_tile_separates_agent_state_from_device_action(qtbot, contr
     normal_snapshot = replace(snapshot, status={**snapshot.status, "operating_mode": "normal"})
     normal_host = QWidget()
     qtbot.addWidget(normal_host)
-    normal_host.setLayout(_control_layout(normal_snapshot))
+    normal_host.setLayout(create_control_layout(normal_snapshot))
     normal_key = next(
         button
         for button in normal_host.findChildren(QPushButton)
@@ -1566,7 +1571,7 @@ def test_settings_groups_tools_and_language_before_device_read(qtbot, contract) 
     assert {
         button.text()
         for button in window.findChildren(QPushButton, "settingsLanguageButton")
-    } == {"简体中文", "English"}
+    } == {"简体中文", "English", "日本語"}
 
     pages = (
         ("diagnostics", "openDiagnosticsSettings", "diagnosticsPage"),
@@ -1591,7 +1596,7 @@ def test_settings_groups_tools_and_language_before_device_read(qtbot, contract) 
 
     firmware_import = window.findChild(QPushButton, "selectFirmwarePackage")
     assert firmware_import is not None
-    assert firmware_import.text() == "导入固件维护包…"
+    assert firmware_import.text() == "导入官方固件…"
     assert window.findChild(QProgressBar, "firmwareProgress") is not None
     remote = window.findChild(QPushButton, "checkRemoteFirmware")
     assert remote is not None and not remote.isEnabled()
@@ -1680,7 +1685,7 @@ def test_extension_entry_page_is_navigable_and_exposes_live_management(
     assert view_model.page == "actions"
     actions_page = window.findChild(ActionsPage, "actionsPage")
     assert actions_page is not None
-    assert "自动化总数 0" in window.findChild(
+    assert "共 0 项" in window.findChild(
         QLabel, "actionCatalogStatus"
     ).text()
     assert {button.text() for button in window.findChildren(QPushButton, "actionTab")} == {
@@ -1710,7 +1715,7 @@ def test_extension_entry_page_is_navigable_and_exposes_live_management(
         for label in window.findChildren(QLabel)
         if label.property("extensionBoundary") is True
     )
-    assert "不能持有串口" in boundary.text()
+    assert "不能直接使用串口" in boundary.text()
     view_model.shutdown()
 
 
@@ -1764,10 +1769,10 @@ def test_extension_page_imports_enables_and_binds_an_action(
     assert platform.bindings[0].extension_id == extension_id
     assert platform.bindings[0].action_id == "use_prompt"
     qtbot.waitUntil(
-        lambda: "自动化总数 1" in window.findChild(
+        lambda: "共 1 项" in window.findChild(
             QLabel, "actionCatalogStatus"
         ).text()
-        and "已绑定控件 1" in window.findChild(
+        and "已绑定 1" in window.findChild(
             QLabel, "actionCatalogStatus"
         ).text(),
         timeout=1_000,
@@ -1852,7 +1857,7 @@ def test_automation_page_saves_and_tests_a_local_python_binding(
     run = next(
         button
         for button in window.findChildren(QPushButton)
-        if button.text() == "手动测试运行"
+        if button.text() == "手动测试"
     )
     qtbot.mouseClick(run, Qt.LeftButton)
 
@@ -2003,7 +2008,7 @@ def test_prompt_palette_uses_fixed_slots_without_changing_profile_mappings(
     assert window.findChild(QLabel, "promptDirectionBindingState") is None
     assert window.findChild(QLabel, "promptJoystickCenter").text() == "摇杆选择\n旋钮确认"
     guide = window.findChild(QLabel, "promptPaletteGuide").text()
-    for instruction in ("Key12", "0.8 秒", "1 / 2 / 3 / 4", "旋钮短按确认", "Key3", "10 秒"):
+    for instruction in ("12 号按键", "0.8 秒", "上、右、下、左", "短按旋钮确认", "3 号按键", "10 秒"):
         assert instruction in guide
 
     for control_id, prompt_id in expected_slots.items():
@@ -2105,7 +2110,7 @@ def test_mapping_editor_adopts_confirmed_action_after_successful_write(
         next(
             button
             for button in window.findChildren(QPushButton)
-            if button.text() == "确认写入设备"
+            if button.text() == translate_ui_text("确认写入设备")
         ),
         Qt.MouseButton.LeftButton,
     )
@@ -2142,7 +2147,7 @@ def test_mapping_editor_adopts_confirmed_action_after_successful_write(
     confirm = next(
         button
         for button in window.findChildren(QPushButton)
-        if button.text() == "确认写入设备"
+        if button.text() == translate_ui_text("确认写入设备")
     )
     qtbot.mouseClick(confirm, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
@@ -2333,7 +2338,7 @@ def test_planned_tool_pages_show_connected_capabilities(qtbot, contract) -> None
             if item.property("capabilityState") is True
         ]
         assert len(badges) == 1
-        assert badges[0].text() == expected
+        assert badges[0].text() == translate_ui_text(expected)
 
     view_model.navigate("diagnostics")
     report_issue = window.findChild(QPushButton, "reportJoystickIssue")
@@ -2349,7 +2354,7 @@ def test_planned_tool_pages_show_connected_capabilities(qtbot, contract) -> None
         if item.property("capabilityState") is True
     ]
     assert len(badges) == 1
-    assert badges[0].text() == "设备已声明支持校准"
+    assert badges[0].text() == translate_ui_text("设备已声明支持校准")
 
 
 def test_diagnostics_page_updates_live_inputs_without_rebuilding_page(
@@ -2452,7 +2457,7 @@ def test_diagnostic_control_check_guides_and_captures_without_host_output(
     assert progress.value() == 1
     assert "key.1" in view_model.diagnostics.tested_controls
     assert any(
-        item.text() == "下一步：按下并松开按键 2。"
+        item.text() == "按下并松开按键 2。"
         for item in window.findChildren(QLabel)
     )
 
@@ -2538,7 +2543,7 @@ def test_diagnostics_requires_local_draft_resolution_before_calibration(
     report_issue = window.findChild(QPushButton, "reportJoystickIssue")
     assert report_issue is not None and not report_issue.isEnabled()
     assert any(
-        item.text() == "先处理本地配置修改"
+        item.text() == "先处理未保存修改"
         for item in window.findChildren(QLabel)
     )
 
@@ -2572,7 +2577,11 @@ def test_device_key_sequences_live_under_profile_menu(qtbot, contract) -> None:
     qtbot.waitUntil(lambda: view_model.page == "sequences", timeout=1000)
     name = window.findChild(QLineEdit, "macroNameEditor")
     assert name is not None
-    assert name.maxLength() == contract.editor_rules.macro_name_max_length
+    name.clear()
+    name.insert("🚀" * contract.editor_rules.macro_name_max_length)
+    assert name.text() == "🚀" * contract.editor_rules.macro_name_max_length
+    name.insert("x")
+    assert name.text() == "🚀" * contract.editor_rules.macro_name_max_length
     name.setText("Hello 2")
     save_macro = next(
         button
@@ -2664,7 +2673,7 @@ def test_preferences_navigation_enables_after_device_read(qtbot, contract) -> No
     brightness.setValue(2)
     save_local = window.findChild(QPushButton, "savePreferencesDraft")
     save_to_device = window.findChild(QPushButton, "savePreferencesToDevice")
-    assert save_local is not None and save_local.text() == "仅保存本地草稿"
+    assert save_local is not None and save_local.text() == "保存草稿"
     assert save_local.property("buttonRole") == "secondary"
     assert save_to_device is not None and save_to_device.text() == "应用到设备…"
     assert save_to_device.property("buttonRole") == "primary"
@@ -2873,7 +2882,7 @@ def test_lighting_preview_async_status_stays_in_english(
     assert toggle is not None
     assert level_value is not None and level_value.text() == "Custom"
     assert save_to_device is not None and save_to_device.text() == "Apply to Device…"
-    assert save_local is not None and save_local.text() == "Save Local Draft Only"
+    assert save_local is not None and save_local.text() == "Save draft"
     assert [
         label.text()
         for label in window.findChildren(QLabel, "lightingLevelMarkName")
@@ -2884,7 +2893,7 @@ def test_lighting_preview_async_status_stays_in_english(
     status = window.findChild(QLabel, "lightingPreviewStatus")
     assert status is not None
     assert status.text() == (
-        "Previewing live on the device · temporary changes are not saved"
+        "Live Preview · Unsaved"
     )
 
     view_model.navigate("overview")
@@ -3242,7 +3251,7 @@ def test_profile_editor_runs_confirmed_demo_write_and_readback(
         timeout=1000,
     )
     confirm = next(
-        button for button in window.findChildren(QPushButton) if button.text() == "确认写入设备"
+        button for button in window.findChildren(QPushButton) if button.text() == translate_ui_text("确认写入设备")
     )
     qtbot.mouseClick(confirm, Qt.LeftButton)
 

@@ -1,0 +1,10 @@
+{
+  "macos": {
+    "feed_url": "",
+    "public_key": ""
+  },
+  "windows": {
+    "feed_url": "",
+    "public_key": ""
+  }
+}

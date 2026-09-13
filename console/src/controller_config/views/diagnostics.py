@@ -150,6 +150,9 @@ class DiagnosticsPage(QScrollArea):
         calibration_layout.addLayout(calibration_actions)
         layout.addWidget(calibration)
 
+        technical_toggle = QPushButton("高级诊断", objectName="diagnosticDetailsToggle")
+        technical_toggle.setCheckable(True)
+        layout.addWidget(technical_toggle, 0, Qt.AlignLeft)
         facts = _card()
         facts_layout = QGridLayout(facts)
         facts_layout.setContentsMargins(24, 20, 24, 22)
@@ -257,6 +260,9 @@ class DiagnosticsPage(QScrollArea):
         action_row.addWidget(self._copy_state)
         events_layout.addLayout(action_row)
         layout.addWidget(events)
+        for technical_card in (facts, live, events):
+            technical_card.hide()
+            technical_toggle.toggled.connect(technical_card.setVisible)
 
         boundary = QLabel(
             "当前事件记录由 BORING 控制台根据协议状态变化生成，不等同于设备内部日志。当前协议没有提供电池、充电或设备日志字段，因此这里不会推测这些信息。",

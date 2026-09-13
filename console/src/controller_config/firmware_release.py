@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from importlib.resources import files
 import json
@@ -20,6 +20,7 @@ from controller_config.firmware_update import (
 )
 from controller_config.models import DeviceSnapshot
 from controller_config import __version__
+from controller_config.firmware_signature import FirmwareSignatureError, verify_manifest_signature
 from controller_config.protocol.contract import Contract
 
 
@@ -34,6 +35,10 @@ def default_firmware_source() -> dict[str, str]:
 class FirmwareReleaseError(ValueError):
     """An online release cannot be offered as a BORING firmware update."""
 
+    def __init__(self, message: str, *, kind: str = "validation") -> None:
+        super().__init__(message)
+        self.kind = kind
+
 
 class RemoteFirmwareState(str, Enum):
     UNCONFIGURED = "unconfigured"
@@ -43,6 +48,7 @@ class RemoteFirmwareState(str, Enum):
     DOWNLOADING = "downloading"
     DOWNLOADED = "downloaded"
     CURRENT = "current"
+    UNPUBLISHED = "unpublished"
     FAILED = "failed"
 
 
@@ -93,7 +99,7 @@ class FirmwareReleaseSource(QObject):
     release_found = Signal(object)
     download_completed = Signal(object)
     download_progress = Signal(int, int)
-    failed = Signal(str)
+    failed = Signal(object)
 
     def check(self, snapshot: DeviceSnapshot) -> None:
         raise NotImplementedError
@@ -204,7 +210,7 @@ class HttpFirmwareReleaseSource(FirmwareReleaseSource):
             self._snapshot = None
             self.release_found.emit(release)
         except (FirmwareReleaseError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            self._fail(str(exc))
+            self._fail(exc)
         finally:
             reply.deleteLater()
 
@@ -233,7 +239,7 @@ class HttpFirmwareReleaseSource(FirmwareReleaseSource):
             self._release = None
             self.download_completed.emit(bundle)
         except FirmwareReleaseError as exc:
-            self._fail(str(exc))
+            self._fail(exc)
         finally:
             reply.deleteLater()
 
@@ -256,7 +262,7 @@ class HttpFirmwareReleaseSource(FirmwareReleaseSource):
                 reply, received, total, limit, label
             )
         )
-        reply.finished.connect(finished)
+        reply.finished.connect(lambda: finished() if self._reply is reply else None)
 
     def _on_download_progress(
         self,
@@ -266,11 +272,13 @@ class HttpFirmwareReleaseSource(FirmwareReleaseSource):
         limit: int,
         label: str,
     ) -> None:
+        if self._reply is not reply:
+            return
         _abort_oversized_reply(reply, received, total, limit, label)
         if label == "固件镜像" and not reply.property("boringSizeError"):
             self.download_progress.emit(received, total)
 
-    def _fail(self, message: str) -> None:
+    def _fail(self, message: Exception) -> None:
         self._snapshot = None
         self._manifest = None
         self._release = None
@@ -300,6 +308,7 @@ def load_remote_firmware_bundle(
     bundle: RemoteFirmwareBundle,
     contract: Contract,
 ) -> FirmwarePackage:
+    _verify_publisher(bundle.manifest)
     image_name = bundle.manifest.get("image")
     if not isinstance(image_name, str) or Path(image_name).name != image_name:
         raise FirmwareReleaseError("在线固件 manifest 的 image 字段无效")
@@ -319,7 +328,7 @@ def load_remote_firmware_bundle(
     validate_minimum_app_version(bundle.manifest)
     if not package.build_id:
         raise FirmwareReleaseError("在线发布固件必须提供 build_id")
-    return package
+    return replace(package, source_kind="official")
 
 
 def _validate_release_manifest(
@@ -354,8 +363,6 @@ def _validate_release_manifest(
         if not isinstance(value["download_url"], str):
             raise FirmwareReleaseError("在线固件 download_url 类型错误")
         _require_https(QUrl(value["download_url"]))
-    if value.get("signature"):
-        raise FirmwareReleaseError("当前 MVP 尚不支持发布签名验签，不能把签名视为已验证")
     version = value.get("version")
     if not isinstance(version, str) or re.fullmatch(r"[A-Za-z0-9._+-]{1,31}", version) is None:
         raise FirmwareReleaseError("在线固件版本号无效")
@@ -364,7 +371,17 @@ def _validate_release_manifest(
         raise FirmwareReleaseError("在线固件 sha256 无效")
     if not isinstance(value.get("build_id"), str) or not value["build_id"]:
         raise FirmwareReleaseError("在线发布固件必须提供 build_id")
+    _verify_publisher(value)
     return dict(value)
+
+
+def _verify_publisher(manifest: dict) -> None:
+    try:
+        verify_manifest_signature(manifest)
+    except FirmwareSignatureError as exc:
+        raise FirmwareReleaseError(str(exc), kind="signature") from exc
+    if manifest.get("origin") == "custom" or str(manifest.get("build_id", "")).startswith("custom-"):
+        raise FirmwareReleaseError("此包标记为自定义固件，不能作为官方发布导入")
 
 
 def _validate_channel(manifest: dict, channel: str) -> None:
@@ -394,8 +411,36 @@ def validate_minimum_app_version(manifest: dict) -> None:
         raise FirmwareReleaseError(f"请先升级 BORING 桌面端至 {minimum} 或更新版本")
 
 
+def is_custom_firmware(snapshot: DeviceSnapshot) -> bool:
+    return str(snapshot.versions.get("build_id", "")).startswith("custom-")
+
+
+def load_local_firmware_package(path: Path, contract: Contract, *, custom: bool = False) -> FirmwarePackage:
+    package = FirmwarePackage.load(path, contract)
+    manifest = package.manifest
+    if custom:
+        if "signature" in manifest:
+            raise FirmwarePackageError("自定义固件不能携带发布签名；官方包请使用官方固件入口")
+        if manifest.get("origin") != "custom" or re.fullmatch(r"custom-[A-Za-z0-9._-]{1,57}", package.build_id) is None:
+            raise FirmwarePackageError("请使用自定义固件打包工具生成带 custom- 构建标识的固件包")
+        if manifest.get("validation_state") != "built":
+            raise FirmwarePackageError("自定义固件只能标记为 built，不能声明官方验收通过")
+        if not isinstance(manifest.get("minimum_app_version"), str):
+            raise FirmwarePackageError("自定义固件缺少最低控制台版本要求")
+        if package.build_id.encode("ascii") + b"\0" not in package.image_data:
+            raise FirmwarePackageError("固件中未找到对应的自定义构建标识，请重新编译并打包")
+    else:
+        _verify_publisher(manifest)
+        if not package.build_id:
+            raise FirmwarePackageError("官方固件缺少构建标识")
+    validate_minimum_app_version(manifest)
+    return replace(package, source_kind="custom" if custom else "official")
+
+
 def release_is_newer(release: RemoteFirmwareRelease, snapshot: DeviceSnapshot) -> bool:
     """Compare product version, then this project's dated build sequence."""
+    if is_custom_firmware(snapshot):
+        raise FirmwareReleaseError("当前运行自定义固件；如需恢复官方版本，请导入官方签名固件包并确认替换")
     current_version = str(snapshot.versions.get("firmware", ""))
     current_build = str(snapshot.versions.get("build_id", ""))
     offered, current = _version_key(release.version), _version_key(current_version)
@@ -434,8 +479,17 @@ def _reply_bytes(reply: QNetworkReply, limit: int, label: str) -> bytes:
     size_error = reply.property("boringSizeError")
     if isinstance(size_error, str) and size_error:
         raise FirmwareReleaseError(size_error)
+    status = reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute)
+    if status == 404:
+        if label == "固件发布 manifest":
+            raise FirmwareReleaseError("固件渠道尚未发布（HTTP 404），请稍后重新检查。", kind="unpublished")
+        raise FirmwareReleaseError("固件镜像尚未发布或已移除（HTTP 404），请重新检查发布信息。", kind="image_missing")
     if reply.error() != QNetworkReply.NetworkError.NoError:
-        raise FirmwareReleaseError(f"{label}下载失败：{reply.errorString()}")
+        http_status = f"（HTTP {status}）" if status is not None else ""
+        raise FirmwareReleaseError(
+            f"{label}下载失败{http_status}：{reply.errorString()}",
+            kind="service" if status is not None else "network",
+        )
     data = bytes(reply.readAll())
     if not data:
         raise FirmwareReleaseError(f"{label}为空")

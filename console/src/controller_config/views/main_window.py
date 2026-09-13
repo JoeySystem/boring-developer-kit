@@ -20,9 +20,9 @@ from PySide6.QtGui import (
     QPixmap,
     QKeySequence,
     QShortcut,
-    QLinearGradient,
-    QRadialGradient,
 )
+from controller_config.views.name_validator import NameLengthValidator
+
 from PySide6.QtWidgets import (
     QApplication,
     QBoxLayout,
@@ -61,7 +61,7 @@ from controller_config.views.connection_terminal import ConnectionTerminal
 from controller_config.codex_usage import CodexUsageSnapshot, CodexUsageStatus
 from controller_config.background_helper import PromptBackgroundController
 from controller_config.firmware_update import FirmwareUpdateState
-from controller_config.firmware_release import RemoteFirmwareState
+from controller_config.firmware_release import is_custom_firmware, RemoteFirmwareState
 from controller_config.joystick_calibration import (
     CalibrationState,
     CalibrationTransaction,
@@ -69,6 +69,7 @@ from controller_config.joystick_calibration import (
 from controller_config.lighting_preview import LightingPreviewStatus
 from controller_config.i18n import (
     ENGLISH,
+    JAPANESE,
     SIMPLIFIED_CHINESE,
     SKIP_TRANSLATION_PROPERTY,
     SUPPORTED_LANGUAGES,
@@ -91,12 +92,22 @@ from controller_config.protocol.framing import canonical_json_bytes
 from controller_config.transactions import ConfigTransactionState
 from controller_config.viewmodels.main import MainViewModel
 from controller_config.views.action_editor import ActionEditor
+from controller_config.views.device_silhouette import (
+    DEVICE_SILHOUETTE_STYLE,
+    DeviceModelShell,
+    DeviceModelCanvas,
+    MATRIX12_AGENT_STATUS_KEYS,
+    MATRIX12_HARDWARE_IDS,
+    control_display_name,
+    create_device_silhouette,
+    create_lighting_silhouette_preview,
+    create_prompt_silhouette,
+)
 
 
 # Neutral tint over the native material: 40% opacity, not whole-window opacity.
 ROOT_MATERIAL_TINT = QColor(28, 27, 25, 102)
 from controller_config.views.actions import ActionsPage
-from controller_config.digital_font import layout_text
 from controller_config.views.digital_label import Boring5RLabel
 from controller_config.views.diagnostics import DiagnosticsPage
 from controller_config.views.macro_editor import MacroEditor
@@ -104,7 +115,7 @@ from controller_config.views.onboarding import (
     ONBOARDING_COMPLETED_KEY,
     OnboardingDialog,
 )
-from controller_config.views.preferences_editor import PreferencesEditor
+from controller_config.views.preferences_editor import BleNameEditor, PreferencesEditor
 from controller_config.views.screen_icon_editor import ScreenIconDraft, ScreenIconEditor
 from controller_config.views.screen_glyph_editor import GlyphDraft, ScreenGlyphEditor
 from controller_config.views.prompt_library_editor import (
@@ -116,6 +127,7 @@ from controller_config.views.prompt_library_editor import (
 _LANGUAGE_LABELS = {
     SIMPLIFIED_CHINESE: "简体中文",
     ENGLISH: "English",
+    JAPANESE: "日本語",
 }
 
 
@@ -237,26 +249,6 @@ QLabel#lightingLevelMarkName { color: #9c8883; font-size: 9px; }
 QScrollBar:vertical { background: #1a1113; width: 10px; margin: 0; }
 QScrollBar::handle:vertical { background: #68423c; min-height: 28px; border-radius: 5px; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
-QPushButton#controlKey { background: #f7f7f2; border: 1px solid #aeb3b1; border-radius: 6px; text-align: left; }
-QPushButton#controlKey[mapped="true"] { border: 2px solid #343839; }
-QPushButton#controlKey[role="agent"] { background: #dfeaf5; border: 1px solid #9bb2c9; }
-QPushButton#controlKey[role="agent"][mapped="true"] { border: 2px solid #617b99; }
-QPushButton#controlKey:hover, QPushButton#secondaryControl:hover, QPushButton#encoderControl:hover, QPushButton#joystickControl:hover { border: 2px solid #e85b42; }
-QPushButton#controlKey[selected="true"], QPushButton#secondaryControl[selected="true"], QPushButton#encoderControl[selected="true"], QPushButton#joystickControl[selected="true"] { background: #f7dfd7; border: 3px solid #e85b42; }
-QPushButton#controlKey[role="agent"][selected="true"] { background: #cfdff2; border: 3px solid #e85b42; }
-QPushButton#controlKey:focus, QPushButton#secondaryControl:focus, QPushButton#encoderControl:focus, QPushButton#joystickControl:focus { border: 3px solid #bd3e28; }
-QFrame#deviceShell { background: #8a8b86; border: 8px solid #5f615e; border-radius: 24px; }
-QFrame#deviceFace { background: #e6e5df; border: 2px solid #252829; border-radius: 16px; }
-QFrame#displayControl { background: #171a1b; border: 3px solid #050606; border-radius: 38px; }
-QFrame#displayControl QLabel { color: #f4f5f1; }
-QPushButton#secondaryControl { background: #c8cbc9; border: 3px solid #717675; border-radius: 36px; }
-QPushButton#encoderControl { background: #c8cbc9; border: 4px solid #717675; border-radius: 47px; }
-QPushButton#joystickControl { background: #1f2324; border: 2px solid #080909; border-radius: 6px; }
-QLabel#joystickKnob { color: #202324; background: #f3f3ee; border: 2px solid #c6c9c6; border-radius: 25px; font-size: 10px; font-weight: 800; }
-QLabel#controlId { color: #717674; font-size: 9px; letter-spacing: 0.5px; }
-QLabel#controlAction { color: #202324; font-size: 11px; font-weight: 800; }
-QPushButton#controlKey[role="agent"] QLabel#controlAction { color: #2f4764; }
-QLabel#controlName { color: #777c7a; font-size: 8px; }
 QPushButton#ghostOnDark { color: #d9cbc5; background: transparent; border: 1px solid #69433d; border-radius: 7px; padding: 6px 10px; }
 QPushButton#ghostOnDark:hover { color: #ffffff; border-color: #e85b42; }
 QToolTip { color: #f5eae3; background: #241719; border: 1px solid #764237; padding: 5px; }
@@ -575,71 +567,6 @@ QLabel#deviceStageName {
     font-weight: 700;
     letter-spacing: 1px;
 }
-QFrame#deviceShell {
-    background: #12130f;
-    border: none;
-    border-radius: 56px;
-}
-QFrame#deviceFace {
-    background: transparent;
-    border: none;
-    border-radius: 28px;
-}
-QFrame#displayControl {
-    background: #121311;
-    border: 2px solid #eeede4;
-    border-radius: 38px;
-}
-QPushButton#controlKey {
-    background: #2d2c28;
-    border: 1px solid rgba(234, 232, 220, 128);
-    border-radius: 8px;
-}
-QPushButton#controlKey[mapped="true"] { border: 2px solid rgba(234, 232, 220, 160); }
-QPushButton#controlKey[role="agent"] {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #34495e, stop:1 #2d4053);
-    border: 1px solid #34495e;
-}
-QPushButton#controlKey[role="agent"][mapped="true"] { border: 2px solid #34495e; }
-QPushButton#controlKey:hover,
-QPushButton#secondaryControl:hover,
-QPushButton#encoderControl:hover,
-QPushButton#joystickControl:hover { border: 2px solid #db6b2b; }
-QPushButton#controlKey[selected="true"],
-QPushButton#secondaryControl[selected="true"],
-QPushButton#encoderControl[selected="true"],
-QPushButton#joystickControl[selected="true"] {
-    background: #34312e;
-    border: 3px solid #db6b2b;
-}
-QPushButton#controlKey[role="agent"][selected="true"] {
-    background: #2c4565;
-    border: 3px solid #db6b2b;
-}
-QLabel#controlId { color: rgba(224, 222, 211, 148); }
-QLabel#controlAction { color: #f2f1e8; }
-QPushButton#controlKey[role="agent"] QLabel#controlAction { color: #a3b5e7; }
-QLabel#controlName { color: rgba(224, 222, 211, 128); }
-QPushButton#secondaryControl,
-QPushButton#encoderControl,
-QPushButton#joystickControl {
-    background: #171815;
-    border-color: rgba(228, 226, 211, 70);
-}
-QLabel#joystickKnob {
-    color: #eceae2;
-    background: #1b1c18;
-    border: none;
-}
-QPushButton#joystickControl {
-    background: #35352f;
-    border-radius: 38px;
-}
-QPushButton#encoderControl {
-    background: #171815;
-    border-width: 2px;
-    border-radius: 48px;
-}
 QFrame#selectionInspectorCard,
 QFrame#mappingEditorCard {
     background: rgba(30, 30, 26, 248);
@@ -763,6 +690,8 @@ QSlider#lightingBrightness::sub-page:horizontal { background: #5574ed; }
 QSlider#lightingBrightness::handle:horizontal { border-color: #5574ed; }
 """
 
+APP_STYLE += DEVICE_SILHOUETTE_STYLE
+
 
 @dataclass(frozen=True)
 class _MappingEditingState:
@@ -770,15 +699,8 @@ class _MappingEditingState:
     control_id: str
     short_name: str
     action: dict
+    more_settings_open: bool = False
 
-MATRIX12_UNIT = 64
-MATRIX12_GAP = 3
-MATRIX12_HARDWARE_IDS = frozenset(
-    {"WMP-S3-MATRIX12-V1", "WMP-S3-MATRIX12-POWER-V2"}
-)
-MATRIX12_AGENT_STATUS_KEYS = frozenset(
-    {"key.1", "key.2", "key.4", "key.5", "key.6", "key.7"}
-)
 POWER_V2_LIGHTING_DEVICE_MAX = 80
 POWER_V2_LIGHTING_LEVELS = (0, 10, 20, 40, POWER_V2_LIGHTING_DEVICE_MAX)
 POWER_V2_HAPTIC_LEVELS = (0, 40, 50, 60, 80)
@@ -975,7 +897,7 @@ class _DeviceStage(QFrame):
         box.setSpacing(12)
         box.addStretch(1)
         box.addWidget(shell, 0, Qt.AlignCenter)
-        label = QLabel(DEVICE_DISPLAY_NAME, objectName="deviceStageName")
+        label = QLabel(translate_ui_text(DEVICE_DISPLAY_NAME + " · 控件示意"), objectName="deviceStageName")
         label.setProperty(SKIP_TRANSLATION_PROPERTY, True)
         label.setAlignment(Qt.AlignCenter)
         box.addWidget(label)
@@ -983,8 +905,16 @@ class _DeviceStage(QFrame):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if isinstance(self._shell, _Matrix12Shell):
-            self._shell.scale_to(max(240, min(640, self.width() - 16, self.height() - 52)))
+        if isinstance(self._shell, DeviceModelShell):
+            # A stacked workspace can exceed the viewport height. Keep the
+            # complete schematic small enough to bring into view by scrolling.
+            available_height = self.height()
+            parent = self.parentWidget()
+            while parent is not None and not isinstance(parent, QScrollArea):
+                parent = parent.parentWidget()
+            if parent is not None:
+                available_height = min(available_height, parent.viewport().height())
+            self._shell.scale_to(max(240, min(640, self.width() - 16, available_height - 52)))
             self.layout().activate()
 
 
@@ -1058,8 +988,6 @@ class _ResponsiveMappingWorkspace(QWidget):
                 rail.setFixedWidth(rail_width)
             usage = rail.findChild(QWidget, "codexHomeCard")
             if usage is not None:
-                usage.findChild(UsageRings, "homeUsageRings").setVisible(not compact)
-                usage.findChild(QLabel, "homeUsageCompact").setVisible(compact)
                 usage.findChild(QLabel, "homeUsageDetail").setVisible(not compact)
             explanation = rail.findChild(QLabel, "mappingModeExplanation")
             if explanation is not None:
@@ -1191,6 +1119,8 @@ class MainWindow(QMainWindow):
         onboarding_settings: QSettings | None = None,
     ) -> None:
         super().__init__()
+        self._desktop_update_ui = None
+        self._update_workspace_restore = {}
         self._view_model = view_model
         self._background_controller = background_controller
         self._onboarding_settings = onboarding_settings
@@ -1277,6 +1207,9 @@ class MainWindow(QMainWindow):
         self._content_layout = QVBoxLayout(self._content)
         self._content_layout.setContentsMargins(26, 8, 26, 18)
         console_layout.addWidget(self._content, 1)
+        self._desktop_update_footer = QWidget(objectName="desktopUpdateFooter")
+        self._desktop_update_footer.hide()
+        console_layout.addWidget(self._desktop_update_footer)
         root_layout.addWidget(console_frame)
         self.setCentralWidget(root)
         self._macos_vibrancy_enabled = False
@@ -1584,7 +1517,6 @@ class MainWindow(QMainWindow):
         device_layout.addLayout(auth_row)
         layout.addWidget(device_summary, 0, Qt.AlignVCenter)
         self._relink_button = QPushButton("ReLink", objectName="relinkButton")
-        self._relink_button.setProperty(SKIP_TRANSLATION_PROPERTY, True)
         self._relink_button.setProperty("buttonRole", "secondary")
         self._relink_button.clicked.connect(self._view_model.refresh)
         layout.addWidget(self._relink_button)
@@ -1696,7 +1628,7 @@ class MainWindow(QMainWindow):
     def _show_device_mode(self, switched: bool) -> None:
         mode = self._last_device_mode
         prefix = self._language_manager.translate("已切换至" if switched else "当前模式")
-        self._device_mode_summary.setText(f"{prefix} · {_mode_label(mode)}" if mode else "—")
+        self._device_mode_summary.setText(f"{prefix} · {self._language_manager.translate(_mode_label(mode))}" if mode else "—")
 
     def render(self, model: ScreenModel) -> None:
         self._connection_terminal.observe(model)
@@ -1769,8 +1701,22 @@ class MainWindow(QMainWindow):
             current_editor = current_preferences_page.findChild(PreferencesEditor)
             if current_editor is not None:
                 preferences_values = current_editor.values()
+        restored = self._update_workspace_restore
+        if restored:
+            self._update_workspace_restore = {}
+            if restored.get("mapping"):
+                saved_mapping = dict(restored["mapping"])
+                saved_mapping["device_identity"] = tuple(saved_mapping["device_identity"])
+                mapping_editing_state = _MappingEditingState(**saved_mapping)
+            if restored.get("preferences") is not None:
+                preferences_values = tuple(restored["preferences"])
+            if restored.get("macro") is not None:
+                macro_values = restored["macro"]
+            if restored.get("prompt"):
+                prompt_editing_state = PromptEditingState(**restored["prompt"])
         reuse_preferences_page = (
-            self._view_model.page == "lighting"
+            not restored
+            and self._view_model.page == "lighting"
             and current_preferences_page is not None
             and current_draft is not None
             and current_preferences_page.property("draftIdentity")
@@ -1793,11 +1739,12 @@ class MainWindow(QMainWindow):
             and current_diagnostics_page is not None
         )
 
-        mapping_editing_state = (
-            None
-            if self._suppress_mapping_edit_restore
-            else self._current_mapping_editing_state()
-        )
+        if not restored.get("mapping"):
+            mapping_editing_state = (
+                None
+                if self._suppress_mapping_edit_restore
+                else self._current_mapping_editing_state()
+            )
         if mapping_editing_state is not None:
             self._pending_mapping_editing_state = mapping_editing_state
         elif (
@@ -1979,7 +1926,7 @@ class MainWindow(QMainWindow):
             active_name = str(
                 draft.profile(active_profile_id).get("name", active_name)
             )
-        prefix = "Profile" if self._language_manager.language == ENGLISH else "配置方案"
+        prefix = self._language_manager.translate("配置方案")
         selector = QPushButton(
             f"{prefix}：{active_name}",
             objectName="profilePill",
@@ -2144,6 +2091,9 @@ class MainWindow(QMainWindow):
         if self._settings_section == "about":
             box.addWidget(QLabel("BORING Console", objectName="inspectorTitle"))
             box.addWidget(QLabel(__version__, objectName="consoleVersion"))
+            check_update = QPushButton("检查应用更新", objectName="checkDesktopUpdate")
+            check_update.clicked.connect(lambda: self._desktop_update_ui.check() if self._desktop_update_ui else None)
+            box.addWidget(check_update)
             description = QLabel("BORING MIST 桌面控制台\n\nHarmonyOS Sans SC / 系统中文字体\nBORING 5R UI Digital Core v1.0")
             description.setWordWrap(True)
             box.addWidget(description)
@@ -2153,13 +2103,14 @@ class MainWindow(QMainWindow):
             box.addWidget(QLabel("设备", objectName="inspectorTitle"))
             for label, value in (
                 ("设备", DEVICE_DISPLAY_NAME),
-                ("硬件 ID", snapshot.identity.get("hardware_id", "—")),
                 ("序列号", snapshot.identity.get("serial", "—")),
-                ("端口", snapshot.port_name),
+                ("连接方式", "蓝牙" if snapshot.port_name.startswith("ble:") else "USB"),
                 ("固件", snapshot.versions.get("firmware", "—")),
                 ("信任状态", snapshot.trust.message),
             ):
-                line = QLabel(f"{translate_ui_text(label)}  {value}")
+                display_value = translate_ui_text(value) if label in {"连接方式", "信任状态"} else value
+                line = QLabel(f"{translate_ui_text(label)}  {display_value}")
+                line.setTextFormat(Qt.TextFormat.PlainText)
                 line.setWordWrap(True)
                 box.addWidget(line)
             technical = QPushButton("技术详情")
@@ -2169,6 +2120,8 @@ class MainWindow(QMainWindow):
             reset.setEnabled(self._factory_reset_available(snapshot))
             reset.clicked.connect(self._confirm_factory_reset)
             box.addWidget(reset)
+        if self._settings_section == "device":
+            box.addWidget(BleNameEditor(self._view_model))
         box.addStretch(1)
         return detail
 
@@ -2321,7 +2274,7 @@ class MainWindow(QMainWindow):
             write_device=self._view_model.write_prompt_draft,
             delete_device=self._view_model.delete_prompt_from_device,
             device_preview=(
-                _prompt_device_shell(model.snapshot)
+                create_prompt_silhouette(model.snapshot, application_style=APP_STYLE)
                 if model.snapshot is not None and self._view_model.prompt_library is not None
                 else None
             ),
@@ -2376,7 +2329,7 @@ class MainWindow(QMainWindow):
                             and isinstance(control_id, str)
                         ):
                             controls_by_prompt.setdefault(prompt_id, []).append(
-                                _control_display_name(control_id)
+                                control_display_name(control_id)
                             )
         return ActionsPage(
             self._view_model,
@@ -2573,7 +2526,10 @@ class MainWindow(QMainWindow):
             ("remoteFirmware", remote, remote.total_size),
         ):
             message = scroll.findChild(QLabel, prefix + "Message")
-            set_translatable_text(message, status.message)
+            text = ("当前为自定义固件，不自动比较或安装官方更新。"
+                    if prefix == "remoteFirmware" and self._view_model.model.snapshot
+                    and is_custom_firmware(self._view_model.model.snapshot) else status.message)
+            set_translatable_text(message, text)
             progress = scroll.findChild(QProgressBar, prefix + "Progress")
             if progress is not None:  # Download progress exists only while downloading.
                 progress.setValue(status.progress_percent)
@@ -2626,10 +2582,20 @@ class MainWindow(QMainWindow):
         device_layout.setSpacing(8)
         device_layout.addWidget(QLabel("CONNECTED DEVICE", objectName="eyebrow"))
         device_layout.addWidget(QLabel("设备与更新能力", objectName="inspectorTitle"))
-        for text in _planned_tool_facts("firmware", snapshot):
-            item = QLabel(f"• {text}", objectName="muted")
-            item.setWordWrap(True)
-            device_layout.addWidget(item)
+        current = QLabel(translate_ui_text("当前版本：{version}").format(
+            version=_firmware_version_display(
+                snapshot.versions.get("firmware", "—"), snapshot.versions.get("build_id", "")
+            ) if snapshot else "—"
+        ), objectName="firmwareCurrentVersion")
+        current.setTextFormat(Qt.TextFormat.PlainText)
+        current.setWordWrap(True)
+        device_layout.addWidget(current)
+        _add_technical_details(device_layout, "firmwareDeviceDetails",
+                              "\n".join(_planned_tool_facts("firmware", snapshot)))
+        if snapshot and is_custom_firmware(snapshot):
+            note = QLabel("当前运行自定义固件。恢复官方版本请导入官方签名固件包；安装会替换你的自定义功能。", objectName="customFirmwareNotice")
+            note.setWordWrap(True)
+            device_layout.addWidget(note)
         layout.addWidget(device_card)
 
         remote = self._view_model.remote_firmware
@@ -2639,31 +2605,35 @@ class MainWindow(QMainWindow):
         online_layout.setSpacing(8)
         online_layout.addWidget(QLabel("ONLINE RELEASE", objectName="eyebrow"))
         online_layout.addWidget(QLabel("在线固件发布", objectName="inspectorTitle"))
-        online_message = QLabel(remote.message, objectName="muted")
+        online_message = QLabel("当前为自定义固件，不自动比较或安装官方更新。"
+                               if snapshot and is_custom_firmware(snapshot) else remote.message, objectName="muted")
         online_message.setObjectName("remoteFirmwareMessage")
-        online_message.setStyleSheet("color: #9A958C;")
+        online_message.setStyleSheet("color: #dc9b86;" if remote.state is RemoteFirmwareState.FAILED else "color: #9A958C;")
         online_message.setWordWrap(True)
         online_layout.addWidget(online_message)
         if remote.release is not None:
+            release = remote.release
             release_details = QLabel(
-                (
-                    f"版本：{remote.release.version}\n"
-                    f"build_id：{remote.release.build_id}\n"
-                    f"下载大小：{remote.release.size} 字节\n"
-                    f"渠道：{remote.release.manifest.get('channel', 'stable')}\n"
-                    f"最低桌面端版本：{remote.release.manifest.get('minimum_app_version', '0.1.0')}\n"
-                    f"发布时间：{remote.release.manifest.get('published_at', '未提供')}\n"
-                    f"发布说明：{remote.release.manifest.get('release_notes', '未提供')}"
-                ),
-                objectName="muted",
+                translate_ui_text("目标版本：{version}\n{channel}\n更新内容：{notes}").format(
+                    version=_firmware_version_display(release.version, release.build_id),
+                    channel=translate_ui_text("测试版" if release.manifest.get("channel") == "sample" else "正式版"),
+                    notes=release.manifest.get("release_notes", translate_ui_text("未提供")),
+                ), objectName="remoteFirmwareReleaseSummary",
             )
             release_details.setWordWrap(True)
             release_details.setTextFormat(Qt.TextFormat.PlainText)
             online_layout.addWidget(release_details)
-        if remote.technical:
-            online_error = QLabel(remote.technical, objectName="statusWarn")
-            online_error.setWordWrap(True)
-            online_layout.addWidget(online_error)
+        remote_details = remote.technical
+        if remote.release:
+            release = remote.release
+            remote_details += (
+                f"\nversion: {release.version}\nbuild_id: {release.build_id}"
+                f"\nsize: {release.size} bytes\nchannel: {release.manifest.get('channel', 'stable')}"
+                f"\nminimum_app_version: {release.manifest.get('minimum_app_version', '0.1.0')}"
+                f"\npublished_at: {release.manifest.get('published_at', '—')}"
+            )
+        if remote_details:
+            _add_technical_details(online_layout, "remoteFirmware", remote_details.strip())
         if remote.state is RemoteFirmwareState.DOWNLOADING:
             download_progress = QProgressBar(objectName="remoteFirmwareProgress")
             download_progress.setRange(0, 100)
@@ -2674,7 +2644,9 @@ class MainWindow(QMainWindow):
             online_layout.addWidget(download_progress)
 
         online_buttons = QHBoxLayout()
-        check_online = QPushButton("检查在线固件", objectName="secondary")
+        check_online = QPushButton(
+            "重新检查" if remote.state in {RemoteFirmwareState.UNPUBLISHED, RemoteFirmwareState.FAILED}
+            else "检查在线固件", objectName="secondary")
         check_online.setObjectName("checkRemoteFirmware")
         check_online.setEnabled(
             remote.state is not RemoteFirmwareState.UNCONFIGURED
@@ -2683,6 +2655,7 @@ class MainWindow(QMainWindow):
             and remote.state is not RemoteFirmwareState.DOWNLOADED
             and snapshot is not None
             and capability is True
+            and not is_custom_firmware(snapshot)
             and model.state is AppState.READY
             and not transaction.is_busy
             and not self._view_model.calibration.blocks_editing
@@ -2733,18 +2706,19 @@ class MainWindow(QMainWindow):
             package_note.setWordWrap(True)
             package_layout.addWidget(package_note)
         else:
-            details = (
-                f"版本：{package.version}\n"
-                f"build_id：{package.build_id or '未提供'}\n"
-                f"目标硬件：{package.hardware_id}\n"
-                f"镜像：{package.image_path.name} · {package.size} 字节\n"
-                f"验证状态：{package.validation_state or '未提供'}"
-                + (" · git_dirty" if package.git_dirty is True else "")
-            )
-            package_label = QLabel(details, objectName="muted")
+            package_label = QLabel(translate_ui_text("已准备：{version}").format(
+                version=_firmware_version_display(package.version, package.build_id)
+            ), objectName="firmwarePackageSummary")
+            package_label.setTextFormat(Qt.TextFormat.PlainText)
             package_label.setWordWrap(True)
             package_layout.addWidget(package_label)
-        choose = QPushButton("导入固件维护包…", objectName="secondary")
+            _add_technical_details(package_layout, "firmwarePackageDetails", (
+                f"version: {package.version}\nbuild_id: {package.build_id}"
+                f"\nhardware_id: {package.hardware_id}\nimage: {package.image_path.name}"
+                f"\nsize: {package.size} bytes\nvalidation_state: {package.validation_state}"
+                f"\ngit_dirty: {package.git_dirty}"
+            ))
+        choose = QPushButton("导入官方固件…", objectName="secondary")
         choose.setObjectName("selectFirmwarePackage")
         choose.setEnabled(
             not transaction.is_busy
@@ -2755,6 +2729,15 @@ class MainWindow(QMainWindow):
         )
         choose.clicked.connect(self._select_firmware_package)
         package_layout.addWidget(choose, 0, Qt.AlignLeft)
+        custom = QPushButton("导入自定义固件…", objectName="selectCustomFirmwarePackage")
+        custom.setEnabled(choose.isEnabled())
+        custom.clicked.connect(lambda: self._select_firmware_package(custom=True))
+        package_layout.addWidget(custom, 0, Qt.AlignLeft)
+        if package:
+            source_text = {"official": "官方固件 · 发布签名已验证", "custom": "自定义固件 · 未经官方验证"}.get(package.source_kind, "固件来源尚未确认")
+            source_label = QLabel(source_text, objectName="firmwarePackageSource")
+            source_label.setWordWrap(True)
+            package_layout.addWidget(source_label)
         layout.addWidget(package_card)
 
         transaction_card = _card()
@@ -2771,9 +2754,7 @@ class MainWindow(QMainWindow):
         message.setWordWrap(True)
         transaction_layout.addWidget(message)
         if transaction.technical:
-            technical = QLabel(transaction.technical, objectName="muted")
-            technical.setWordWrap(True)
-            transaction_layout.addWidget(technical)
+            _add_technical_details(transaction_layout, "firmwareTransactionDetails", transaction.technical)
         progress = QProgressBar(objectName="firmwareProgress")
         progress.setRange(0, 100)
         progress.setValue(transaction.progress_percent)
@@ -2792,6 +2773,10 @@ class MainWindow(QMainWindow):
             dismiss = QPushButton("保留设备旧事务并退出维护", objectName="secondary")
             dismiss.clicked.connect(self._dismiss_firmware_update)
             buttons.addWidget(dismiss)
+        elif self._view_model.can_stop_firmware_wait:
+            stop = QPushButton("停止本地等待", objectName="stopFirmwareWait")
+            stop.clicked.connect(self._confirm_stop_firmware_wait)
+            buttons.addWidget(stop)
         elif transaction.can_abort:
             abort = QPushButton("中止本次固件接收", objectName="secondary")
             abort.setEnabled(model.state in {AppState.READY, AppState.READ_ONLY})
@@ -2849,6 +2834,21 @@ class MainWindow(QMainWindow):
         scroll.verticalScrollBar().setValue(scroll_position)
         return scroll
 
+    def _confirm_stop_firmware_wait(self) -> bool:
+        if QMessageBox.question(
+            self, "停止本地等待",
+            "设备当前离线。停止本地等待不会取消设备端更新，也不代表升级成功。"
+            "重新打开后，请连接原设备并重新选择固件包，先读取状态再决定续传或中止。是否停止等待？",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        ) != QMessageBox.Yes:
+            return False
+        try:
+            self._view_model.stop_firmware_wait()
+        except ValueError as exc:
+            QMessageBox.warning(self, "设备状态已改变", str(exc))
+            return False
+        return True
+
     def _factory_reset_available(self, snapshot: DeviceSnapshot | None) -> bool:
         return (
             snapshot is not None
@@ -2896,10 +2896,10 @@ class MainWindow(QMainWindow):
         except ValueError as exc:
             QMessageBox.warning(self, "无法下载在线固件", str(exc))
 
-    def _select_firmware_package(self) -> None:
+    def _select_firmware_package(self, _checked: bool = False, *, custom: bool = False) -> None:
         file_name, _filter = QFileDialog.getOpenFileName(
             self,
-            translate_ui_text("导入 BORING 固件维护包"),
+            translate_ui_text("导入自定义固件" if custom else "导入官方固件"),
             "",
             translate_ui_text(
                 "BORING 固件维护包 (*.zip *.json);;ZIP 压缩包 (*.zip);;firmware-manifest.json (*.json)"
@@ -2908,7 +2908,7 @@ class MainWindow(QMainWindow):
         if not file_name:
             return
         try:
-            self._view_model.load_firmware_package(Path(file_name))
+            self._view_model.load_firmware_package(Path(file_name), custom=custom)
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "固件维护包导入失败", str(exc))
 
@@ -2917,20 +2917,18 @@ class MainWindow(QMainWindow):
         snapshot = self._view_model.model.snapshot
         if package is None or snapshot is None:
             return
-        validation = package.validation_state or "未提供"
-        dirty = "是" if package.git_dirty is True else "否/未报告"
+        warning = ""
+        if package.source_kind == "custom":
+            warning = translate_ui_text("此固件未经官方验证。安装将替换当前固件，可能改变功能、配置兼容性及后续连接能力。请先导出重要配置并准备恢复用的官方固件。") + "\n\n"
+        elif is_custom_firmware(snapshot):
+            warning = translate_ui_text("恢复官方固件将替换当前自定义功能。请先保留你的源码和重要配置。") + "\n\n"
         choice = QMessageBox.warning(
             self,
-            "确认开始固件维护",
-            (
-                f"设备序列号：{snapshot.identity.get('serial', '—')}\n"
-                f"当前版本：{snapshot.versions.get('firmware', '—')}\n"
-                f"目标版本：{package.version}\n"
-                f"目标 build_id：{package.build_id or '未提供'}\n"
-                f"软件包验证状态：{validation}\n"
-                f"git_dirty：{dirty}\n\n"
-                "继续后会向设备非活动 OTA 分区传输完整镜像。请保持 USB 连接；"
-                "断线后控制台只按 FW_STATUS 对账续传，不会盲目从头重写。"
+            translate_ui_text("确认安装固件"),
+            warning + translate_ui_text("设备：{serial}\n当前版本：{current}\n目标版本：{target}\n\n安装期间请保持 USB 连接。设备会重启，请等待控制台确认更新结果。").format(
+                serial=snapshot.identity.get("serial", "—"),
+                current=_firmware_version_display(snapshot.versions.get("firmware", "—"), snapshot.versions.get("build_id", "")),
+                target=_firmware_version_display(package.version, package.build_id),
             ),
             QMessageBox.Yes | QMessageBox.Cancel,
             QMessageBox.Cancel,
@@ -2999,7 +2997,7 @@ class MainWindow(QMainWindow):
         layout.setSpacing(24)
         stage = QVBoxLayout()
         stage.addStretch(1)
-        stage.addWidget(_device_shell_widget(
+        stage.addWidget(create_device_silhouette(
             None, mappings={}, on_control=None, selected_control_id=None,
         ), 0, Qt.AlignHCenter)
         caption = QLabel("BORING MIST · 外观预览", objectName="deviceStageName")
@@ -3091,7 +3089,7 @@ class MainWindow(QMainWindow):
             if isinstance(active_profile_id, int) and not isinstance(active_profile_id, bool):
                 mappings = _profile_mappings(draft.profile(active_profile_id))
 
-        device_shell = _device_shell_widget(
+        device_shell = create_device_silhouette(
             snapshot,
             mappings=mappings,
             on_control=self._select_physical_control if draft is not None else None,
@@ -3136,12 +3134,12 @@ class MainWindow(QMainWindow):
         rail = QWidget(objectName="mappingInspectorRail")
         rail_layout = QVBoxLayout(rail)
         rail_layout.setContentsMargins(0, 0, 0, 0)
-        rail_layout.setSpacing(20)
+        rail_layout.setSpacing(12)
         action_editor = editor.findChild(ActionEditor)
         short_name = editor.findChild(QLineEdit, "mappingShortNameEditor")
         editing = action_editor is not None and short_name is not None
         rail_layout.addWidget(editor, 1 if editing else 0)
-        sync = self._sync_summary_card(snapshot, state)
+        sync = self._sync_summary_card(snapshot, state, compact=editing)
         rail_layout.addWidget(sync, 0)
         if not editing:
             rail_layout.addStretch(1)
@@ -3175,17 +3173,31 @@ class MainWindow(QMainWindow):
         self,
         snapshot: DeviceSnapshot,
         state: AppState,
+        *,
+        compact: bool = False,
     ) -> QFrame:
         draft = self._view_model.draft
+        compact = (
+            compact and state is AppState.READY and snapshot.config_is_synced
+            and self._view_model.write_transaction.state in {
+                ConfigTransactionState.IDLE, ConfigTransactionState.ACTIVE,
+            }
+        )
         bottom = _InstrumentCard(objectName="syncSummaryCard")
         bottom_layout = QVBoxLayout(bottom)
         bottom_layout.setContentsMargins(18, 14, 18, 14)
         bottom_layout.setSpacing(8)
-        bottom_layout.addWidget(_digital_caption("SYNC"))
+        caption = _digital_caption("SYNC")
+        caption.setVisible(not compact)
+        bottom_layout.addWidget(caption)
+        if compact:
+            bottom_layout.setDirection(QBoxLayout.LeftToRight)
+            bottom_layout.setContentsMargins(12, 8, 12, 8)
         status_row = QVBoxLayout()
         status_row.setSpacing(8)
         sync = QLabel(snapshot.config_status_label if state in {AppState.READY, AppState.READ_ONLY} else "上次读取 · 当前设备状态未确认")
         sync.setStyleSheet("font-weight: 800;")
+        sync.setVisible(not compact)
         status_row.addWidget(sync)
         profile_switch_pending = (
             draft is not None
@@ -3204,6 +3216,7 @@ class MainWindow(QMainWindow):
             change_count = len(draft.changes)
             count = QLabel(f"{change_count}  处未写入改动" if change_count else ("已同步 [ SYNCED ]" if state in {AppState.READY, AppState.READ_ONLY} else "上次读取 · 没有本地变更"), objectName="syncChangeCount")
             count.setProperty("dirty", draft.is_dirty)
+            count.setVisible(not compact)
             bottom_layout.addWidget(count)
         actions_row = QVBoxLayout()
         actions_row.setSpacing(8)
@@ -3346,7 +3359,7 @@ class MainWindow(QMainWindow):
         codex_micro = snapshot.status.get("codex_micro")
         active_slot = codex_micro.get("active_slot") if isinstance(codex_micro, dict) else None
         if isinstance(active_slot, int) and not isinstance(active_slot, bool):
-            ble = QPushButton(f"BLE   {active_slot} / 3   ›", objectName="bleSlotsDisclosure")
+            ble = QPushButton(translate_ui_text("蓝牙设备 {slot} / 3 ›").format(slot=active_slot), objectName="bleSlotsDisclosure")
             ble.setProperty("buttonRole", "secondary")
             ble.clicked.connect(lambda: self._show_ble_slots(snapshot, state))
             box.addWidget(ble)
@@ -3396,10 +3409,6 @@ class MainWindow(QMainWindow):
         rings = UsageRings()
         rings.setObjectName("homeUsageRings")
         box.addWidget(rings, 0, Qt.AlignCenter)
-        compact = QLabel(objectName="homeUsageCompact")
-        compact.setWordWrap(True)
-        box.addWidget(compact)
-        compact.hide()
         detail = QLabel(objectName="homeUsageDetail")
         detail.setWordWrap(True)
         box.addWidget(detail)
@@ -3432,10 +3441,6 @@ class MainWindow(QMainWindow):
             seven_day=seven.remaining_percent if seven else None,
             five_hour=five.remaining_percent if five else None,
         )
-        def remaining(window):
-            return f"{window.remaining_percent:.0f}%" if window is not None else "—"
-        set_translatable_text(card.findChild(QLabel, "homeUsageCompact"),
-                              f"7D  {remaining(seven)}    ·    5H  {remaining(five)}")
         text = "7D 外环 · 5H 内环 · 剩余额度"
         if snapshot.status is not CodexUsageStatus.AVAILABLE:
             text += "\n" + snapshot.message
@@ -3443,7 +3448,7 @@ class MainWindow(QMainWindow):
             from datetime import datetime
             text += "\n更新于 " + datetime.fromtimestamp(snapshot.updated_at).strftime("%m-%d %H:%M")
         set_translatable_text(card.findChild(QLabel, "homeUsageDetail"), text)
-        card.findChild(QLabel, "homeUsageCompact").setToolTip(text)
+        card.setToolTip(text)
 
     def _ble_slots_card(
         self, snapshot: DeviceSnapshot, state: AppState
@@ -3607,7 +3612,8 @@ class MainWindow(QMainWindow):
             return None
         mapping = draft.mapping(profile_id, self._selected_control_id)
         confirmed_mapping = snapshot.mappings.get(self._selected_control_id)
-        platform = _shortcut_display_platform(snapshot)
+        # The editor and its readback use the host's names for the same HID usages.
+        platform = "macos" if sys.platform == "darwin" else "windows"
         current_generation = snapshot.config_result.get("generation")
         base_changed = current_generation != draft.base_generation
         write_state = self._view_model.write_transaction.state
@@ -3625,7 +3631,7 @@ class MainWindow(QMainWindow):
         header = QHBoxLayout()
         title_box = QVBoxLayout()
         title_box.addWidget(QLabel("控件设置", objectName="eyebrow"))
-        selected_name = QLabel(_control_display_name(self._selected_control_id))
+        selected_name = QLabel(control_display_name(self._selected_control_id))
         selected_name.setObjectName("inspectorTitle")
         selected_name.setWordWrap(True)
         title_box.addWidget(selected_name)
@@ -3662,31 +3668,21 @@ class MainWindow(QMainWindow):
         editor_layout = QVBoxLayout(editor_body)
         editor_layout.setContentsMargins(0, 0, 4, 0)
         editor_layout.setSpacing(10)
-        capture_platform = "macos" if sys.platform == "darwin" else "windows"
-        if (platform == "macos") != (capture_platform == "macos"):
-            notice = QLabel(
-                self._language_manager.translate(
-                    "录制与编辑使用 {host} 按键名称。设备系统设置为 {device}；已有动作不自动转换。"
-                ).format(
-                    host="macOS" if capture_platform == "macos" else "Windows / Linux",
-                    device="macOS" if platform == "macos" else "Windows / Linux",
-                ),
-                objectName="devicePlatformNotice",
-            )
-            notice.setWordWrap(True)
-            editor_layout.addWidget(notice)
+        capture_platform = platform
         body_scroll.setWidget(editor_body)
         card_layout.addWidget(body_scroll, 1)
 
-        role_marker, role_copy = _control_role_copy(self._selected_control_id)
-        editor_layout.addWidget(
-            _semantic_role_card(
-                role_marker,
-                role_copy,
-                _control_role_style(self._selected_control_id),
-                compact=True,
-            )
-        )
+        more_settings = QWidget(objectName="mappingMoreSettings")
+        more_layout = QVBoxLayout(more_settings)
+        more_layout.setContentsMargins(0, 0, 0, 0)
+        more_layout.setSpacing(10)
+        more_toggle = QPushButton("更多设置", objectName="mappingMoreSettingsToggle")
+        more_toggle.setProperty("buttonRole", "secondary")
+        more_toggle.setCheckable(True)
+        more_toggle.toggled.connect(more_settings.setVisible)
+        more_toggle.setChecked(bool(editing_state and editing_state.more_settings_open))
+        more_settings.setVisible(more_toggle.isChecked())
+
         manage_sequences = QPushButton("管理设备按键序列")
         manage_sequences.setObjectName("manageDeviceKeySequences")
         manage_sequences.setProperty("buttonRole", "secondary")
@@ -3702,11 +3698,12 @@ class MainWindow(QMainWindow):
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignLeft)
         form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         related_controls = _related_controls(self._selected_control_id, draft.controls)
         if len(related_controls) > 1:
             trigger_selector = QComboBox(objectName="triggerSelector")
             for control_id in related_controls:
-                trigger_selector.addItem(_control_display_name(control_id), control_id)
+                trigger_selector.addItem(control_display_name(control_id), control_id)
             trigger_selector.setCurrentIndex(trigger_selector.findData(self._selected_control_id))
             trigger_selector.currentIndexChanged.connect(
                 lambda _index, selector=trigger_selector: self._select_control(selector.currentData())
@@ -3724,7 +3721,7 @@ class MainWindow(QMainWindow):
             objectName="actualActionValue",
         )
         actual_action.setMinimumWidth(0)
-        actual_action.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        actual_action.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         actual_action.setStyleSheet("font-size: 17px; font-weight: 800;")
         actual_action.setWordWrap(True)
         form.addRow("设备当前" if self._view_model.model.state in {AppState.READY, AppState.READ_ONLY} else "上次读取", actual_action)
@@ -3733,7 +3730,7 @@ class MainWindow(QMainWindow):
             str(mapping.get("short_name", "未映射")) if mapping else "未映射"
         )
         short_name_editor.setObjectName("mappingShortNameEditor")
-        short_name_editor.setMaxLength(draft.editor_rules.mapping_short_name_max_length)
+        short_name_editor.setValidator(NameLengthValidator(draft.editor_rules.mapping_short_name_max_length, short_name_editor))
         short_name_editor.setPlaceholderText("例如：新建任务")
         short_name_editor.setToolTip(
             f"用于辅助识别这个控件，最多 {draft.editor_rules.mapping_short_name_max_length} 个字符"
@@ -3854,9 +3851,19 @@ class MainWindow(QMainWindow):
             )
         )
         form.addRow(action_editor)
-        form.addRow("按键名称（可选）", short_name_editor)
-        form.addRow("快捷模板", preset_selector)
         editor_layout.addLayout(form)
+        editor_layout.addWidget(more_toggle)
+        extra_form = QFormLayout()
+        extra_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        extra_form.addRow("按键名称（可选）", short_name_editor)
+        extra_form.addRow("快捷模板", preset_selector)
+        more_layout.addLayout(extra_form)
+        role_marker, role_copy = _control_role_copy(self._selected_control_id)
+        more_layout.addWidget(_semantic_role_card(
+            role_marker, role_copy, _control_role_style(self._selected_control_id), compact=True,
+        ))
+        editor_layout.addWidget(more_settings)
+        editor_layout.addStretch(1)
 
         def save_local_draft() -> bool:
             try:
@@ -3887,6 +3894,7 @@ class MainWindow(QMainWindow):
                 self._suppress_mapping_edit_restore = False
 
         editing_enabled = not self._view_model.write_transaction.blocks_editing
+        # System fonts and translated labels need the full inspector width.
         save_actions = QVBoxLayout()
         apply_to_device = QPushButton(
             "保存 NORMAL 映射…" if uses_dedicated_actions else "应用到设备…",
@@ -3926,7 +3934,7 @@ class MainWindow(QMainWindow):
                 self._prepare_device_write()
 
         apply_to_device.clicked.connect(save_and_prepare)
-        save_actions.addWidget(apply_to_device)
+        save_actions.addWidget(apply_to_device, 1)
         if self._view_model.model.state not in {AppState.READY, AppState.READ_ONLY}:
             apply_to_device.setToolTip("需要连接并读取设备；当前修改可先保存为本地草稿。")
         save = QPushButton("仅保存草稿", objectName="saveMappingDraft")
@@ -3946,8 +3954,8 @@ class MainWindow(QMainWindow):
                 self._suppress_mapping_edit_restore = False
 
         discard.clicked.connect(discard_local_draft)
-        editor_layout.addWidget(discard)
-        editor_layout.addWidget(manage_sequences)
+        more_layout.addWidget(discard)
+        more_layout.addWidget(manage_sequences)
         card_layout.addLayout(save_actions)
         return card
 
@@ -4032,7 +4040,7 @@ class MainWindow(QMainWindow):
             macro = draft.macro(self._selected_macro_id)
             form = QFormLayout()
             name = QLineEdit(editing_values[0] if editing_values is not None else str(macro.get("name", "")), objectName="macroNameEditor")
-            name.setMaxLength(draft.editor_rules.macro_name_max_length)
+            name.setValidator(NameLengthValidator(draft.editor_rules.macro_name_max_length, name))
             name.setEnabled(editing_enabled)
             form.addRow("按键序列名称", name)
             editor_layout.addLayout(form)
@@ -4256,7 +4264,7 @@ class MainWindow(QMainWindow):
                 getattr(widget, signal_name).connect(update_summary)
         editor.lighting_changed.connect(update_summary)
         update_summary()
-        device_preview = _lighting_device_preview(snapshot, editor)
+        device_preview = create_lighting_silhouette_preview(snapshot, editor)
         device_preview.setEnabled(editing_enabled)
         editor.set_workspace(device_preview, preview_controls, sync)
         layout.addWidget(editor, 1)
@@ -4295,22 +4303,14 @@ class MainWindow(QMainWindow):
         message = QLabel(transaction.message, objectName="muted")
         message.setWordWrap(True)
         layout.addWidget(message)
+        details = transaction.technical
         if transaction.candidate_digest:
             generation = (snapshot.config_result.get("generation")
                           if transaction.state is ConfigTransactionState.ACTIVE
                           else transaction.base_generation)
-            details = QLabel(
-                self._language_manager.translate("配置修订：{generation}（成功写入后递增）").format(generation=generation),
-                objectName="muted",
-            )
-            details.setProperty(SKIP_TRANSLATION_PROPERTY, True)
-            details.setToolTip(f"candidate digest: {transaction.candidate_digest}")
-            details.setWordWrap(True)
-            layout.addWidget(details)
-        if transaction.technical:
-            technical = QLabel(transaction.technical, objectName="muted")
-            technical.setWordWrap(True)
-            layout.addWidget(technical)
+            details += f"\nconfiguration revision: {generation}\ncandidate digest: {transaction.candidate_digest}"
+        if details:
+            _add_technical_details(layout, "configurationWrite", details.strip())
 
         buttons = QHBoxLayout() if show_prepare else QVBoxLayout()
         if transaction.state is ConfigTransactionState.AWAITING_CONFIRMATION:
@@ -4368,13 +4368,9 @@ class MainWindow(QMainWindow):
         changes = len(draft.changes) if draft is not None else 0
         choice = QMessageBox.warning(
             self,
-            "确认写入 BORING 设备",
-            (
-                f"设备已验证候选配置。即将写入 {changes} 项本地修改。\n\n"
-                f"目标设备：{transaction.device_serial}\n"
-                f"base generation: {transaction.base_generation}\n"
-                f"candidate digest: {transaction.candidate_digest}\n\n"
-                "写入后将等待设备激活并读回确认；连接异常时不会自动重试写入。"
+            translate_ui_text("确认保存到设备"),
+            translate_ui_text("将 {changes} 项修改保存到设备 {serial}？\n\n请保持连接，等待控制台确认保存结果。连接中断时不会自动重复保存。").format(
+                changes=changes, serial=transaction.device_serial,
             ),
             QMessageBox.Yes | QMessageBox.Cancel,
             QMessageBox.Cancel,
@@ -4488,6 +4484,7 @@ class MainWindow(QMainWindow):
                 control_id=control_id,
                 short_name=short_name.text(),
                 action=action_editor.action(),
+                more_settings_open=card.findChild(QPushButton, "mappingMoreSettingsToggle").isChecked(),
             )
         except ValueError:
             return None
@@ -4707,18 +4704,21 @@ class MainWindow(QMainWindow):
             set_translatable_text(label, status.message)
             label.setToolTip(translate_ui_text(status.technical))
 
-    def _export_configuration(self, kind: str) -> bool:
+    def _export_configuration(self, kind: str, *, draft=None) -> bool:
         suffix = "draft" if kind == "draft" else "confirmed"
         file_name, _selected_filter = QFileDialog.getSaveFileName(
             self,
             "导出 BORING 配置",
-            f"BORING-MIST-{suffix}.boring-config.json",
+            f"BORING-MIST-{draft.serial + '-' if draft else ''}{suffix}.boring-config.json",
             "BORING 配置 (*.boring-config.json);;JSON (*.json)",
         )
         if not file_name:
             return False
         try:
-            self._view_model.export_configuration(Path(file_name), kind=kind)
+            if draft is None:
+                self._view_model.export_configuration(Path(file_name), kind=kind)
+            else:
+                self._view_model.export_configuration(Path(file_name), kind=kind, draft=draft)
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "导出配置失败", str(exc))
             return False
@@ -4862,6 +4862,9 @@ class MainWindow(QMainWindow):
             button.style().polish(button)
             button.update()
 
+        canvas = device.findChild(DeviceModelCanvas)
+        if canvas is not None:
+            canvas.set_selected_control(self._selected_control_id)
         inspector = self._mapping_editor(snapshot, None)
         if inspector is None:
             inspector = self._selection_inspector(snapshot)
@@ -4986,7 +4989,31 @@ class MainWindow(QMainWindow):
             QMessageBox.Cancel,
         ) == QMessageBox.Discard
 
+    def _confirm_discard_ble_names(self) -> bool:
+        drafts = self._view_model.ble_name.pending_drafts()
+        if not drafts:
+            return True
+        prompt = QMessageBox(self)
+        prompt.setWindowTitle(translate_ui_text("蓝牙名称仍有本地记录"))
+        prompt.setTextFormat(Qt.PlainText)
+        prompt.setIcon(QMessageBox.Warning)
+        prompt.setText(translate_ui_text(
+            "退出将丢弃以下设备的本地名称输入或待确认记录；不会撤销设备已执行的保存。重新打开后请连接原设备读取名称，确认实际结果。是否退出？"
+        ))
+        prompt.setInformativeText("\n".join(f"{serial}  {draft}" for serial, draft in drafts))
+        for label in prompt.findChildren(QLabel):
+            label.setProperty(SKIP_TRANSLATION_PROPERTY, True)
+        prompt.setStandardButtons(QMessageBox.Discard | QMessageBox.Cancel)
+        prompt.setDefaultButton(QMessageBox.Cancel)
+        return prompt.exec() == QMessageBox.Discard
+
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt override
+        if self._view_model.ble_name.busy:
+            QMessageBox.warning(self, translate_ui_text("蓝牙名称操作尚未完成"), translate_ui_text(
+                "请等待蓝牙名称保存或读回完成；关闭应用不会取消设备端操作。"
+            ))
+            event.ignore()
+            return
         if self._view_model.screen_icon.busy or self._view_model.screen_glyphs.busy:
             QMessageBox.warning(self, translate_ui_text("圆屏图标尚未完成"), translate_ui_text(
                 "请等待圆屏图标传输或读回完成；提交之前可以点击取消上传。"
@@ -5003,7 +5030,11 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         firmware = self._view_model.firmware_update
-        if firmware.blocks_editing:
+        if self._view_model.can_stop_firmware_wait:
+            if not self._confirm_stop_firmware_wait():
+                event.ignore()
+                return
+        elif firmware.blocks_editing:
             QMessageBox.warning(
                 self,
                 "固件维护尚未结束",
@@ -5020,6 +5051,10 @@ class MainWindow(QMainWindow):
             )
             event.ignore()
             return
+        if self._desktop_update_ui is not None and self._desktop_update_ui.restart_prepared:
+            self._view_model.shutdown()
+            event.accept()
+            return
         if (
             self._background_controller is not None
             and not self._background_controller.quitting
@@ -5031,6 +5066,9 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         if not self._confirm_discard_screen_icons():
+            event.ignore()
+            return
+        if not self._confirm_discard_ble_names() or self._view_model.ble_name.busy:
             event.ignore()
             return
         draft = self._view_model.draft
@@ -5057,11 +5095,15 @@ class MainWindow(QMainWindow):
             if not self._export_configuration("draft"):
                 event.ignore()
                 return
-        elif draft is not None and draft.is_dirty:
+        for pending_draft in self._view_model.pending_dirty_workspaces():
+            if (unresolved_exit and pending_draft.serial == transaction.device_serial
+                    and pending_draft.config == transaction.candidate_config):
+                # This exact draft was included in the unresolved-write export.
+                continue
             prompt = QMessageBox(self)
             prompt.setIcon(QMessageBox.Warning)
             prompt.setWindowTitle("本地草稿尚未导出")
-            prompt.setText("当前草稿只保留在本进程中。可以先导出草稿，或丢弃后关闭。")
+            prompt.setText(f"设备 {pending_draft.serial} 的草稿只保留在本进程中。可以先导出草稿，或丢弃后关闭。")
             export_button = prompt.addButton("导出草稿后关闭", QMessageBox.AcceptRole)
             discard_button = prompt.addButton("丢弃并关闭", QMessageBox.DestructiveRole)
             cancel_button = prompt.addButton("取消", QMessageBox.RejectRole)
@@ -5073,13 +5115,22 @@ class MainWindow(QMainWindow):
             if role not in (QMessageBox.AcceptRole, QMessageBox.DestructiveRole):
                 event.ignore()
                 return
-            if role == QMessageBox.AcceptRole and not self._export_configuration("draft"):
-                event.ignore()
-                return
+            if role == QMessageBox.AcceptRole:
+                exported = (self._export_configuration("draft") if pending_draft is draft
+                            else self._export_configuration("draft", draft=pending_draft))
+                if not exported:
+                    event.ignore()
+                    return
             if role == QMessageBox.DestructiveRole:
-                self._view_model.discard_draft()
+                if pending_draft is draft:
+                    self._view_model.discard_draft()
+                else:
+                    pending_draft.discard()
         if unresolved_exit and self._configuration_blocks_close():
             # The save-file and export-result dialogs also run the Qt event loop.
+            event.ignore()
+            return
+        if self._view_model.ble_name.busy:
             event.ignore()
             return
         self._view_model.stop_lighting_preview(clear_candidate=True)
@@ -5192,6 +5243,25 @@ def _planned_tool_facts(
     )
 
 
+def _firmware_version_display(version: str, build_id: str | None) -> str:
+    # Keep same-version daily builds distinguishable; the complete ID stays in details.
+    build = (build_id or "").split("-g", 1)[0]
+    return f"{version} · {build}" if build else version
+
+
+def _add_technical_details(layout: QVBoxLayout, name: str, text: str) -> None:
+    toggle = QPushButton("技术详情", objectName=f"{name}DetailsToggle")
+    toggle.setCheckable(True)
+    details = QLabel(text, objectName=f"{name}Technical")
+    details.setTextFormat(Qt.TextFormat.PlainText)
+    details.setWordWrap(True)
+    details.setTextInteractionFlags(Qt.TextSelectableByMouse)
+    details.hide()
+    toggle.toggled.connect(details.setVisible)
+    layout.addWidget(toggle, 0, Qt.AlignLeft)
+    layout.addWidget(details)
+
+
 def _digital_caption(text: str) -> Boring5RLabel:
     return Boring5RLabel(
         text,
@@ -5199,33 +5269,6 @@ def _digital_caption(text: str) -> Boring5RLabel:
         color="#a58c86",
         objectName="digitalCaption",
     )
-
-
-def _digital_when_supported(
-    text: str,
-    *,
-    preferred_scale: float,
-    minimum_scale: float,
-    maximum_width: float | None = None,
-    object_name: str | None = None,
-) -> QLabel:
-    try:
-        unscaled_layout = layout_text(text)
-    except ValueError:
-        unscaled_layout = None
-    if unscaled_layout is not None and text:
-        scale = preferred_scale
-        if maximum_width is not None:
-            unscaled_width = unscaled_layout.width
-            if unscaled_width > 0:
-                scale = min(scale, maximum_width / unscaled_width)
-        if scale >= minimum_scale:
-            return Boring5RLabel(
-                text,
-                scale=scale,
-                objectName=object_name,
-            )
-    return QLabel(text, objectName=object_name)
 
 
 def _semantic_role_card(
@@ -5416,26 +5459,6 @@ def _canonical_action(action: object) -> bytes:
     return canonical_json_bytes(normalized)
 
 
-def _control_display_name(control_id: str) -> str:
-    if control_id.startswith("key."):
-        index = control_id.split(".", 1)[1]
-        return (
-            f"透明状态键 {index}"
-            if control_id in MATRIX12_AGENT_STATUS_KEYS
-            else f"白色按键 {index}"
-        )
-    return {
-        "encoder.ccw": "旋钮逆时针",
-        "encoder.cw": "旋钮顺时针",
-        "encoder.press": "旋钮按下",
-        "joystick.up": "摇杆向上",
-        "joystick.down": "摇杆向下",
-        "joystick.left": "摇杆向左",
-        "joystick.right": "摇杆向右",
-        "joystick.press": "摇杆按下",
-    }.get(control_id, control_id)
-
-
 def _control_role_style(control_id: str) -> str:
     return "roleAgent" if control_id in MATRIX12_AGENT_STATUS_KEYS else "roleHuman"
 
@@ -5538,643 +5561,6 @@ def _technical_details_text(snapshot: DeviceSnapshot) -> str:
             f"配置摘要       {snapshot.config_result.get('digest', '—')}",
         )
     )
-
-
-def _prompt_device_shell(snapshot: DeviceSnapshot) -> QWidget:
-    shell = _device_shell_widget(snapshot, mappings=snapshot.mappings,
-                                on_control=None, selected_control_id=None)
-    shell.setStyleSheet(APP_STYLE + V4_STYLE + "QFrame#deviceShell { background: transparent; border: none; }")
-    for label in shell.findChildren(QLabel):
-        label.hide()
-    for key in shell.findChildren(_KeycapButton):
-        key.setProperty("lightingPreview", True)
-        key.setFocusPolicy(Qt.NoFocus)
-        key.setToolTip("")
-    return shell
-
-
-def _lighting_device_preview(snapshot: DeviceSnapshot, editor: PreferencesEditor) -> QWidget:
-    stage = QWidget(objectName="lightingDevicePreview")
-    stage.setMinimumWidth(426)
-    stage.setMinimumHeight(460)
-    layout = QVBoxLayout(stage)
-    layout.setContentsMargins(0, 20, 0, 20)
-    layout.addStretch(1)
-    swatches = {button.property("controlId"): button for _, button in editor._under_key_colors}
-    shell = _device_shell_widget(snapshot, mappings=snapshot.mappings,
-                                 on_control=None, selected_control_id=None)
-    display = shell.findChild(QFrame, "displayControl")
-    if display is not None:
-        for label in display.findChildren(QLabel):
-            label.hide()
-        brand = Boring5RLabel("BORING", scale=.5, color="#EFEAE0", alignment=Qt.AlignCenter)
-        display.layout().addWidget(brand, 0, Qt.AlignCenter)
-        def update_display(*_args):
-            enabled = editor.values()[2].get("brightness", 0) > 0
-            brand.setVisible(enabled)
-            ring_color = "#A7B6E4" if enabled else "#41413B"
-            display.setStyleSheet(
-                f"QFrame#displayControl {{ background: #121311; border: 2px solid {ring_color}; border-radius: 26px; }}"
-            )
-        control = getattr(editor, "_display_brightness", None)
-        if isinstance(control, QComboBox):
-            control.currentIndexChanged.connect(update_display)
-        elif isinstance(control, QSpinBox):
-            control.valueChanged.connect(update_display)
-        update_display()
-    encoder = shell.findChild(QPushButton, "encoderControl")
-    if encoder is not None:
-        # Keep the existing physical control; omit mapping prose on this lighting view.
-        for label in encoder.findChildren(QLabel):
-            label.hide()
-        encoder.setToolTip(translate_ui_text("旋钮不带可配置灯光"))
-    for key in shell.findChildren(_KeycapButton):
-        control_id = key.property("controlId")
-        for inscription in key.findChildren(QLabel):
-            inscription.hide()
-        key.setAccessibleName(str(control_id))
-        if control_id in swatches:
-            key.setToolTip(translate_ui_text("点击调整该按键灯颜色"))
-            key.setFocusPolicy(Qt.StrongFocus)
-            key.clicked.connect(swatches[control_id].click)
-        else:
-            key.setToolTip(translate_ui_text("Agent 灯光由任务状态控制，此处不模拟状态颜色。"))
-    layout.addWidget(shell, 0, Qt.AlignCenter)
-    caption = QLabel("本地效果示意 · 点击白色按键调整灯色", objectName="muted")
-    caption.setWordWrap(True)
-    caption.setAlignment(Qt.AlignCenter)
-    layout.addWidget(caption)
-    note = QLabel("Agent 灯光由任务状态控制，此处不模拟状态颜色。", objectName="muted")
-    note.setWordWrap(True)
-    note.setAlignment(Qt.AlignCenter)
-    layout.addWidget(note)
-    layout.addStretch(1)
-
-    def update_lighting(lighting):
-        colors = lighting.get("under_key", [])
-        brightness = min(80, lighting.get("brightness", 0)) / 80 if lighting.get("enabled") else 0
-        for key in shell.findChildren(_KeycapButton):
-            control_id = key.property("controlId")
-            color = QColor(0, 0, 0, 0)
-            if control_id in swatches:
-                index = int(control_id.split(".")[-1]) - 1
-                if index < len(colors):
-                    rgb = colors[index]
-                    peak = max(rgb.values())
-                    if peak > 0:
-                        # Perceptual boost for the local illustration only. Low RGB
-                        # values must remain legible on white keycaps; zero stays off.
-                        opacity = round(235 * (brightness * peak / 255) ** .45)
-                        color = QColor(round(rgb["r"] * 255 / peak), round(rgb["g"] * 255 / peak),
-                                       round(rgb["b"] * 255 / peak), opacity)
-            key.setProperty("lightingColor", color)
-            key.update()
-    editor.lighting_changed.connect(update_lighting)
-    update_lighting(editor.lighting_value())
-    return stage
-
-
-class _Matrix12Shell(QFrame):
-    def remember_control_geometry(self):
-        self._face = self.findChild(QFrame, "deviceFace")
-        self._controls = [(child, child.geometry()) for child in self._face.findChildren(QWidget, options=Qt.FindDirectChildrenOnly)]
-
-    def scale_to(self, side: int):
-        if side == self.width():
-            return
-        ratio = side / 420
-        self.setFixedSize(side, side)
-        self._face.setGeometry(0, 0, side, side)
-        self._face.setAttribute(Qt.WA_StyledBackground, True)
-        self._face.setStyleSheet(f"QFrame#deviceFace {{ background: #1C1B19; border: none; border-radius: {round(64 * ratio)}px; }}")
-        for child, geometry in self._controls:
-            child.setFixedSize(round(geometry.width() * ratio), round(geometry.height() * ratio))
-            child.move(round(geometry.x() * ratio), round(geometry.y() * ratio))
-            if child.property("controlId") == "display":
-                child.setStyleSheet(f"QFrame#displayControl {{ background: #23241F; border: 2px solid #A7B6E4; border-radius: {child.width() // 2}px; }}")
-
-
-def _device_shell_widget(
-    snapshot: DeviceSnapshot | None,
-    *,
-    mappings: dict[str, dict],
-    on_control: Callable[[str], None] | None,
-    selected_control_id: str | None,
-) -> QFrame:
-    device_shell = _Matrix12Shell(objectName="deviceShell") if snapshot is None or str(snapshot.identity.get("hardware_id", "")) in MATRIX12_HARDWARE_IDS else QFrame(objectName="deviceShell")
-    device_shell.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-    if snapshot is None or str(snapshot.identity.get("hardware_id", "")) in MATRIX12_HARDWARE_IDS:
-        # A fixed, shared physical coordinate system (reference board: 420 × 420).
-        # Layout metadata stays on each real button; no bitmap hit-map is involved.
-        device_shell.setFixedSize(420, 420)
-        device_shell.setStyleSheet("QFrame#deviceShell { background: transparent; border: none; }")
-        face = QFrame(device_shell, objectName="deviceFace")
-        face.setGeometry(0, 0, 420, 420)
-        face.setStyleSheet("QFrame#deviceFace { background: #1C1B19; border: none; border-radius: 64px; }")
-        holder = QWidget()
-        grid = _matrix12_control_layout(snapshot, mappings,
-            _shortcut_display_platform(snapshot) if snapshot is not None else "", on_control, selected_control_id)
-        holder.setLayout(grid)
-        while grid.count():
-            control = grid.takeAt(0).widget()
-            control.setParent(face)
-            control_id = control.property("controlId")
-            row, column = control.property("gridRow"), control.property("gridColumn")
-            if control_id == "encoder":
-                control.setFixedSize(128, 128)
-                control.move(0, 292)
-            elif control_id in {"display", "joystick"}:
-                control.setFixedSize(52, 52)
-                control.move(86 + column * 67, 86 + row * 67)
-                if control_id == "display":
-                    for label in control.findChildren(QLabel):
-                        label.hide()
-                    brand = Boring5RLabel("BORING", scale=.4, color="#EFEAE0", alignment=Qt.AlignCenter)
-                    brand.setObjectName("deviceScreenBrand")
-                    control.layout().setContentsMargins(2, 2, 2, 2)
-                    control.layout().addWidget(brand, 0, Qt.AlignCenter)
-                    control.setStyleSheet("QFrame#displayControl { background: #23241F; border: 2px solid #A7B6E4; border-radius: 26px; }")
-            else:
-                control.move(80 + column * 67, 80 + row * 67)
-            control.show()
-        holder.deleteLater()
-        device_shell.remember_control_geometry()
-        return device_shell
-    shell_layout = QVBoxLayout(device_shell)
-    shell_layout.setContentsMargins(12, 12, 12, 12)
-    device_face = QFrame(objectName="deviceFace")
-    face_layout = QVBoxLayout(device_face)
-    face_layout.setContentsMargins(24, 22, 24, 22)
-    face_layout.addLayout(
-        _control_layout(
-            snapshot,
-            mappings=mappings,
-            on_control=on_control,
-            selected_control_id=selected_control_id,
-        )
-    )
-    shell_layout.addWidget(device_face)
-    return device_shell
-
-
-def _control_layout(
-    snapshot: DeviceSnapshot,
-    *,
-    mappings: dict[str, dict] | None = None,
-    on_control: Callable[[str], None] | None = None,
-    selected_control_id: str | None = None,
-):
-    resolved_mappings = snapshot.mappings if mappings is None else mappings
-    platform = _shortcut_display_platform(snapshot)
-    hardware_id = str(snapshot.identity.get("hardware_id", ""))
-    if hardware_id in MATRIX12_HARDWARE_IDS:
-        return _matrix12_control_layout(
-            snapshot,
-            resolved_mappings,
-            platform,
-            on_control,
-            selected_control_id,
-        )
-
-    return _generic_control_layout(
-        snapshot,
-        resolved_mappings,
-        platform,
-        on_control,
-        selected_control_id,
-    )
-
-
-def _matrix12_control_layout(
-    snapshot: DeviceSnapshot | None,
-    mappings: dict[str, dict],
-    platform: str,
-    on_control: Callable[[str], None] | None,
-    selected_control_id: str | None,
-) -> QGridLayout:
-    grid = QGridLayout()
-    grid.setHorizontalSpacing(MATRIX12_GAP)
-    grid.setVerticalSpacing(MATRIX12_GAP)
-    grid.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
-    mode = str(snapshot.status.get("operating_mode", "")) if snapshot is not None else ""
-
-    _add_physical_control(grid, _display_tile(MATRIX12_UNIT), "display", 0, 0)
-    positions = {
-        "key.1": (0, 1, 1),
-        "key.2": (0, 2, 1),
-        "key.3": (0, 3, 1),
-        "key.4": (1, 0, 1),
-        "key.5": (1, 1, 1),
-        "key.6": (1, 2, 1),
-        "key.7": (1, 3, 1),
-        "key.8": (2, 0, 2),
-        "key.9": (2, 2, 1),
-        "key.10": (2, 3, 1),
-        "key.11": (3, 1, 1),
-        "key.12": (3, 2, 1),
-    }
-    for control_id, (row, column, column_span) in positions.items():
-        if snapshot is None or control_id in snapshot.controls:
-            tile = _control_tile(control_id, mappings.get(control_id), platform, mode)
-            _configure_control_button(tile, control_id, on_control, selected_control_id)
-            if snapshot is None:
-                for label in tile.findChildren(QLabel):
-                    if label.objectName() == "keycapInscription":
-                        label.setText(control_id.replace("key.", "K"))
-                        label.setToolTip(_physical_control_name(control_id))
-                tile.setToolTip(_physical_control_name(control_id))
-                tile.setAccessibleName(_physical_control_name(control_id))
-            tile.setFixedSize(
-                MATRIX12_UNIT * column_span + MATRIX12_GAP * (column_span - 1),
-                MATRIX12_UNIT,
-            )
-            _add_physical_control(
-                grid,
-                tile,
-                control_id,
-                row,
-                column,
-                column_span,
-            )
-
-    joystick = _joystick_tile(
-        "摇杆",
-        [
-            (
-                "↑/↓",
-                "/".join(
-                    _mapping_action_summary(mappings, control_id, platform)
-                    for control_id in ("joystick.up", "joystick.down")
-                ),
-                "/".join(
-                    _mapping_name(mappings, control_id)
-                    for control_id in ("joystick.up", "joystick.down")
-                ),
-            ),
-            (
-                "←/→",
-                "/".join(
-                    _mapping_action_summary(mappings, control_id, platform)
-                    for control_id in ("joystick.left", "joystick.right")
-                ),
-                "/".join(
-                    _mapping_name(mappings, control_id)
-                    for control_id in ("joystick.left", "joystick.right")
-                ),
-            ),
-            (
-                "按",
-                _mapping_action_summary(mappings, "joystick.press", platform),
-                _mapping_name(mappings, "joystick.press"),
-            ),
-        ],
-    )
-    encoder = _rotary_tile(
-        "旋钮",
-        [
-            (
-                "逆时针",
-                _mapping_action_summary(mappings, "encoder.ccw", platform),
-                _mapping_name(mappings, "encoder.ccw"),
-            ),
-            (
-                "顺时针",
-                _mapping_action_summary(mappings, "encoder.cw", platform),
-                _mapping_name(mappings, "encoder.cw"),
-            ),
-            (
-                "按",
-                _mapping_action_summary(mappings, "encoder.press", platform),
-                _mapping_name(mappings, "encoder.press"),
-            ),
-        ],
-    )
-    encoder.setObjectName("encoderControl")
-    joystick.setFixedSize(MATRIX12_UNIT, MATRIX12_UNIT)
-    encoder.setFixedSize(128, 128)
-    _configure_control_button(encoder, "encoder", on_control, selected_control_id)
-    _configure_control_button(joystick, "joystick", on_control, selected_control_id)
-    if snapshot is None:
-        for control, title in ((encoder, "旋钮"), (joystick, "摇杆")):
-            control.setToolTip(title)
-            control.setAccessibleName(title)
-    _add_physical_control(grid, encoder, "encoder", 3, 0)
-    _add_physical_control(grid, joystick, "joystick", 3, 3)
-    return grid
-
-
-def _generic_control_layout(
-    snapshot: DeviceSnapshot,
-    mappings: dict[str, dict],
-    platform: str,
-    on_control: Callable[[str], None] | None,
-    selected_control_id: str | None,
-) -> QHBoxLayout:
-    root = QHBoxLayout()
-    root.setSpacing(20)
-    key_grid = QGridLayout()
-    key_grid.setSpacing(8)
-    keys = [control for control in snapshot.controls if control.startswith("key.")]
-    columns = min(4, max(1, len(keys)))
-    mode = str(snapshot.status.get("operating_mode", ""))
-    for index, control_id in enumerate(keys):
-        tile = _control_tile(control_id, mappings.get(control_id), platform, mode)
-        _configure_control_button(tile, control_id, on_control, selected_control_id)
-        key_grid.addWidget(tile, index // columns, index % columns)
-    root.addLayout(key_grid, 3)
-
-    secondary = QVBoxLayout()
-    secondary.setSpacing(8)
-    for prefix, label in (("encoder.", "旋钮"), ("joystick.", "摇杆")):
-        controls = [control for control in snapshot.controls if control.startswith(prefix)]
-        group = _multi_action_tile(
-            label,
-            [
-                (
-                    _control_display_name(control_id).removeprefix(f"{label}"),
-                    _mapping_action_summary(mappings, control_id, platform),
-                    _mapping_name(mappings, control_id),
-                )
-                for control_id in controls
-            ],
-        )
-        _configure_control_button(group, prefix.removesuffix("."), on_control, selected_control_id)
-        secondary.addWidget(group)
-    secondary.addStretch(1)
-    root.addLayout(secondary, 2)
-    return root
-
-
-def _add_physical_control(
-    layout: QGridLayout,
-    widget: QWidget,
-    control_id: str,
-    row: int,
-    column: int,
-    column_span: int = 1,
-) -> None:
-    widget.setProperty("controlId", control_id)
-    widget.setProperty("gridRow", row)
-    widget.setProperty("gridColumn", column)
-    widget.setProperty("gridColumnSpan", column_span)
-    layout.addWidget(widget, row, column, 1, column_span, Qt.AlignCenter)
-
-
-def _display_tile(size: int = 76) -> QFrame:
-    tile = QFrame(objectName="displayControl")
-    tile.setFixedSize(size, size)
-    box = QVBoxLayout(tile)
-    box.setContentsMargins(12, 10, 12, 10)
-    title = QLabel("圆屏")
-    title.setAlignment(Qt.AlignCenter)
-    title.setStyleSheet("font-weight: 800;")
-    subtitle = QLabel("设备状态")
-    subtitle.setAlignment(Qt.AlignCenter)
-    subtitle.setStyleSheet("font-size: 10px; color: #aaa99f;")
-    box.addWidget(title)
-    box.addWidget(subtitle)
-    return tile
-
-
-def _multi_action_tile(title: str, rows: list[tuple[str, str, str]]) -> QPushButton:
-    tile = QPushButton(objectName="secondaryControl")
-    tile.setMinimumSize(76, 64)
-    box = QVBoxLayout(tile)
-    box.setContentsMargins(6, 5, 6, 6)
-    box.setSpacing(3)
-    heading = QLabel(title)
-    heading.setAlignment(Qt.AlignCenter)
-    heading.setStyleSheet("font-weight: 800;")
-    box.addWidget(heading)
-    for label, action, name in rows:
-        text = QLabel(f"{label} · {action}", objectName="controlId")
-        text.setAlignment(Qt.AlignCenter)
-        text.setStyleSheet("font-size: 8px;")
-        text.setToolTip(f"实际动作：{action}\n功能名称：{name}")
-        box.addWidget(text)
-    return tile
-
-
-class _RotaryButton(QPushButton):
-    def paintEvent(self, event) -> None:  # noqa: N802
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setOpacity(1 if self.isEnabled() else .55)
-        rect = QRectF(self.rect()).adjusted(2, 2, -2, -2)
-        joystick = self.objectName() == "joystickControl"
-        material = QRadialGradient(rect.center() - rect.topLeft() * .15, rect.width() * .7)
-        material.setColorAt(0, QColor("#37372F" if joystick else "#E0DED5"))
-        material.setColorAt(1, QColor("#25261F" if joystick else "#ABA9A1"))
-        painter.setBrush(material)
-        painter.setPen(QPen(QColor("#EFEAE0" if self.property("selected") or self.hasFocus() else "#171813"), 2))
-        painter.drawEllipse(rect)
-        if not joystick:
-            painter.setPen(QPen(QColor("#22231D"), 3, Qt.SolidLine, Qt.RoundCap))
-            for x1, y1, x2, y2 in ((.16,.3,.34,.4), (.66,.4,.84,.3), (.5,.72,.5,.91)):
-                painter.drawLine(round(self.width()*x1), round(self.height()*y1),
-                                 round(self.width()*x2), round(self.height()*y2))
-
-
-def _rotary_tile(title: str, rows: list[tuple[str, str, str]]) -> QPushButton:
-    tile = _RotaryButton(objectName="encoderControl")
-    tile.setToolTip("\n".join(f"{label} · {action}（{name}）" for label, action, name in rows))
-    return tile
-
-
-def _joystick_tile(title: str, rows: list[tuple[str, str, str]]) -> QPushButton:
-    tile = _RotaryButton(objectName="joystickControl")
-    tile.setToolTip(
-        "\n".join(
-            f"{label} · {action}（{name}）"
-            for label, action, name in rows
-        )
-    )
-    return tile
-
-
-def _mapping_name(mappings: dict[str, dict], control_id: str) -> str:
-    mapping = mappings.get(control_id)
-    return str(mapping.get("short_name", "未映射")) if mapping else "未映射"
-
-
-def _mapping_action_summary(
-    mappings: dict[str, dict],
-    control_id: str,
-    platform: str,
-) -> str:
-    mapping = mappings.get(control_id)
-    action = mapping.get("action") if isinstance(mapping, dict) else None
-    return describe_action(action, platform=platform, compact=True)
-
-
-class _KeycapButton(QPushButton):
-    """LCK dimensions expressed as a top-view material, not the missing CAD asset."""
-
-    def paintEvent(self, event) -> None:  # noqa: N802
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        if not self.isEnabled():
-            painter.setOpacity(0.55)
-        rect = QRectF(self.rect()).adjusted(1, 1, -1, -1)
-        agent = self.property("role") == "agent"
-        gradient = QLinearGradient(rect.topLeft(), rect.bottomLeft())
-        gradient.setColorAt(0, QColor("#F2F1EE" if agent else "#F4F0E7"))
-        gradient.setColorAt(1, QColor("#DCDAD5" if agent else "#DDD8CC"))
-        painter.setPen(QPen(QColor(V4_TOKENS["control"]) if self.property("selected") else QColor(255, 255, 255, 30), 2))
-        painter.setBrush(gradient)
-        radius = rect.height() * 2.49 / 18
-        painter.drawRoundedRect(rect, radius, radius)
-        top = rect.adjusted(3, 3, -3, -3)
-        dish = QRadialGradient(top.center(), top.width() * .65)
-        dish.setColorAt(0, QColor(130, 125, 115, 16))
-        dish.setColorAt(1, QColor(255, 255, 255, 65))
-        painter.setBrush(dish)
-        painter.setPen(QPen(QColor(255, 255, 255, 150), 1))
-        painter.drawRoundedRect(top, max(1, radius - 3), max(1, radius - 3))
-        light = self.property("lightingColor")
-        if isinstance(light, QColor) and light.alpha() > 0:
-            glow = QRadialGradient(top.center(), top.width() * .9)
-            glow.setColorAt(0, light.lighter(135))
-            glow.setColorAt(.35, light)
-            glow.setColorAt(1, QColor(light.red(), light.green(), light.blue(), 0))
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(glow)
-            painter.drawRoundedRect(top, max(1, radius - 3), max(1, radius - 3))
-        slot = self.property("bluetoothSlot")
-        if slot is not None:
-            # Secondary key legend, above the action text. Paint it rather than
-            # using a font glyph so the Bluetooth symbol is identical on both OSes.
-            painter.save()
-            painter.translate(10, 9)
-            painter.setBrush(Qt.NoBrush)
-            painter.setPen(QPen(QColor("#69665E"), 1.3, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-            symbol = QPainterPath()
-            for points in (((3, 0), (8, 4), (0, 12)), ((3, 16), (8, 12), (0, 4)), ((3, 0), (3, 16))):
-                symbol.moveTo(*points[0])
-                for point in points[1:]:
-                    symbol.lineTo(*point)
-            painter.drawPath(symbol)
-            font = painter.font()
-            font.setPixelSize(11)
-            font.setBold(True)
-            painter.setFont(font)
-            painter.drawText(QRectF(13, 0, 12, 16), Qt.AlignLeft | Qt.AlignVCenter, str(slot))
-            painter.restore()
-        if self.hasFocus():
-            painter.setBrush(Qt.NoBrush)
-            painter.setPen(QPen(QColor("#2A2824"), 1, Qt.DashLine))
-            painter.drawRoundedRect(top.adjusted(2, 2, -2, -2), max(1, radius - 5), max(1, radius - 5))
-
-
-class _KeycapInscription(QLabel):
-    """Keep a full action description while fitting its small physical keycap."""
-
-    def paintEvent(self, event) -> None:  # noqa: N802
-        painter = QPainter(self)
-        painter.setPen(self.palette().color(self.foregroundRole()))
-        text = self.fontMetrics().elidedText(
-            self.text(), Qt.ElideRight, self.contentsRect().width()
-        )
-        painter.drawText(self.contentsRect(), Qt.AlignLeft | Qt.AlignVCenter, text)
-
-
-def _control_tile(
-    control_id: str,
-    mapping: dict | None,
-    platform: str,
-    mode: str,
-) -> QPushButton:
-    tile = _KeycapButton(objectName="controlKey")
-    tile.setProperty("bluetoothSlot", {"key.8": 1, "key.9": 2, "key.10": 3}.get(control_id))
-    tile.setProperty("mapped", mapping is not None)
-    role = "agent" if control_id in MATRIX12_AGENT_STATUS_KEYS else "human"
-    tile.setProperty("role", role)
-    tile.setMinimumSize(76, 64)
-    box = QVBoxLayout(tile)
-    box.setContentsMargins(7, 7, 7, 8)
-    control_label = _digital_when_supported(
-        f"AGENT {control_id.split('.', 1)[1]}" if role == "agent" else control_id,
-        preferred_scale=0.75,
-        minimum_scale=0.75,
-        maximum_width=62,
-        object_name="controlId",
-    )
-    action = mapping.get("action") if mapping else None
-    action_summary = describe_action(action, platform=platform, compact=True)
-    display_summary = "状态未接入" if role == "agent" and mode == "codex" else action_summary
-    action_label = _digital_when_supported(
-        display_summary,
-        preferred_scale=0.75,
-        minimum_scale=0.75,
-        maximum_width=62,
-        object_name="controlAction",
-    )
-    action_label.setWordWrap(True)
-    custom_name = str(mapping.get("short_name", "")) if mapping else ""
-    name_text = f"动作 · {action_summary}" if role == "agent" and mode == "codex" else (custom_name or "—")
-    name_label = _digital_when_supported(
-        name_text,
-        preferred_scale=0.75,
-        minimum_scale=0.75,
-        maximum_width=62,
-        object_name="controlName",
-    )
-    if custom_name and not (role == "agent" and mode == "codex"):
-        name_label.setProperty("boringI18nSkip_text", True)
-    name_label.setToolTip(f"功能名称：{custom_name}" if custom_name else "未设置功能名称")
-    # IDs and custom names remain available to assistive technology / tooltip,
-    # not printed as three rows on a keycap. Agent light state isn't in WMP.
-    control_label.setParent(tile)
-    control_label.hide()
-    name_label.setParent(tile)
-    name_label.hide()
-    box.addStretch(1)
-    if role == "human":
-        inscription = _KeycapInscription(action_summary, objectName="keycapInscription")
-        inscription.setMinimumWidth(0)
-        inscription.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        inscription.setToolTip(action_summary)
-        inscription.setStyleSheet("color: #2A2824; font-size: 12px; font-weight: 600; background: transparent;")
-        inscription.setAttribute(Qt.WA_TransparentForMouseEvents)
-        box.addWidget(inscription, 0, Qt.AlignBottom)
-    action_label.setParent(tile)
-    action_label.hide()
-    return tile
-
-
-def _configure_control_button(
-    button: QPushButton,
-    control_id: str,
-    on_control: Callable[[str], None] | None,
-    selected_control_id: str | None,
-) -> None:
-    is_selected = selected_control_id == control_id or (
-        control_id in {"encoder", "joystick"}
-        and isinstance(selected_control_id, str)
-        and selected_control_id.startswith(f"{control_id}.")
-    )
-    button.setProperty("selected", is_selected)
-    button.setAccessibleName(f"设置{_physical_control_name(control_id)}")
-    details = button.toolTip()
-    button.setToolTip(f"点击设置{_physical_control_name(control_id)}" + (f"\n{details}" if details else ""))
-    inscription = button.findChild(QLabel, "keycapInscription")
-    if inscription is not None:
-        button.setToolTip(f"{button.toolTip()}\n{inscription.text()}")
-    for label in button.findChildren(QLabel):
-        label.setAttribute(Qt.WA_TransparentForMouseEvents)
-    if on_control is None:
-        button.setFocusPolicy(Qt.NoFocus)
-        return
-    button.setCursor(Qt.PointingHandCursor)
-    button.clicked.connect(lambda _checked=False, value=control_id: on_control(value))
-
-
-def _physical_control_name(control_id: str) -> str:
-    if control_id == "encoder":
-        return "旋钮"
-    if control_id == "joystick":
-        return "摇杆"
-    return _control_display_name(control_id)
 
 
 def _related_controls(control_id: str, controls: tuple[str, ...]) -> tuple[str, ...]:

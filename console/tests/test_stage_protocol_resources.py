@@ -65,5 +65,5 @@ def test_windows_build_checks_native_tool_exit_codes() -> None:
         Path(__file__).resolve().parents[1] / "deploy" / "build_windows.ps1"
     ).read_text(encoding="utf-8")
 
-    assert "Qt translation compilation failed" in script
+    assert "UI text catalog validation failed" in script
     assert "Protocol resource staging failed" in script

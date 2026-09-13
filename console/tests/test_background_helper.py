@@ -735,7 +735,7 @@ def test_background_quota_panel_retranslates_without_reopening(
         assert "Expected recovery" in line.text()
         assert "Codex Usage · Live data · Updated" in panel.codex.source.text()
         assert controller._tray_refresh_usage is not None
-        assert controller._tray_refresh_usage.text() == "Update Usage Information"
+        assert controller._tray_refresh_usage.text() == "Refresh Usage"
         assert controller._tray_show_console is not None
         assert controller._tray_show_console.text() == "Open BORING Console"
         assert controller._tray_status is not None
@@ -750,7 +750,7 @@ def test_background_quota_panel_retranslates_without_reopening(
         assert translated_line is not None
         assert "5 小时窗口" in translated_line.text()
         assert "Codex 额度 · 实时数据 · 更新于" in panel.codex.source.text()
-        assert controller._tray_refresh_usage.text() == "更新额度信息"
+        assert controller._tray_refresh_usage.text() == "刷新额度"
         assert controller._tray_status.text() == "助手离线 · 等待设备连接"
     finally:
         if manager.language != SIMPLIFIED_CHINESE:

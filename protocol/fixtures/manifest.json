@@ -9,6 +9,7 @@
     {"path": "status-matrix12-power-v2-v1.json", "kind": "status", "expected": "valid"},
     {"path": "screen-icon-v1.json", "kind": "screen_icon", "expected": "valid"},
     {"path": "screen-glyph-v1.json", "kind": "screen_glyph", "expected": "valid"},
+    {"path": "ble-name-v1.json", "kind": "ble_name", "expected": "valid"},
     {"path": "usb-descriptor-v1.json", "kind": "usb_descriptor", "expected": "valid"},
     {"path": "errors-v1.json", "kind": "errors", "expected": "valid"},
     {"path": "hello-request-frame.json", "kind": "frame", "expected": "valid"},

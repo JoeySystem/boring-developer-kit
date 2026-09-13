@@ -72,7 +72,7 @@ def test_ordinary_user_builds_tests_and_enables_reference_workflow(
 
     page = window.findChild(WorkflowPage, "workflowPage")
     assert page is not None
-    _button(window, "使用保存摘录模板").click()
+    _button(window, "使用“保存摘录”模板").click()
     steps = window.findChild(QListWidget, "workflowStepList")
     assert steps is not None and steps.count() == 3
     steps.setCurrentRow(1)
@@ -102,8 +102,8 @@ def test_ordinary_user_builds_tests_and_enables_reference_workflow(
     ]
     status = window.findChild(QLabel, "actionCatalogStatus")
     assert status is not None
-    assert "自动化总数 1" in status.text()
-    assert "当前可用 1" in status.text()
+    assert "共 1 项" in status.text()
+    assert "可用 1" in status.text()
 
     actions_page = window.findChild(ActionsPage, "actionsPage")
     assert actions_page is not None

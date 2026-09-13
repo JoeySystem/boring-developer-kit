@@ -145,3 +145,15 @@ def test_proposal_example_stays_connected_for_user_review(monkeypatch):
         BoringConsoleClient=SimpleNamespace(from_environment=lambda: client)))
     runpy.run_path(str(ROOT / "examples/extensions/propose_mapping/main.py"), run_name="__main__")
     assert client.waited
+
+
+def test_public_build_does_not_subscribe_to_official_updates():
+    assets = ROOT / 'console/src/controller_config/assets'
+    application = json.loads((assets / 'app-update-source.json').read_text())
+    assert set(application) == {'macos', 'windows'}
+    for settings in application.values():
+        assert settings['feed_url'] == settings['public_key'] == ''
+    assert json.loads((assets / 'firmware-source.json').read_text())['manifest_url'] == ''
+    assert not (assets / 'onboarding').exists()
+    assert not (assets / 'boring-mist-wireframe.png').exists()
+    assert not (assets / 'mist-screen-source-preview.gif').exists()

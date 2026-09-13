@@ -34,19 +34,18 @@ def test_guidance_round_trips_languages_without_losing_dimensions(qapp, qtbot):
         assert "1600 万" in editor.findChild(QLabel, prefix + "Formats").text()
         assert "APNG" in editor.findChild(QLabel, prefix + "UnsupportedFormats").text()
     assert "不保留原图颜色" in glyph.findChild(QLabel, "screenGlyphConversion").text()
-    assert "方形" in home.findChild(QLabel, "screenIconCropHint").text()
     assert "圆形" in home.findChild(QLabel, "screenIconCropHint").text()
     assert glyph.write_button.text() == "写入当前图标"
     manager.set_language(ENGLISH)
     assert glyph.write_button.text() == "Write This Icon"
     assert home.device_buttons["screenIconReset"].text() == "Reset Home"
     assert "16 million pixels" in glyph.findChild(QLabel, "screenGlyphFormats").text()
-    assert "square" in home.findChild(QLabel, "screenIconCropHint").text()
+    assert "circular area" in home.findChild(QLabel, "screenIconCropHint").text()
     assert glyph.dimensions.text() == "3 × 3"
     manager.set_language(SIMPLIFIED_CHINESE)
     assert glyph.write_button.text() == "写入当前图标"
-    assert "不改变其他图标" in glyph.findChild(QLabel, "screenGlyphScope").text()
-    assert "不恢复出厂设置" in home.findChild(QLabel, "screenIconResetScope").text()
+    assert "其他图标、按键映射和提示词不变" in glyph.findChild(QLabel, "screenGlyphScope").text()
+    assert "不重置设备" in home.findChild(QLabel, "screenIconResetScope").text()
 
 
 def test_readonly_warning_stays_explicit_with_material_guidance(qtbot):
@@ -56,7 +55,8 @@ def test_readonly_warning_stays_explicit_with_material_guidance(qtbot):
     editor.bind_transfer(transfer)
     transfer.select("warning")
     assert not editor.readonly_notice.isHidden()
-    assert "仅可查看，不能修改" in editor.readonly_notice.text()
+    assert "仅可查看" in editor.readonly_notice.text()
+    assert "不支持修改" in editor.readonly_notice.text()
     assert not editor.import_button.isEnabled()
     assert not editor.reset_button.isEnabled()
     assert editor.refresh_button.isEnabled()

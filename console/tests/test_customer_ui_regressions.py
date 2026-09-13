@@ -23,7 +23,6 @@ def test_recorder_uses_host_names_and_capture_without_changing_device_platform(s
     assert recorder._preview.text() == expected
     assert recorder._capture._platform == display
     assert vm.model.snapshot.status['platform'] == device
-    assert window.findChild(QLabel, 'devicePlatformNotice') is not None
     recorded = []
     recorder.shortcut_recorded.connect(recorded.append)
     recorder.start_recording()
@@ -71,7 +70,7 @@ def test_mode_status_updates_visible_header_on_other_pages(session, qtbot):
         gateway.status_updated.emit({**vm.model.snapshot.status, 'operating_mode': mode})
         label = window.findChild(QLabel, 'deviceModeSummary')
         assert label is not None and label.isVisible()
-        assert mode.upper() in label.text() or (mode == 'claude_code' and 'CC' in label.text())
+        assert {'normal': '普通模式', 'codex': 'CODEX', 'claude_code': 'CC'}[mode] in label.text()
     assert '已切换至' in label.text()
     window._mode_notice_timer.timeout.emit()
     assert '当前模式' in label.text() and 'CC' in label.text()

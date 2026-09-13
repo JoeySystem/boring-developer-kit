@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from PySide6.QtCore import Qt, Signal, QRectF, QRect
+from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import (
     QFormLayout,
@@ -43,7 +43,7 @@ from controller_config.appearance import V4_STYLE
 
 
 class PromptDevicePreview(QGraphicsView):
-    """A cropped view of the existing device renderer; directions remain UI-only."""
+    """A live crop of the shared device renderer with four direction controls."""
 
     def __init__(self, shell: QWidget, buttons: dict[int, QPushButton]) -> None:
         super().__init__()
@@ -61,24 +61,34 @@ class PromptDevicePreview(QGraphicsView):
         if shell.layout() is not None:
             shell.layout().activate()
         shell.setAttribute(Qt.WA_TranslucentBackground)
-        rendered_shell = shell.grab()
         joystick = shell.findChild(QWidget, "joystickControl")
         if joystick is not None:
             center = joystick.mapTo(shell, joystick.rect().center())
             cx, cy = center.x(), center.y()
         else:
             cx, cy = shell.width() * .8, shell.height() * .8
-        # Render the existing widget once. A pixmap retains rounded transparency
-        # without inheriting platform-native proxy window backgrounds.
         crop_x, crop_y = max(0, cx - 145), max(0, cy - 195)
-        dpr = rendered_shell.devicePixelRatio()
-        scene.addPixmap(rendered_shell.copy(QRect(
-            round(crop_x * dpr), round(crop_y * dpr), round(270 * dpr), round(360 * dpr)
-        )))
-        shell.deleteLater()
-        for prompt_id, (dx, dy) in {1: (0, -65), 2: (65, 0), 3: (0, 65), 4: (-65, 0)}.items():
+        shell_proxy = scene.addWidget(shell)
+        shell_proxy.setPos(-crop_x, -crop_y)
+        shell_proxy.setZValue(0)
+        self._device_shell = shell
+        model_canvas = shell.findChild(QWidget, "deviceModelCanvas")
+        positions = {1: (0, -65), 2: (65, 0), 3: (0, 65), 4: (-65, 0)}
+        control_ids = {
+            1: "joystick.up",
+            2: "joystick.right",
+            3: "joystick.down",
+            4: "joystick.left",
+        }
+        for prompt_id, (dx, dy) in positions.items():
             buttons[prompt_id].setAttribute(Qt.WA_TranslucentBackground)
             buttons[prompt_id].setStyleSheet(V4_STYLE)
+            if model_canvas is not None and hasattr(model_canvas, "preview_control"):
+                buttons[prompt_id].clicked.connect(
+                    lambda _checked=False,
+                    value=control_ids[prompt_id],
+                    canvas=model_canvas: canvas.preview_control(value)
+                )
             item = scene.addWidget(buttons[prompt_id])
             item.setPos(cx - crop_x + dx - 16, cy - crop_y + dy - 16)
             item.setZValue(1)
@@ -488,6 +498,11 @@ class PromptLibraryEditor(QScrollArea):
         event_log.setMaximumHeight(100)
         event_log.setMinimumHeight(100)
         event_log.setPlainText(_event_log_text(self._event_log))
+        log_toggle = QPushButton("操作记录", objectName="promptEventDetailsToggle")
+        log_toggle.setCheckable(True)
+        event_log.hide()
+        log_toggle.toggled.connect(event_log.setVisible)
+        box.addWidget(log_toggle)
         box.addWidget(event_log)
         boundary = QLabel(
             self._protocol_message,
