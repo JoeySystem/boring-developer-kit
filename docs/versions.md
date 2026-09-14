@@ -8,7 +8,7 @@
 
 | 项目 | 版本 / 范围 |
 |---|---|
-| 开发包 | `v0.1.0-preview.6`，非商业源码开放预发布 |
+| 开发包 | `v0.1.0-preview.7`，非商业源码开放预发布 |
 | 控制台源码 | 基于 Console `0.1.24`，公开适配版 BORING Console Community |
 | 来源提交 | `333b6fb103d864243d602a45056138184e235521` |
 | Python SDK / 本地扩展 API | `1.0.0` / `1.0` |
@@ -16,7 +16,7 @@
 | WMP1 线协议 / 配置 Schema | `1.0` / `1` |
 | Python | 声明支持 `>=3.12,<3.14`；实际验证环境见发布验证 |
 | PySide6 | `6.11.1` |
-| 固件参考 | Power V2；历史 `.07`；当前内部 `20260913.01-gd9bab6f0-dirty / sample-verified`，本仓库新增固件源码，不附官方固件镜像 |
+| 固件参考 | Power V2；历史 `.07`；当前 `20260914.03-gbc6d2699-dirty / sample-verified`，本仓库提供对应源码快照，不附官方固件镜像 |
 
 ## 源码、宿主与固件
 
@@ -38,6 +38,6 @@ Windows、Linux、Python 3.13、干净电脑安装、BLE 扩展实体触发，�
 
 ## 下载
 
-[本次 Release](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.6) 提供完整开发包、SDK wheel 和三个独立扩展 ZIP。完整开发包包含 `console/` 源码；SDK wheel 不包含控制台或 Qt 运行库。GitHub 自动生成的 Source code ZIP 是仓库源码，不是可导入扩展，也不是控制台安装包。
+[本次 Release](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.7) 提供完整开发包、SDK wheel 和三个独立扩展 ZIP。完整开发包包含 `firmware/` 与 `console/` 源码；SDK wheel 不包含控制台、固件或 Qt 运行库。GitHub 自动生成的 Source code ZIP 是仓库源码，不是可导入扩展、固件维护包或控制台安装包。
 
 安装与构建入口见 [开始使用](../START-HERE.md)。固件需要更新时使用官方维护流程；开发扩展不需要重新预置设备身份或写 eFuse。

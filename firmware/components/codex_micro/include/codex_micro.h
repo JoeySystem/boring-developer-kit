@@ -148,19 +148,21 @@ esp_err_t codex_micro_send_standard_report(uint8_t report_id,
                                            size_t length);
 
 /**
- * Route one physical input through Codex Micro while CODEX mode is active.
+ * Route one physical input through Codex Micro. CODEX owns its fixed layout;
+ * NORMAL owns only the six Agent controls on compatible hardware.
  *
- * Returns true when Codex mode owns the event and the standard action must be
- * suppressed. Returns false in NORMAL mode, while disconnected, for an
- * unsupported event, or when the fixed mapping intentionally delegates to the
- * Action Engine's standard HID route.
+ * Returns true when Codex owns the event and the standard action must be
+ * suppressed. Returns false for unsupported events or when the fixed mapping
+ * intentionally delegates to the Action Engine's standard HID route.
  */
 bool codex_micro_handle_event(const board_event_t *event);
 
 /**
  * Copy the latest six host-supplied task colors plus two transport indicators.
  *
- * Returns false when no compatible transport is connected.
+ * NORMAL and CODEX always provide a status frame; without a valid task source,
+ * the Agent LEDs are white and the connection indicator is cleared. Returns
+ * false for modes without a Codex status frame or when status is NULL.
  */
 bool codex_micro_status_rgb(
     board_rgb_t status[CODEX_MICRO_STATUS_LED_COUNT]);

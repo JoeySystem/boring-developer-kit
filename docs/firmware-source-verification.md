@@ -1,4 +1,18 @@
-# preview.6 固件源码公开验证
+# 固件源码公开验证
+
+## preview.7 · 20260914.03 源码同步
+
+日期：2026-09-14。本轮把公开应用固件从 `20260913.01` 功能参考对齐到当前 `20260914.03-gbc6d2699-dirty / sample-verified` 权威参考，开放范围不扩大。
+
+- 同步 4 个已有公开运行文件：`action_engine.c`、`codex_micro_ble.c`、`codex_micro.h` 和 `codex_micro_controls.h`。它们与当前私有工作区对应文件逐字节一致，没有复制新的目录或工具。
+- 新行为仅涉及 NORMAL 模式六个 Agent 键的输入路由、标准状态颜色及断线／未知回白色；NORMAL 其他控件继续走 Profile，CODEX / CC 既有行为不变。
+- 当前权威包既有验收记录为固件与共享协议 792 passed、421 subtests passed，Power V2 ESP-IDF 6.0.2 构建成功，样机普通 USB CDC A/B OTA、运行 Build ID、硬件 ID、目标槽位和无回滚状态一致，并由用户确认本轮实体行为。该结果属于官方权威包，不等于公开仓库生成的 DIY 镜像已刷机。
+- 来源工程中针对同步代码的主机回归 **95 passed**；公开固件工具 **9 项通过**，公开材料 **12 项通过**。
+- 在公开仓库目录使用 ESP-IDF 6.0.2 实际编译 `matrix12-power-v2-codex-usb --custom-name public1403` 成功，生成 `custom-public1403-20260914.01-g14006922-dirty`，应用镜像 1,140,512 字节，维护 ZIP 仅含自定义应用镜像和 manifest。本地测试产物不进入 Git 或 Release。
+
+本轮没有发布预编译固件、刷写设备、修改身份／eFuse、更新服务器渠道或加入生产签发工具。preview.6 已完成的无 Git 源码 ZIP 编译入口没有改动；本轮未重复该项实际编译。DIY 安装与恢复官方的实体闭环仍未验收，相关限制继续以 [DIY 修改边界](../firmware/DIY-GUIDE.md) 为准。
+
+## preview.6 · 首次公开固件源码
 
 日期：2026-09-14。此轮新增固件源码与 DIY 边界说明，保留已有社区控制台 0.1.24、SDK 1.0.0 和旧安装下载，不将它们改称 0.1.29。
 

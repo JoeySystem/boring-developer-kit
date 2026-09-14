@@ -206,7 +206,7 @@ typedef struct {
     float brightness;
     codex_transport_t source;
 } codex_task_light_t;
-/* CODEX owns a normalized, transient view; other modes retain raw host colors. */
+/* NORMAL and CODEX share the normalized, source-aware task-status view. */
 static codex_task_light_t s_codex_task_lights[CODEX_MICRO_TASK_COUNT];
 static codex_micro_attention_model_t
     s_attention_models[CODEX_TRANSPORT_BLE + 1u];
@@ -1951,6 +1951,12 @@ bool codex_micro_agent_focus_supported(void)
     return codex_micro_active_key_layout() == CODEX_MICRO_KEY_LAYOUT_MATRIX12;
 }
 
+static bool codex_agent_keys_enabled(codex_micro_mode_t mode)
+{
+    return mode == CODEX_MICRO_MODE_NORMAL ||
+           mode == CODEX_MICRO_MODE_CODEX;
+}
+
 codex_agent_press_snapshot_t codex_micro_get_agent_press(void)
 {
     const uint64_t now_ms = (uint64_t)esp_timer_get_time() / 1000u;
@@ -1978,18 +1984,26 @@ bool codex_micro_handle_event(const board_event_t *event)
     if (atomic_load(&s_input_suppressed)) {
         return true;
     }
-    if (codex_micro_mode() != CODEX_MICRO_MODE_CODEX) {
+    const codex_micro_mode_t mode = codex_micro_mode();
+    if (!codex_agent_keys_enabled(mode)) {
+        return false;
+    }
+
+    size_t key_index = 0;
+    const bool is_key = board_control_key_index(event->control, &key_index);
+    const codex_micro_key_mapping_t mapping = is_key
+        ? codex_micro_map_key_index(codex_micro_active_key_layout(), key_index)
+        : (codex_micro_key_mapping_t){0};
+    if (mode == CODEX_MICRO_MODE_NORMAL &&
+        (!is_key || mapping.kind != CODEX_MICRO_KEY_VENDOR ||
+         mapping.agent == CODEX_MICRO_AGENT_NONE)) {
         return false;
     }
     if (!codex_micro_input_ready()) {
         return true;
     }
 
-    size_t key_index = 0;
-    if (board_control_key_index(event->control, &key_index)) {
-        const codex_micro_key_mapping_t mapping =
-            codex_micro_map_key_index(codex_micro_active_key_layout(),
-                                      key_index);
+    if (is_key) {
         if (mapping.kind == CODEX_MICRO_KEY_STANDARD_HID) {
             return false;
         }
@@ -2082,7 +2096,9 @@ bool codex_micro_handle_event(const board_event_t *event)
 bool codex_micro_status_rgb(board_rgb_t status[CODEX_MICRO_STATUS_LED_COUNT])
 {
     const codex_micro_mode_t mode = codex_micro_mode();
-    if (status != NULL && mode == CODEX_MICRO_MODE_CODEX) {
+    if (status != NULL &&
+        (mode == CODEX_MICRO_MODE_NORMAL ||
+         mode == CODEX_MICRO_MODE_CODEX)) {
         const bool usb = usb_codex_connected();
         const bool ble = codex_micro_ble_connected();
         portENTER_CRITICAL(&s_state_lock);
@@ -2102,7 +2118,9 @@ bool codex_micro_status_rgb(board_rgb_t status[CODEX_MICRO_STATUS_LED_COUNT])
         status[CODEX_MICRO_CONNECTED_LED_INDEX] = (usb || ble)
             ? (board_rgb_t){.green = 10, .blue = 2} : (board_rgb_t){0};
         status[CODEX_MICRO_LAYER_LED_INDEX] =
-            (board_rgb_t){.red = 10, .blue = 10};
+            mode == CODEX_MICRO_MODE_NORMAL
+                ? (board_rgb_t){.green = 2, .blue = 10}
+                : (board_rgb_t){.red = 10, .blue = 10};
         return true;
     }
     if (status != NULL && mode == CODEX_MICRO_MODE_CLAUDE_CODE) {

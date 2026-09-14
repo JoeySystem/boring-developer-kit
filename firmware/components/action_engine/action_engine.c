@@ -2534,7 +2534,9 @@ static void route_main_event(const board_event_t *event)
         }
     }
     if (codex_micro_handle_event(event)) {
-        if (event->pressed && mode == CODEX_MICRO_MODE_CODEX &&
+        if (event->pressed &&
+            (mode == CODEX_MICRO_MODE_NORMAL ||
+             mode == CODEX_MICRO_MODE_CODEX) &&
             !joystick_direction_control(event->control)) {
             pulse_control_press_feedback(event->control);
         }

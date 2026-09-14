@@ -32,8 +32,8 @@ typedef struct {
  * Resolve the fixed Codex-mode action for a zero-based physical key index.
  *
  * The seven-key Rev A and twelve-key Matrix12 targets deliberately have
- * different Codex layouts. Normal keyboard mode never calls this mapping and
- * remains Profile-driven.
+ * different Codex layouts. Normal keyboard mode uses only the six Agent
+ * entries; its remaining controls stay Profile-driven.
  */
 codex_micro_key_mapping_t codex_micro_map_key_index(
     codex_micro_key_layout_t layout, size_t key_index);
