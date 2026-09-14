@@ -6,3 +6,8 @@ __pycache__/
 build/
 dist/
 .DS_Store
+
+firmware/artifacts/
+firmware/managed_components/
+firmware/sdkconfig
+firmware/sdkconfig.old

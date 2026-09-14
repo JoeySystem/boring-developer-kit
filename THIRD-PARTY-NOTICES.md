@@ -21,3 +21,14 @@
 ## Sparkle 更新支持
 
 公开 macOS 更新客户端和构建脚本可对接 Sparkle；本源码包不捆绑框架二进制。保留其 [许可文本](console/src/controller_config/assets/Sparkle-LICENSE.md)，实际分发框架时需随包保留许可。
+
+## 固件构建依赖
+
+`firmware/` 不捆绑以下组件源码或工具链二进制；ESP-IDF 组件管理器按 `dependencies.lock` 获取。上游代码保持原有许可，不改为本仓库非商业许可。自行分发构建产物时需随实际依赖保留相应许可。
+
+- ESP-IDF 6.0.2：[Espressif 源码与许可](https://github.com/espressif/esp-idf/tree/v6.0.2)。
+- cJSON 1.7.19：[上游](https://github.com/DaveGamble/cJSON)。
+- esp_tinyusb 2.0.0、TinyUSB 0.21.0~1：[Espressif 组件](https://components.espressif.com/components/espressif/esp_tinyusb/versions/2.0.0)、[TinyUSB](https://github.com/hathach/tinyusb)。
+- esp_secure_cert_mgr 2.9.3：[上游](https://github.com/espressif/esp_secure_cert_mgr)。
+- led_strip 3.0.3：[组件来源](https://components.espressif.com/components/espressif/led_strip/versions/3.0.3)。
+- waveshare/esp_lcd_st7735 2.0.0：[组件来源](https://components.espressif.com/components/waveshare/esp_lcd_st7735/versions/2.0.0)。

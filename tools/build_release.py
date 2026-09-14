@@ -9,23 +9,23 @@ import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "v0.1.0-preview.5"
+VERSION = "v0.1.0-preview.6"
 EXAMPLES = ("observe_prompt", "claim_prompt", "propose_mapping")
 ROOT_FILES = (
     "README.md", "START-HERE.md", "LICENSE", "NOTICE", "LICENSING.md",
     "THIRD-PARTY-NOTICES.md", "SUPPORT.md", "CONTRIBUTING.md", "CHANGELOG.md",
     "requirements-dev.txt",
 )
-DIRECTORIES = ("console", "sdk", "examples", "protocol", "docs", "tests", "tools")
+DIRECTORIES = ("firmware", "console", "sdk", "examples", "protocol", "docs", "tests", "tools")
 
 
 def source_files(directory: Path):
     for path in sorted(directory.rglob("*")):
         parts = path.relative_to(directory).parts
-        if any(part in {"__pycache__", ".pytest_cache", ".venv", "build", "dist", "packages"}
+        if any(part in {"__pycache__", ".pytest_cache", ".venv", "build", "dist", "packages", "artifacts", "managed_components"}
                or part.endswith(".egg-info") for part in parts):
             continue
-        if path.is_file() and path.name != ".DS_Store" and path.suffix not in {".pyc", ".pyo"}:
+        if path.is_file() and path.name not in {".DS_Store", "sdkconfig", "sdkconfig.old"} and path.suffix not in {".pyc", ".pyo"}:
             yield path
 
 

@@ -1,0 +1,29 @@
+choice MACROPAD_BOARD
+    prompt "Macro pad board target"
+    default MACROPAD_BOARD_DEVKIT_BOOT_BUTTON
+
+    config MACROPAD_BOARD_DEVKIT_BOOT_BUTTON
+        bool "Engineering dev board using GPIO0 Boot button"
+        help
+            Safe USB vertical slice. This is not the product PCB pin map.
+
+    config MACROPAD_BOARD_TARGET_REV_A
+        bool "WMP-S3-REV-A PCB2 2026-07-18 product PCB"
+        help
+            Uses the reviewed PCB2 pin map. Physical-board behavior still needs
+            bring-up validation before this target is considered production safe.
+
+    config MACROPAD_BOARD_MATRIX12_V1
+        bool "WMP-S3 12-key matrix V1 2026-08-10 product PCB"
+        help
+            Uses the 4-row, 4-column sparse matrix and 12-pixel key-light chain
+            extracted from the 2026-08-10 EDA export. This is a separate target;
+            it does not change the Rev A seven-key GPIO implementation.
+
+    config MACROPAD_BOARD_MATRIX12_POWER_V2
+        bool "WMP-S3 12-key matrix Power V2 product PCB"
+        help
+            Uses the revised display/matrix pin map, CW2015 fuel gauge,
+            active-high GPIO41 encoder/power key, and GPIO47 shutdown request.
+            MATRIX12_V1 remains an independent build target.
+endchoice

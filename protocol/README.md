@@ -2,7 +2,7 @@
 
 - [protocol.md](protocol.md)：USB CDC / BLE 传输、帧格式、命令和错误码。
 - [config-schema.json](config-schema.json)：配置 JSON Schema。
-- [generated/protocol_contract.h](generated/protocol_contract.h)：与此快照一致的现有常量头，不包含完整固件。
+- [generated/protocol_contract.h](generated/protocol_contract.h)：与本次固件源码快照一致的现有常量头；应用源码见 [firmware](../firmware/README.md)。
 - [device-trust-roots.json](device-trust-roots.json)：当前官方量产根公钥，仅用于验证，不含签发私钥。
 - [fixtures/manifest.json](fixtures/manifest.json)：22 个公开正例、反例和测试向量的索引。
 

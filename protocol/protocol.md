@@ -829,9 +829,10 @@ engine, USB stack and Codex services. A crash before that confirmation returns
 to the previous application slot. Removing power during transfer leaves the
 previous slot selected; the next update starts the inactive slot again.
 
-Changing the legacy single-app partition table to this A/B layout is a
-one-time factory migration and therefore still requires ROM download mode
-(BOOT/RESET or an equivalent fixture). Later application updates do not.
+The partition layout is not part of supported user customization. Do not
+change partitions, identity storage, startup confirmation or rollback logic.
+Use the Console application-update path only while USB and authentication
+remain functional; otherwise stop and contact official support.
 
 ## Custom NORMAL home icon (screen icon v1)
 

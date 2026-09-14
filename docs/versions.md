@@ -8,7 +8,7 @@
 
 | 项目 | 版本 / 范围 |
 |---|---|
-| 开发包 | `v0.1.0-preview.5`，非商业源码开放预发布 |
+| 开发包 | `v0.1.0-preview.6`，非商业源码开放预发布 |
 | 控制台源码 | 基于 Console `0.1.24`，公开适配版 BORING Console Community |
 | 来源提交 | `333b6fb103d864243d602a45056138184e235521` |
 | Python SDK / 本地扩展 API | `1.0.0` / `1.0` |
@@ -16,7 +16,7 @@
 | WMP1 线协议 / 配置 Schema | `1.0` / `1` |
 | Python | 声明支持 `>=3.12,<3.14`；实际验证环境见发布验证 |
 | PySide6 | `6.11.1` |
-| 固件参考 | Power V2；历史 `.07`；当前内部 `20260913.01-gd9bab6f0-dirty / sample-verified`，本仓库不附固件 |
+| 固件参考 | Power V2；历史 `.07`；当前内部 `20260913.01-gd9bab6f0-dirty / sample-verified`，本仓库新增固件源码，不附官方固件镜像 |
 
 ## 源码、宿主与固件
 
@@ -26,7 +26,7 @@
 - 使用扩展实体触发需要设备支持提示词存储与 USB 提示词事件，槽位有内容且已有实体映射，并能建立控制台接受的设备会话。
 - SDK 本地 API 与设备 USB / BLE 传输是不同层。BLE 配置协议存在不等于扩展已经通过 BLE 实体触发验收。
 
-蓝牙自定义名称需要固件声明 `ble_name` 能力；旧固件不支持时禁用名称编辑。自定义固件入口仅为源码能力，不代表任意错误固件可免拆机恢复，详见 [维护边界](firmware-maintenance.md)。
+蓝牙自定义名称需要固件声明 `ble_name` 能力；旧固件不支持时禁用名称编辑。固件源码编译与导入能力不代表任意错误固件可通过控制台恢复，详见 [维护边界](firmware-maintenance.md)。
 
 ## 验证范围
 
@@ -38,6 +38,6 @@ Windows、Linux、Python 3.13、干净电脑安装、BLE 扩展实体触发，�
 
 ## 下载
 
-[本次 Release](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.5) 提供完整开发包、SDK wheel 和三个独立扩展 ZIP。完整开发包包含 `console/` 源码；SDK wheel 不包含控制台或 Qt 运行库。GitHub 自动生成的 Source code ZIP 是仓库源码，不是可导入扩展，也不是控制台安装包。
+[本次 Release](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.6) 提供完整开发包、SDK wheel 和三个独立扩展 ZIP。完整开发包包含 `console/` 源码；SDK wheel 不包含控制台或 Qt 运行库。GitHub 自动生成的 Source code ZIP 是仓库源码，不是可导入扩展，也不是控制台安装包。
 
 安装与构建入口见 [开始使用](../START-HERE.md)。固件需要更新时使用官方维护流程；开发扩展不需要重新预置设备身份或写 eFuse。

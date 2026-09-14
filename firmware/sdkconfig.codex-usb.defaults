@@ -1,0 +1,5 @@
+# Optional native-USB Codex Micro compatibility channel. This overlay is used
+# together with sdkconfig.codex-ble.defaults so USB can use the already proven
+# Codex RPC, control mapping and BLE fallback runtime.
+CONFIG_CODEX_MICRO_USB_ENABLED=y
+CONFIG_TINYUSB_HID_COUNT=2

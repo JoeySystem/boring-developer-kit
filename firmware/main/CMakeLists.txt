@@ -1,0 +1,1 @@
+idf_component_register(SRCS "app_main.c" REQUIRES action_engine board ble_config_service codex_micro config_protocol config_store device_identity prompt_store screen_icon_store firmware_update fuel_gauge battery_service usb_device esp_hw_support esp_tinyusb)
