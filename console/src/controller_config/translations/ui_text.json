@@ -174,14 +174,14 @@
       ],
       "ja_JP": "はじめに"
     },
-    "快速了解连接设备、配置实体控件和写入设备的完整流程。": {
-      "source": "快速了解连接设备、配置实体控件和写入设备的完整流程。",
-      "zh_CN": "了解如何连接、配置和保存到设备。",
-      "en_US": "Learn to connect, configure, and save to your device.",
+    "跟随设备动画了解开机、连接、旋钮、摇杆和功能键的操作。": {
+      "source": "跟随设备动画了解开机、连接、旋钮、摇杆和功能键的操作。",
+      "zh_CN": "通过设备动画了解开机、连接和各项操作。",
+      "en_US": "Use the device animations to learn startup, connection, and controls.",
       "locations": [
         "views/main_window.py:2079"
       ],
-      "ja_JP": "接続から設定・保存までの手順を確認できます。"
+      "ja_JP": "デバイスのアニメーションで、起動、接続、各操作を確認できます。"
     },
     "重新查看引导": {
       "source": "重新查看引导",
@@ -1120,24 +1120,6 @@
       ],
       "ja_JP": "本体の操作設定"
     },
-    "白色键帽是主要动作入口；透明键仍保留其状态键帽身份。": {
-      "source": "白色键帽是主要动作入口；透明键仍保留其状态键帽身份。",
-      "zh_CN": "白键用于触发动作，透明键用于显示状态。",
-      "en_US": "White keys trigger actions; transparent keys show status.",
-      "locations": [
-        "views/main_window.py:5506"
-      ],
-      "ja_JP": "白キーは動作の実行、透明キーは状態表示に使います。"
-    },
-    "透明键阵列显示 Agent 状态；白键与金属控制件保留用户决策入口。": {
-      "source": "透明键阵列显示 Agent 状态；白键与金属控制件保留用户决策入口。",
-      "zh_CN": "透明键显示 Agent 状态；白键和金属控件用于操作。",
-      "en_US": "Transparent keys show Agent status; white keys and metal controls trigger actions.",
-      "locations": [
-        "views/main_window.py:5504"
-      ],
-      "ja_JP": "透明キーにエージェントの状態を表示し、白キーと金属製の操作部で動作を実行します。"
-    },
     "界面只呈现设备已经报告的模式与控件能力。": {
       "source": "界面只呈现设备已经报告的模式与控件能力。",
       "zh_CN": "仅显示设备支持的模式和控件。",
@@ -1146,15 +1128,6 @@
         "views/main_window.py:5507"
       ],
       "ja_JP": "本体が対応するモードと操作部を表示します。"
-    },
-    "当前为 Normal 模式。白色键帽用于普通按键和组合动作；透明键不会被解释成普通 RGB 灯位。": {
-      "source": "当前为 Normal 模式。白色键帽用于普通按键和组合动作；透明键不会被解释成普通 RGB 灯位。",
-      "zh_CN": "普通模式下，可为白色按键设置快捷操作；状态键灯光随任务状态变化。",
-      "en_US": "In Normal mode, assign shortcuts to white keys. Status key lights follow task status.",
-      "locations": [
-        "views/main_window.py:5514"
-      ],
-      "ja_JP": "通常モードでは白いキーにショートカットを設定できます。状態キーの光はタスクの状態に合わせて変わります。"
     },
     "当前为 Codex 模式。设备负责转发外部 Agent 状态，不表示设备内部运行 AI；当前协议尚未报告 Agent 来源与实时状态，因此界面不虚构这些内容。": {
       "source": "当前为 Codex 模式。设备负责转发外部 Agent 状态，不表示设备内部运行 AI；当前协议尚未报告 Agent 来源与实时状态，因此界面不虚构这些内容。",
@@ -1225,20 +1198,20 @@
       "en_US": "BORING Desktop Console · Disconnected",
       "ja_JP": "BORING Console · 切断済み"
     },
-    "白色键帽与金属控制件 · 发出动作": {
-      "source": "白色键帽与金属控制件 · 发出动作",
-      "zh_CN": "白色键帽与金属控制件 · 发出动作",
-      "en_US": "White keycaps and metal controls · Send actions",
+    "功能键与金属控制件 · 发出动作": {
+      "source": "功能键与金属控制件 · 发出动作",
+      "zh_CN": "功能键与金属控制件 · 发出动作",
+      "en_US": "Function keys and metal controls · Send actions",
       "locations": [
         "views/main_window.py:3572"
       ],
-      "ja_JP": "白キー・金属操作部 · 動作を実行"
+      "ja_JP": "機能キー・金属操作部 · 動作を実行"
     },
-    "白色键帽": {
-      "source": "白色键帽",
-      "zh_CN": "白色键帽",
-      "en_US": "White Keycap",
-      "ja_JP": "白キー"
+    "功能键": {
+      "source": "功能键",
+      "zh_CN": "功能键",
+      "en_US": "Function Key",
+      "ja_JP": "機能キー"
     },
     "用于触发用户动作，可编辑真实按键、组合键或设备功能。": {
       "source": "用于触发用户动作，可编辑真实按键、组合键或设备功能。",
@@ -1246,26 +1219,11 @@
       "en_US": "Assign a key, shortcut, or device function.",
       "ja_JP": "キー、ショートカット、本体機能を割り当てます。"
     },
-    "透明键帽": {
-      "source": "透明键帽",
-      "zh_CN": "透明键帽",
-      "en_US": "Transparent Keycap",
-      "ja_JP": "透明キー"
-    },
     "Codex 模式下承担外部 Agent 状态反馈；这里编辑的是设备协议动作，不定义 Agent 状态语义。": {
       "source": "Codex 模式下承担外部 Agent 状态反馈；这里编辑的是设备协议动作，不定义 Agent 状态语义。",
       "zh_CN": "CODEX 模式下显示 Agent 状态。此处仅编辑控件动作，不设置 Agent 状态。",
       "en_US": "Shows Agent status in CODEX mode. Edit control actions here; Agent status is managed separately.",
       "ja_JP": "CODEX モードでエージェントの状態を表示します。ここでは操作を割り当てます。エージェントの状態は別途管理します。"
-    },
-    "六枚透明键帽 · 显示外部 Agent 状态": {
-      "source": "六枚透明键帽 · 显示外部 Agent 状态",
-      "zh_CN": "六枚透明键帽 · 显示外部 Agent 状态",
-      "en_US": "Six transparent keycaps · Show external Agent state",
-      "locations": [
-        "views/main_window.py:3577"
-      ],
-      "ja_JP": "6つの透明キー · 外部エージェントの状態表示"
     },
     "圆屏 · 模式、任务与下一步": {
       "source": "圆屏 · 模式、任务与下一步",
@@ -1593,16 +1551,6 @@
       ],
       "ja_JP": "手動で設定"
     },
-    "应用到设备…": {
-      "source": "应用到设备…",
-      "zh_CN": "应用到设备…",
-      "en_US": "Apply to Device…",
-      "locations": [
-        "views/main_window.py:4195",
-        "views/main_window.py:3892"
-      ],
-      "ja_JP": "本体に適用…"
-    },
     "仅保存草稿": {
       "source": "仅保存草稿",
       "zh_CN": "保存草稿",
@@ -1611,15 +1559,6 @@
         "views/main_window.py:3932"
       ],
       "ja_JP": "下書きを保存"
-    },
-    "保存当前修改并交给设备验证；验证通过后仍需由你最终确认。": {
-      "source": "保存当前修改并交给设备验证；验证通过后仍需由你最终确认。",
-      "zh_CN": "先保存并验证，确认后写入设备。",
-      "en_US": "Save and validate, then confirm to write to the device.",
-      "locations": [
-        "views/main_window.py:3897"
-      ],
-      "ja_JP": "保存・検証後、確認して本体に書き込みます。"
     },
     "保存到本地草稿": {
       "source": "保存到本地草稿",
@@ -2577,23 +2516,50 @@
       ],
       "ja_JP": "オフ"
     },
-    "WHITE KEYS · 白色动作键灯": {
-      "source": "WHITE KEYS · 白色动作键灯",
-      "zh_CN": "WHITE KEYS · 白色动作键灯",
-      "en_US": "WHITE KEYS · ACTION LIGHTS",
+    "FUNCTION KEYS · 功能键灯光": {
+      "source": "FUNCTION KEYS · 功能键灯光",
+      "zh_CN": "FUNCTION KEYS · 功能键灯光",
+      "en_US": "FUNCTION KEYS · ACTION LIGHTS",
       "locations": [
         "views/preferences_editor.py:603"
       ],
-      "ja_JP": "WHITE KEYS · ACTION LIGHTS"
+      "ja_JP": "FUNCTION KEYS · ACTION LIGHTS"
     },
-    "AGENT KEYS · 透明状态键灯": {
-      "source": "AGENT KEYS · 透明状态键灯",
-      "zh_CN": "AGENT KEYS · 透明状态键灯",
-      "en_US": "AGENT KEYS · STATUS LIGHTS",
+    "Codex 官方定义": {
+      "source": "Codex 官方定义",
+      "zh_CN": "Codex 官方定义",
+      "en_US": "Official Codex definition",
+      "ja_JP": "Codex 公式設定",
       "locations": [
-        "views/preferences_editor.py:634"
-      ],
-      "ja_JP": "AGENT KEYS · STATUS LIGHTS"
+        "views/main_window.py"
+      ]
+    },
+    "{action} · 当前 {mode} 模式由官方动作接管，不能在控制台中改写。": {
+      "source": "{action} · 当前 {mode} 模式由官方动作接管，不能在控制台中改写。",
+      "zh_CN": "{action} · 当前 {mode} 模式由官方动作接管，不能在控制台中改写。",
+      "en_US": "{action} · Official actions control {mode} mode and cannot be reassigned in the console.",
+      "ja_JP": "{action} · {mode} モードでは公式アクションが使用され、コンソールから変更できません。",
+      "locations": [
+        "views/main_window.py"
+      ]
+    },
+    "{action} · 六个状态灯键由官方功能接管，不能自定义。": {
+      "source": "{action} · 六个状态灯键由官方功能接管，不能自定义。",
+      "zh_CN": "{action} · 六个状态灯键由官方功能接管，不能自定义。",
+      "en_US": "{action} · The six status keys use official functions and cannot be customized.",
+      "ja_JP": "{action} · 6つのステータスキーは公式機能で動作し、変更できません。",
+      "locations": [
+        "views/main_window.py"
+      ]
+    },
+    "NORMAL 模式下，六个功能键、旋钮和摇杆仍可自定义。": {
+      "source": "NORMAL 模式下，六个功能键、旋钮和摇杆仍可自定义。",
+      "zh_CN": "NORMAL 模式下，六个功能键、旋钮和摇杆仍可自定义。",
+      "en_US": "The six function keys, knobs, and joystick remain customizable in NORMAL mode.",
+      "ja_JP": "NORMAL モードでは、6つの機能キー、ノブ、ジョイスティックを変更できます。",
+      "locations": [
+        "views/main_window.py"
+      ]
     },
     "低": {
       "source": "低",
@@ -2770,47 +2736,20 @@
       "en_US": "Key Lights (Save Only)",
       "ja_JP": "キー照明（保存のみ）"
     },
-    "Agent 状态键": {
-      "source": "Agent 状态键",
-      "zh_CN": "Agent 状态键",
-      "en_US": "Agent Status Key",
-      "ja_JP": "エージェント状態キー"
+    "功能键灯光": {
+      "source": "功能键灯光",
+      "zh_CN": "功能键灯光",
+      "en_US": "Function Key Lighting",
+      "ja_JP": "機能キーの照明"
     },
-    "白色动作键": {
-      "source": "白色动作键",
-      "zh_CN": "白色动作键",
-      "en_US": "White Action Key",
-      "ja_JP": "白アクションキー"
-    },
-    "白色动作键灯": {
-      "source": "白色动作键灯",
-      "zh_CN": "白键灯光",
-      "en_US": "White Key Lighting",
-      "ja_JP": "白キーの照明"
-    },
-    "每颗白色按键灯可以单独设置 RGB；设为 0, 0, 0 可关闭该键灯。": {
-      "source": "每颗白色按键灯可以单独设置 RGB；设为 0, 0, 0 可关闭该键灯。",
-      "zh_CN": "点击白色按键选择灯光颜色，选择黑色可关闭该按键灯。",
-      "en_US": "Click a white key to choose its light color. Choose black to turn its light off.",
+    "每颗功能键灯可以单独设置 RGB；设为 0, 0, 0 可关闭该键灯。": {
+      "source": "每颗功能键灯可以单独设置 RGB；设为 0, 0, 0 可关闭该键灯。",
+      "zh_CN": "点击功能键选择灯光颜色，选择黑色可关闭该按键灯。",
+      "en_US": "Click a function key to choose its light color. Choose black to turn its light off.",
       "locations": [
         "views/preferences_editor.py:604"
       ],
-      "ja_JP": "白いキーをクリックして光の色を選びます。黒を選ぶと、そのキーの光を消せます。"
-    },
-    "透明 Agent 状态键灯": {
-      "source": "透明 Agent 状态键灯",
-      "zh_CN": "Agent 状态灯",
-      "en_US": "Agent Status Lights",
-      "ja_JP": "エージェントの状態表示灯"
-    },
-    "透明键灯由 Agent 状态语义接管，不在这里作为普通 RGB 灯编辑；现有配置值保持不变。": {
-      "source": "透明键灯由 Agent 状态语义接管，不在这里作为普通 RGB 灯编辑；现有配置值保持不变。",
-      "zh_CN": "状态键灯光随任务状态变化。",
-      "en_US": "Status key lights follow task status.",
-      "locations": [
-        "views/preferences_editor.py:636"
-      ],
-      "ja_JP": "状態キーの光はタスクの状態に合わせて変わります。"
+      "ja_JP": "機能キーをクリックして光の色を選びます。黒を選ぶと、そのキーの光を消せます。"
     },
     "灯光可以临时发送到实体设备预览；预览不等于保存，仍需先保存到本地草稿，再完成确认式写入。": {
       "source": "灯光可以临时发送到实体设备预览；预览不等于保存，仍需先保存到本地草稿，再完成确认式写入。",
@@ -3398,41 +3337,41 @@
       ],
       "ja_JP": "現在のデバイス"
     },
-    "在线固件发布": {
-      "source": "在线固件发布",
-      "zh_CN": "检查固件更新",
-      "en_US": "Check for firmware updates",
+    "在线更新（推荐）": {
+      "source": "在线更新（推荐）",
+      "zh_CN": "在线更新（推荐）",
+      "en_US": "Online update (recommended)",
       "locations": [
         "views/main_window.py:2641"
       ],
-      "ja_JP": "ファームウェア更新の確認"
+      "ja_JP": "オンライン更新（推奨）"
     },
-    "维护包检查": {
-      "source": "维护包检查",
-      "zh_CN": "安装文件",
-      "en_US": "Installation file",
+    "从文件安装（高级）": {
+      "source": "从文件安装（高级）",
+      "zh_CN": "从文件安装（高级）",
+      "en_US": "Install from file (advanced)",
       "locations": [
         "views/main_window.py:2727"
       ],
-      "ja_JP": "インストールファイル"
+      "ja_JP": "ファイルからインストール（詳細）"
     },
-    "检查在线固件": {
-      "source": "检查在线固件",
-      "zh_CN": "检查更新",
-      "en_US": "Check for updates",
+    "检查在线更新": {
+      "source": "检查在线更新",
+      "zh_CN": "检查在线更新",
+      "en_US": "Check online",
       "locations": [
         "views/main_window.py:2677"
       ],
-      "ja_JP": "更新を確認"
+      "ja_JP": "オンライン更新を確認"
     },
-    "下载新固件": {
-      "source": "下载新固件",
-      "zh_CN": "下载新固件",
-      "en_US": "Download New Firmware",
+    "下载固件更新": {
+      "source": "下载固件更新",
+      "zh_CN": "下载固件更新",
+      "en_US": "Download firmware update",
       "locations": [
         "views/main_window.py:2700"
       ],
-      "ja_JP": "新しいファームウェアを取得"
+      "ja_JP": "ファームウェア更新をダウンロード"
     },
     "重新下载新固件": {
       "source": "重新下载新固件",
@@ -3443,23 +3382,23 @@
       ],
       "ja_JP": "ファームウェアを再取得"
     },
-    "安装新固件": {
-      "source": "安装新固件",
-      "zh_CN": "安装新固件",
-      "en_US": "Install New Firmware",
+    "安装下载的固件更新": {
+      "source": "安装下载的固件更新",
+      "zh_CN": "安装下载的固件更新",
+      "en_US": "Install downloaded firmware update",
       "locations": [
         "views/main_window.py:2806"
       ],
-      "ja_JP": "新しいファームウェアをインストール"
+      "ja_JP": "ダウンロードした更新をインストール"
     },
-    "安装所选固件": {
-      "source": "安装所选固件",
-      "zh_CN": "安装所选固件",
-      "en_US": "Install Selected Firmware",
+    "安装导入的官方固件": {
+      "source": "安装导入的官方固件",
+      "zh_CN": "安装导入的官方固件",
+      "en_US": "Install imported official firmware",
       "locations": [
         "views/main_window.py:2808"
       ],
-      "ja_JP": "選択したファームウェアをインストール"
+      "ja_JP": "読み込んだ公式ファームウェアをインストール"
     },
     "导入固件维护包…": {
       "source": "导入固件维护包…",
@@ -3506,23 +3445,23 @@
       ],
       "ja_JP": "先に更新パッケージを読み込んでください"
     },
-    "尚未导入固件维护包。可直接选择下载的 ZIP，或选择解压后的 firmware-manifest.json；导入后只执行检查，不会自动安装。": {
-      "source": "尚未导入固件维护包。可直接选择下载的 ZIP，或选择解压后的 firmware-manifest.json；导入后只执行检查，不会自动安装。",
-      "zh_CN": "可先在上方检查更新。如收到支持人员提供的维护文件，也可在这里导入；导入不会自动安装。",
-      "en_US": "Check for updates above. If support provided an update file, you can import it here. Importing does not install it automatically.",
+    "仅在收到支持人员提供的固件文件，或安装自己制作的固件时使用。选择文件后只会检查，不会自动安装。": {
+      "source": "仅在收到支持人员提供的固件文件，或安装自己制作的固件时使用。选择文件后只会检查，不会自动安装。",
+      "zh_CN": "仅在收到支持人员提供的固件文件，或安装自己制作的固件时使用。选择文件后只会检查，不会自动安装。",
+      "en_US": "Use this only for a firmware file from support or firmware you built yourself. Selecting a file checks it but does not install it.",
       "locations": [
         "views/main_window.py:2730"
       ],
-      "ja_JP": "まず上で更新を確認してください。サポートから更新ファイルを受け取った場合は、ここで読み込めます。自動ではインストールされません。"
+      "ja_JP": "サポートから受け取ったファームウェア、または自作ファームウェアを使う場合のみ使用します。ファイルの選択だけではインストールされません。"
     },
-    "选择自包含维护包，先在电脑端核对镜像身份，再由用户明确确认后通过 USB CDC 更新非活动 OTA 分区。": {
-      "source": "选择自包含维护包，先在电脑端核对镜像身份，再由用户明确确认后通过 USB CDC 更新非活动 OTA 分区。",
-      "zh_CN": "检查是否有新版本，下载后确认安装。更新期间请保持 USB 连接。",
-      "en_US": "Check for a new version, download it, then confirm installation. Keep USB connected during the update.",
+    "在线检查并安装官方固件，也可在需要时从文件安装。开始安装前会再次确认。": {
+      "source": "在线检查并安装官方固件，也可在需要时从文件安装。开始安装前会再次确认。",
+      "zh_CN": "在线检查并安装官方固件，也可在需要时从文件安装。开始安装前会再次确认。",
+      "en_US": "Check and install official firmware online, or install from a file when needed. You will confirm before installation starts.",
       "locations": [
         "views/main_window.py:2608"
       ],
-      "ja_JP": "新しいバージョンを確認し、ダウンロードしてからインストールします。更新中は USB 接続を維持してください。"
+      "ja_JP": "公式ファームウェアをオンラインで確認・インストールできます。必要な場合はファイルからもインストールできます。開始前に確認があります。"
     },
     "检查只读取 released 且 git_dirty=false 的版本信息；只有点击“下载新固件”才取得镜像，校验完成后仍需点击“安装新固件”并再次确认。": {
       "source": "检查只读取 released 且 git_dirty=false 的版本信息；只有点击“下载新固件”才取得镜像，校验完成后仍需点击“安装新固件”并再次确认。",
@@ -7301,15 +7240,6 @@
       ],
       "ja_JP": "Claude Code の状態"
     },
-    "开发中 / 待实机联调。通过当前已认证连接将 Claude Code 的执行、审批、待回答与本轮结束状态显示在六颗状态键上。启用后请重新打开 Claude Code 会话；关闭控制台窗口可继续后台运行，退出后台则停止联动。": {
-      "source": "开发中 / 待实机联调。通过当前已认证连接将 Claude Code 的执行、审批、待回答与本轮结束状态显示在六颗状态键上。启用后请重新打开 Claude Code 会话；关闭控制台窗口可继续后台运行，退出后台则停止联动。",
-      "zh_CN": "测试功能：用状态键灯光提示 Claude Code 的任务进展。启用后请重新打开 Claude Code 会话。控制台在后台运行时可继续联动，退出后停止。",
-      "en_US": "Test feature: status key lights show Claude Code task progress. Reopen your Claude Code session after enabling. Sync continues while Console runs in the background and stops when you quit.",
-      "locations": [
-        "views/claude_status_settings.py:19"
-      ],
-      "ja_JP": "テスト機能：状態キーの光で Claude Code の進行状況を知らせます。有効にした後、Claude Code のセッションを開き直してください。Console のバックグラウンド実行中は連動し、終了すると停止します。"
-    },
     "只传事件与进程身份，不传提示词、回复正文或工具参数。USB 与蓝牙共用当前已认证的设备连接；蓝牙链路待实机验收，Windows 原生和 WSL 待独立验证。120 秒无新事件会清除陈旧状态，长时间静默任务可能提前熄灯；缺少可靠结束信号时不会显示完成。": {
       "source": "只传事件与进程身份，不传提示词、回复正文或工具参数。USB 与蓝牙共用当前已认证的设备连接；蓝牙链路待实机验收，Windows 原生和 WSL 待独立验证。120 秒无新事件会清除陈旧状态，长时间静默任务可能提前熄灯；缺少可靠结束信号时不会显示完成。",
       "zh_CN": "仅传递状态事件和进程身份，不传提示词、回复或工具参数。USB／蓝牙共用已认证连接；蓝牙、Windows 和 WSL 仍待验证。120 秒无事件会清除状态，静默任务可能提前熄灯；无可靠结束信号时不显示完成。",
@@ -8071,24 +8001,14 @@
       ],
       "ja_JP": "同期済み · 変更なし"
     },
-    "本地效果示意 · 点击白色按键调整灯色": {
-      "source": "本地效果示意 · 点击白色按键调整灯色",
-      "zh_CN": "本地预览 · 点击白键调整灯色",
-      "en_US": "Local Preview · Select a White Key to Change Its Color",
+    "本地效果示意 · 点击功能键调整灯色": {
+      "source": "本地效果示意 · 点击功能键调整灯色",
+      "zh_CN": "本地效果示意 · 点击功能键调整灯色",
+      "en_US": "Local preview · Select a function key to adjust its light",
+      "ja_JP": "ローカルプレビュー · 機能キーを選んでライトの色を調整",
       "locations": [
-        "views/main_window.py:5603"
-      ],
-      "ja_JP": "ローカルプレビュー · 白キーを選んで色を変更"
-    },
-    "Agent 灯光由任务状态控制，此处不模拟状态颜色。": {
-      "source": "Agent 灯光由任务状态控制，此处不模拟状态颜色。",
-      "zh_CN": "状态键灯光随任务状态变化。",
-      "en_US": "Status key lights follow task status.",
-      "locations": [
-        "views/main_window.py:5607",
-        "views/main_window.py:5601"
-      ],
-      "ja_JP": "状態キーの光はタスクの状態に合わせて変わります。"
+        "views/device_silhouette.py"
+      ]
     },
     "点击调整该按键灯颜色": {
       "source": "点击调整该按键灯颜色",
@@ -8163,25 +8083,7 @@
       "locations": [
         "views/main_window.py:3647"
       ],
-      "ja_JP": "ここでは通常モードのキーを設定します。{mode} は専用の動作を使うため、この設定は通常モードに戻すと有効になります。"
-    },
-    "保存 NORMAL 映射…": {
-      "source": "保存 NORMAL 映射…",
-      "zh_CN": "保存普通模式按键…",
-      "en_US": "Save Normal mode keys…",
-      "locations": [
-        "views/main_window.py:3892"
-      ],
-      "ja_JP": "通常モードのキーを保存…"
-    },
-    "将当前灯光、震动和屏幕设置交给设备验证；确认后写入，无需先保存本地草稿。": {
-      "source": "将当前灯光、震动和屏幕设置交给设备验证；确认后写入，无需先保存本地草稿。",
-      "zh_CN": "先验证灯光、震动和屏幕设置，确认后写入设备，无需先存草稿。",
-      "en_US": "Validate these settings, then confirm to save to the device. No draft save is needed first.",
-      "locations": [
-        "views/main_window.py:4200"
-      ],
-      "ja_JP": "設定を検証し、確認後に本体へ保存します。先に下書きを保存する必要はありません。"
+      "ja_JP": "通常モードのキー設定です。{mode} では専用動作を使います。"
     },
     "当前设置尚未应用到设备": {
       "source": "当前设置尚未应用到设备",
@@ -8200,15 +8102,6 @@
         "views/main_window.py:3164"
       ],
       "ja_JP": "操作設定は未反映"
-    },
-    "点击应用到设备，验证后确认生效": {
-      "source": "点击应用到设备，验证后确认生效",
-      "zh_CN": "点击“应用到设备”，验证后确认。",
-      "en_US": "Select Apply to Device, then confirm after validation.",
-      "locations": [
-        "views/main_window.py:3167"
-      ],
-      "ja_JP": "「本体に適用」を選び、検証後に確認してください。"
     },
     "配置修订：{generation}（成功写入后递增）": {
       "source": "配置修订：{generation}（成功写入后递增）",
@@ -17139,14 +17032,14 @@
       ],
       "ja_JP": "スティックから手を離し、中央に戻してください。確認が完了すると調整結果を保存します。"
     },
-    "stable 渠道只接受正式发布包；sample 渠道用于工程样品联调。检查只读取版本信息，下载并校验完成后，点击“安装新固件”并确认才会写入设备。": {
-      "source": "stable 渠道只接受正式发布包；sample 渠道用于工程样品联调。检查只读取版本信息，下载并校验完成后，点击“安装新固件”并确认才会写入设备。",
-      "zh_CN": "检查和下载不会改变设备。点击“安装新固件”并确认后才会开始安装。",
-      "en_US": "Checking and downloading do not change the device. Installation starts only after you click “Install new firmware” and confirm.",
+    "检查和下载不会改动设备。下载并验证完成后，页面只会提供一个“安装固件更新”按钮；确认后才会写入设备。": {
+      "source": "检查和下载不会改动设备。下载并验证完成后，页面只会提供一个“安装固件更新”按钮；确认后才会写入设备。",
+      "zh_CN": "检查和下载不会改动设备。下载并验证完成后，页面只会提供一个“安装固件更新”按钮；确认后才会写入设备。",
+      "en_US": "Checking and downloading do not change the device. After verification, one “Install firmware update” button appears. The device changes only after confirmation.",
       "locations": [
         "views/main_window.py:2715"
       ],
-      "ja_JP": "確認やダウンロードでは本体は変更されません。「新しいファームウェアをインストール」を押し、確認すると開始します。"
+      "ja_JP": "確認やダウンロードでは本体は変更されません。検証後は「ファームウェア更新をインストール」ボタンだけが表示され、確認後に本体へ書き込みます。"
     },
     "传输会写入非活动 OTA 分区；确认安装后请保持 USB 连接，等待设备重启及版本、运行分区和回滚状态读回确认。": {
       "source": "传输会写入非活动 OTA 分区；确认安装后请保持 USB 连接，等待设备重启及版本、运行分区和回滚状态读回确认。",
@@ -17355,23 +17248,14 @@
       ],
       "ja_JP": "中止すると元の校正を保持します。"
     },
-    "透明键帽\nCodex 模式下承担外部 Agent 状态反馈；这里编辑的是设备协议动作，不定义 Agent 状态语义。": {
-      "source": "透明键帽\nCodex 模式下承担外部 Agent 状态反馈；这里编辑的是设备协议动作，不定义 Agent 状态语义。",
-      "zh_CN": "透明键帽\nCODEX 模式下显示 Agent 状态。此处仅编辑控件动作，不设置 Agent 状态。",
-      "en_US": "Transparent Keycaps\nShow Agent status in CODEX mode. Edit control actions here; Agent status is managed separately.",
-      "locations": [
-        "views/main_window.py:5447"
-      ],
-      "ja_JP": "透明キー\nCODEX モードでエージェントの状態を表示します。ここでは操作を割り当て、エージェントの状態は別途管理します。"
-    },
-    "白色键帽\n用于触发用户动作，可编辑真实按键、组合键或设备功能。": {
-      "source": "白色键帽\n用于触发用户动作，可编辑真实按键、组合键或设备功能。",
-      "zh_CN": "白色键帽\n可设置按键、快捷键或设备功能。",
-      "en_US": "White Keycaps\nAssign a key, shortcut, or device function.",
+    "功能键\n用于触发用户动作，可编辑真实按键、组合键或设备功能。": {
+      "source": "功能键\n用于触发用户动作，可编辑真实按键、组合键或设备功能。",
+      "zh_CN": "功能键\n可设置按键、快捷键或设备功能。",
+      "en_US": "Function Keys\nAssign a key, shortcut, or device function.",
       "locations": [
         "views/main_window.py:5452"
       ],
-      "ja_JP": "白キー\nキー、ショートカット、本体機能を割り当てます。"
+      "ja_JP": "機能キー\nキー、ショートカット、本体機能を割り当てます。"
     },
     "需要更新固件": {
       "source": "需要更新固件",
@@ -19151,6 +19035,12 @@
       "en_US": "No firmware release available\nConnected to the update service, but this channel has no firmware yet. You can keep using the device and check again later.",
       "ja_JP": "利用できるファームウェアはまだありません\n更新サービスに接続しましたが、このチャンネルにはまだファームウェアがありません。そのまま使用し、後で再確認してください。"
     },
+    "BORING MIST · 屏幕效果示意": {
+      "source": "BORING MIST · 屏幕效果示意",
+      "zh_CN": "BORING MIST · 屏幕效果示意",
+      "en_US": "BORING MIST · Screen preview",
+      "ja_JP": "BORING MIST · 画面プレビュー"
+    },
     "屏幕动画为效果示意，不是设备实时画面。": {
       "source": "屏幕动画为效果示意，不是设备实时画面。",
       "zh_CN": "屏幕动画为效果示意，不是设备实时画面。",
@@ -20387,7 +20277,7 @@
       "source": "目标版本：{version}\n{channel}\n更新内容：{notes}",
       "locations": [],
       "zh_CN": "目标版本：{version}\n{channel}\n更新内容：{notes}",
-      "en_US": "New version: {version}\n{channel}\nWhat’s new: {notes}",
+      "en_US": "Target version: {version}\n{channel}\nWhat’s new: {notes}",
       "ja_JP": "更新先：{version}\n{channel}\n更新内容：{notes}"
     },
     "已准备：{version}": {
@@ -20453,19 +20343,19 @@
       "en_US": "New firmware is available to download and install.",
       "ja_JP": "新しいファームウェアをダウンロードしてインストールできます。"
     },
-    "导入官方固件…": {
-      "source": "导入官方固件…",
+    "选择官方固件文件…": {
+      "source": "选择官方固件文件…",
       "locations": [],
-      "zh_CN": "导入官方固件…",
-      "en_US": "Import official firmware…",
-      "ja_JP": "公式ファームウェアを読み込む…"
+      "zh_CN": "选择官方固件文件…",
+      "en_US": "Choose official firmware file…",
+      "ja_JP": "公式ファームウェアを選択…"
     },
-    "导入自定义固件…": {
-      "source": "导入自定义固件…",
+    "选择自定义固件文件…": {
+      "source": "选择自定义固件文件…",
       "locations": [],
-      "zh_CN": "导入自定义固件…",
-      "en_US": "Import custom firmware…",
-      "ja_JP": "カスタムファームウェアを読み込む…"
+      "zh_CN": "选择自定义固件文件…",
+      "en_US": "Choose custom firmware file…",
+      "ja_JP": "カスタムファームウェアを選択…"
     },
     "导入官方固件": {
       "source": "导入官方固件",
@@ -20599,6 +20489,701 @@
       "en_US": "Custom firmware is running. Official updates are not compared or installed automatically.",
       "ja_JP": "カスタムファームウェアで動作中です。公式版との自動比較や自動インストールは行いません。",
       "locations": []
+    },
+    "控制台有更新 {version}": {
+      "source": "控制台有更新 {version}",
+      "zh_CN": "控制台有更新 {version}",
+      "en_US": "Console update {version}",
+      "ja_JP": "コンソール更新 {version}",
+      "locations": [
+        "views/desktop_update.py",
+        "views/firmware_reminder.py"
+      ]
+    },
+    "稍后提醒": {
+      "source": "稍后提醒",
+      "zh_CN": "稍后提醒",
+      "en_US": "Remind later",
+      "ja_JP": "あとで通知",
+      "locations": [
+        "views/desktop_update.py",
+        "views/firmware_reminder.py"
+      ]
+    },
+    "同一版本 24 小时内不再主动提醒，仍可手动检查。": {
+      "source": "同一版本 24 小时内不再主动提醒，仍可手动检查。",
+      "zh_CN": "同一版本 24 小时内不再主动提醒，仍可手动检查。",
+      "en_US": "Pause reminders for this version for 24 hours. You can still check manually.",
+      "ja_JP": "このバージョンの通知を24時間停止します。手動での確認は可能です。",
+      "locations": [
+        "views/desktop_update.py",
+        "views/firmware_reminder.py"
+      ]
+    },
+    "设备固件有更新": {
+      "source": "设备固件有更新",
+      "zh_CN": "设备固件有更新",
+      "en_US": "Device firmware update",
+      "ja_JP": "デバイス更新あり",
+      "locations": [
+        "views/desktop_update.py",
+        "views/firmware_reminder.py"
+      ]
+    },
+    "设备固件已下载，等待安装": {
+      "source": "设备固件已下载，等待安装",
+      "zh_CN": "设备固件已下载，等待安装",
+      "en_US": "Firmware ready to install",
+      "ja_JP": "ファームウェアの準備完了",
+      "locations": [
+        "views/desktop_update.py",
+        "views/firmware_reminder.py"
+      ]
+    },
+    "查看更新": {
+      "source": "查看更新",
+      "zh_CN": "查看更新",
+      "en_US": "View update",
+      "ja_JP": "更新を確認",
+      "locations": [
+        "views/desktop_update.py",
+        "views/firmware_reminder.py"
+      ]
+    },
+    "查看安装": {
+      "source": "查看安装",
+      "zh_CN": "查看安装",
+      "en_US": "View installation",
+      "ja_JP": "インストールへ",
+      "locations": [
+        "views/desktop_update.py",
+        "views/firmware_reminder.py"
+      ]
+    },
+    "当前为自定义固件，不主动提醒官方更新。可查看官方版本，确认后替换自定义功能。": {
+      "source": "当前为自定义固件，不主动提醒官方更新。可查看官方版本，确认后替换自定义功能。",
+      "zh_CN": "当前为自定义固件，不主动提醒官方更新。可查看官方版本，确认后替换自定义功能。",
+      "en_US": "Custom firmware is running. Official update reminders are paused. You can view an official release and confirm replacement of your custom features.",
+      "ja_JP": "カスタムファームウェアを使用中です。公式更新の通知は行いません。公式版を確認し、同意したうえでカスタム機能を置き換えられます。",
+      "locations": [
+        "viewmodels/main.py",
+        "views/main_window.py"
+      ]
+    },
+    "固件来源未确认，不主动提醒官方更新。可查看官方版本，确认后替换当前固件。": {
+      "source": "固件来源未确认，不主动提醒官方更新。可查看官方版本，确认后替换当前固件。",
+      "zh_CN": "固件来源未确认，不主动提醒官方更新。可查看官方版本，确认后替换当前固件。",
+      "en_US": "Firmware origin is unconfirmed. Official update reminders are paused. You can view an official release and confirm replacement of the current firmware.",
+      "ja_JP": "ファームウェアの出所を確認できません。公式更新の通知は行いません。公式版を確認し、同意したうえで現在のファームウェアを置き換えられます。",
+      "locations": [
+        "viewmodels/main.py",
+        "views/main_window.py"
+      ]
+    },
+    "设备报告的版本与构建编号匹配官方签名发布记录；不代表对运行代码进行了验真。": {
+      "source": "设备报告的版本与构建编号匹配官方签名发布记录；不代表对运行代码进行了验真。",
+      "zh_CN": "设备报告的版本与构建编号匹配官方签名发布记录；不代表对运行代码进行了验真。",
+      "en_US": "The reported version and build match a signed official release record. This does not verify the code currently running on the device.",
+      "ja_JP": "デバイスが報告したバージョンとビルド番号は、署名済みの公式リリース記録と一致します。実行中のコード自体を検証したものではありません。",
+      "locations": [
+        "viewmodels/main.py",
+        "views/main_window.py"
+      ]
+    },
+    "固件来源：匹配官方发布": {
+      "source": "固件来源：匹配官方发布",
+      "zh_CN": "固件来源：匹配官方发布",
+      "en_US": "Firmware origin: matches official release",
+      "ja_JP": "ファームウェアの出所：公式リリースと一致",
+      "locations": [
+        "viewmodels/main.py",
+        "views/main_window.py"
+      ]
+    },
+    "固件来源：自定义固件": {
+      "source": "固件来源：自定义固件",
+      "zh_CN": "固件来源：自定义固件",
+      "en_US": "Firmware origin: custom",
+      "ja_JP": "ファームウェアの出所：カスタム",
+      "locations": [
+        "viewmodels/main.py",
+        "views/main_window.py"
+      ]
+    },
+    "固件来源：未确认": {
+      "source": "固件来源：未确认",
+      "zh_CN": "固件来源：未确认",
+      "en_US": "Firmware origin: unconfirmed",
+      "ja_JP": "ファームウェアの出所：未確認",
+      "locations": [
+        "viewmodels/main.py",
+        "views/main_window.py"
+      ]
+    },
+    "查看官方版本": {
+      "source": "查看官方版本",
+      "zh_CN": "查看官方版本",
+      "en_US": "View official release",
+      "ja_JP": "公式版を確認",
+      "locations": [
+        "viewmodels/main.py",
+        "views/main_window.py"
+      ]
+    },
+    "下载官方恢复固件": {
+      "source": "下载官方恢复固件",
+      "zh_CN": "下载官方恢复固件",
+      "en_US": "Download official firmware",
+      "ja_JP": "復元用の公式ファームウェアをダウンロード",
+      "locations": [
+        "viewmodels/main.py",
+        "views/main_window.py"
+      ]
+    },
+    "恢复官方固件…": {
+      "source": "恢复官方固件…",
+      "zh_CN": "恢复官方固件…",
+      "en_US": "Restore official firmware…",
+      "ja_JP": "公式ファームウェアに戻す…",
+      "locations": [
+        "viewmodels/main.py",
+        "views/main_window.py"
+      ]
+    },
+    "可恢复官方版本。安装将替换当前固件及自定义功能，不会合并代码。": {
+      "source": "可恢复官方版本。安装将替换当前固件及自定义功能，不会合并代码。",
+      "zh_CN": "可恢复官方版本。安装将替换当前固件及自定义功能，不会合并代码。",
+      "en_US": "An official release is available for restoration. Installation replaces your current firmware and custom features; it does not merge code.",
+      "ja_JP": "公式版に戻すことができます。インストールすると現在のファームウェアとカスタム機能が置き換わります。コードは統合されません。",
+      "locations": [
+        "viewmodels/main.py",
+        "views/main_window.py"
+      ]
+    },
+    "恢复官方固件将替换当前固件及自定义功能，不会合并代码。请先保留你的源码和重要配置。": {
+      "source": "恢复官方固件将替换当前固件及自定义功能，不会合并代码。请先保留你的源码和重要配置。",
+      "zh_CN": "恢复官方固件将替换当前固件及自定义功能，不会合并代码。请先保留你的源码和重要配置。",
+      "en_US": "Restoring official firmware replaces your current firmware and custom features; it does not merge code. Back up your source code and important configuration first.",
+      "ja_JP": "公式版に戻すと、現在のファームウェアとカスタム機能が置き換わります。コードは統合されません。先にソースコードと重要な設定を保存してください。",
+      "locations": [
+        "viewmodels/main.py",
+        "views/main_window.py"
+      ]
+    },
+    "设备已断开或切换，请重新检查官方版本": {
+      "source": "设备已断开或切换，请重新检查官方版本",
+      "zh_CN": "设备已断开或切换，请重新检查官方版本",
+      "en_US": "The device disconnected or changed. Check the official release again.",
+      "ja_JP": "デバイスが切断または切り替わりました。公式版を再確認してください。",
+      "locations": [
+        "viewmodels/main.py",
+        "views/main_window.py"
+      ]
+    },
+    "更新": {
+      "source": "更新",
+      "zh_CN": "更新",
+      "en_US": "Update",
+      "ja_JP": "更新",
+      "locations": []
+    },
+    "右键打开设置或查看固件更新": {
+      "source": "右键打开设置或查看固件更新",
+      "zh_CN": "右键打开设置或查看固件更新",
+      "en_US": "Right-click for settings or firmware updates",
+      "ja_JP": "右クリックで設定やファームウェア更新を表示",
+      "locations": []
+    },
+    "打开设置": {
+      "source": "打开设置",
+      "zh_CN": "打开设置",
+      "en_US": "Open Settings",
+      "ja_JP": "設定を開く",
+      "locations": []
+    },
+    "查看固件更新": {
+      "source": "查看固件更新",
+      "zh_CN": "查看固件更新",
+      "en_US": "View Firmware Update",
+      "ja_JP": "ファームウェア更新を表示",
+      "locations": []
+    },
+    "查看更新详情": {
+      "source": "查看更新详情",
+      "zh_CN": "查看更新详情",
+      "en_US": "View Update Details",
+      "ja_JP": "更新の詳細を表示",
+      "locations": []
+    },
+    "点击下载，验证完成后重启更新；未完成的设备操作会阻止重启。": {
+      "source": "点击下载，验证完成后重启更新；未完成的设备操作会阻止重启。",
+      "zh_CN": "点击下载，验证完成后重启更新；未完成的设备操作会阻止重启。",
+      "en_US": "Click to download, verify and restart to update. Unfinished device operations will prevent restart.",
+      "ja_JP": "クリックするとダウンロードと検証後に再起動して更新します。デバイス操作が未完了の場合は再起動しません。",
+      "locations": []
+    },
+    "右键打开设置": {
+      "source": "右键打开设置",
+      "zh_CN": "右键打开设置",
+      "en_US": "Right-click to open Settings",
+      "ja_JP": "右クリックで設定を開く",
+      "locations": []
+    },
+    "安装导入的自定义固件": {
+      "source": "安装导入的自定义固件",
+      "locations": [
+        "views/main_window.py"
+      ],
+      "zh_CN": "安装导入的自定义固件",
+      "en_US": "Install imported custom firmware",
+      "ja_JP": "読み込んだカスタムファームウェアをインストール"
+    },
+    "六个状态灯键 · 显示外部 Agent 状态": {
+      "source": "六个状态灯键 · 显示外部 Agent 状态",
+      "zh_CN": "六个状态灯键 · 显示外部 Agent 状态",
+      "en_US": "Six status light keys · Show external Agent status",
+      "locations": [
+        "views/main_window.py:3718"
+      ],
+      "ja_JP": "6つのステータスライトキー · 外部 Agent の状態を表示"
+    },
+    "STATUS KEYS · 状态灯键": {
+      "source": "STATUS KEYS · 状态灯键",
+      "zh_CN": "STATUS KEYS · 状态灯键",
+      "en_US": "STATUS KEYS · STATUS LIGHTS",
+      "locations": [
+        "views/preferences_editor.py:806"
+      ],
+      "ja_JP": "STATUS KEYS · ステータスライト"
+    },
+    "状态灯键由 Agent 状态语义接管，不在这里作为普通 RGB 灯编辑；现有配置值保持不变。": {
+      "source": "状态灯键由 Agent 状态语义接管，不在这里作为普通 RGB 灯编辑；现有配置值保持不变。",
+      "zh_CN": "状态灯键由 Agent 状态控制，不能在这里单独改色；现有设置保持不变。",
+      "en_US": "Status light keys follow Agent status and cannot be recolored here. Existing settings are preserved.",
+      "locations": [
+        "views/preferences_editor.py:808"
+      ],
+      "ja_JP": "ステータスライトキーは Agent の状態に連動するため、ここでは個別に色を変更できません。現在の設定は保持されます。"
+    },
+    "状态灯键显示 Agent 状态；功能键与金属控制件用于操作。": {
+      "source": "状态灯键显示 Agent 状态；功能键与金属控制件用于操作。",
+      "zh_CN": "状态灯键显示 Agent 状态；功能键与金属控制件用于操作。",
+      "en_US": "Status light keys show Agent status; function keys and metal controls trigger actions.",
+      "locations": [
+        "views/main_window.py:5719"
+      ],
+      "ja_JP": "ステータスライトキーは Agent の状態を表示し、機能キーと金属操作部で操作します。"
+    },
+    "功能键用于触发动作；状态灯键用于显示状态。": {
+      "source": "功能键用于触发动作；状态灯键用于显示状态。",
+      "zh_CN": "功能键用于触发动作；状态灯键用于显示状态。",
+      "en_US": "Function keys trigger actions; status light keys show status.",
+      "locations": [
+        "views/main_window.py:5721"
+      ],
+      "ja_JP": "機能キーは操作を実行し、ステータスライトキーは状態を表示します。"
+    },
+    "当前为 Normal 模式。功能键用于普通按键和组合动作；状态灯键不作为普通 RGB 灯位。": {
+      "source": "当前为 Normal 模式。功能键用于普通按键和组合动作；状态灯键不作为普通 RGB 灯位。",
+      "zh_CN": "当前为普通模式。功能键用于按键和快捷键；状态灯键用于显示状态。",
+      "en_US": "In Normal mode, function keys handle regular keys and shortcuts; status light keys show status.",
+      "locations": [
+        "views/main_window.py:5729"
+      ],
+      "ja_JP": "現在は通常モードです。機能キーはキー入力とショートカットに使い、ステータスライトキーは状態を表示します。"
+    },
+    "状态灯键\n用于 Agent 状态与选择，由官方功能接管，不提供自定义。": {
+      "source": "状态灯键\n用于 Agent 状态与选择，由官方功能接管，不提供自定义。",
+      "zh_CN": "状态灯键\n用于 Agent 状态与选择，由官方功能接管，不提供自定义。",
+      "en_US": "Status Light Keys\nShow and select Agents through official functions; these keys cannot be customized.",
+      "locations": [
+        "views/main_window.py:5664"
+      ],
+      "ja_JP": "ステータスライトキー\nAgent の状態表示と選択には公式機能を使用し、割り当ては変更できません。"
+    },
+    "开发中 / 待实机联调。通过当前已认证连接将 Claude Code 的执行、审批、待回答与本轮结束状态显示在六个状态灯键上。启用后请重新打开 Claude Code 会话；关闭控制台窗口可继续后台运行，退出后台则停止联动。": {
+      "source": "开发中 / 待实机联调。通过当前已认证连接将 Claude Code 的执行、审批、待回答与本轮结束状态显示在六个状态灯键上。启用后请重新打开 Claude Code 会话；关闭控制台窗口可继续后台运行，退出后台则停止联动。",
+      "zh_CN": "测试功能：用状态灯键提示 Claude Code 的任务进展。启用后请重新打开 Claude Code 会话。控制台在后台运行时可继续联动，退出后停止。",
+      "en_US": "Test feature: status light keys show Claude Code task progress. Reopen your Claude Code session after enabling. Sync continues while Console runs in the background and stops when you quit.",
+      "locations": [
+        "views/claude_status_settings.py:19"
+      ],
+      "ja_JP": "テスト機能：ステータスライトキーで Claude Code の進行状況を知らせます。有効にした後、Claude Code のセッションを開き直してください。Console のバックグラウンド実行中は連動し、終了すると停止します。"
+    },
+    "状态灯键的灯光由任务状态控制，此处不模拟状态颜色。": {
+      "source": "状态灯键的灯光由任务状态控制，此处不模拟状态颜色。",
+      "zh_CN": "状态灯键的灯光随任务状态变化，此处不模拟状态颜色。",
+      "en_US": "Status light keys follow task status; status colors are not simulated here.",
+      "locations": [
+        "views/device_silhouette.py:514",
+        "views/device_silhouette.py:530"
+      ],
+      "ja_JP": "ステータスライトキーはタスクの状態に合わせて変わります。ここでは状態色を再現しません。"
+    },
+    "状态灯键": {
+      "source": "状态灯键",
+      "zh_CN": "状态灯键",
+      "en_US": "Status Light Key",
+      "ja_JP": "ステータスライトキー"
+    },
+    "应用到设备": {
+      "source": "应用到设备",
+      "zh_CN": "应用到设备",
+      "en_US": "Apply to Device",
+      "locations": [
+        "views/main_window.py:4066",
+        "views/main_window.py:4380"
+      ],
+      "ja_JP": "本体に適用"
+    },
+    "应用 NORMAL 映射": {
+      "source": "应用 NORMAL 映射",
+      "zh_CN": "应用普通模式按键",
+      "en_US": "Apply Normal Mode Keys",
+      "locations": [
+        "views/main_window.py:4066"
+      ],
+      "ja_JP": "通常モードのキーを適用"
+    },
+    "保存当前修改，完成设备验证、写入和读回确认。": {
+      "source": "保存当前修改，完成设备验证、写入和读回确认。",
+      "zh_CN": "保存当前修改，完成验证、写入和读回。",
+      "en_US": "Save this change, validate and write it to the device, then verify it by reading it back.",
+      "locations": [
+        "views/main_window.py:4071"
+      ],
+      "ja_JP": "変更を保存し、本体での検証・書き込み・読み戻し確認まで実行します。"
+    },
+    "保存当前灯光、震动和屏幕设置，完成设备验证、写入和读回确认。": {
+      "source": "保存当前灯光、震动和屏幕设置，完成设备验证、写入和读回确认。",
+      "zh_CN": "保存当前灯光、震动和屏幕设置，完成验证、写入和读回。",
+      "en_US": "Save the current lighting, haptics and display settings, then validate, write and verify them by reading them back.",
+      "locations": [
+        "views/main_window.py:4385"
+      ],
+      "ja_JP": "現在のライト・振動・画面設定を保存し、本体での検証・書き込み・読み戻し確認まで実行します。"
+    },
+    "点击应用到设备，完成验证、写入与读回": {
+      "source": "点击应用到设备，完成验证、写入与读回",
+      "zh_CN": "点击“应用到设备”即可完成验证、写入与读回。",
+      "en_US": "Select Apply to Device to validate, write and verify the change.",
+      "locations": [
+        "views/main_window.py:3304"
+      ],
+      "ja_JP": "「本体に適用」を選ぶと、検証・書き込み・読み戻し確認まで実行します。"
+    },
+    "快速了解连接设备、配置实体控件和写入设备的完整流程。": {
+      "source": "快速了解连接设备、配置实体控件和写入设备的完整流程。",
+      "zh_CN": "了解如何连接、配置和保存到设备。",
+      "en_US": "Learn to connect, configure, and save to your device.",
+      "locations": [
+        "views/main_window.py:2079"
+      ],
+      "ja_JP": "接続から設定・保存までの手順を確認できます。"
+    },
+    "白色键帽是主要动作入口；透明键仍保留其状态键帽身份。": {
+      "source": "白色键帽是主要动作入口；透明键仍保留其状态键帽身份。",
+      "zh_CN": "白键用于触发动作，透明键用于显示状态。",
+      "en_US": "White keys trigger actions; transparent keys show status.",
+      "locations": [
+        "views/main_window.py:5506"
+      ],
+      "ja_JP": "白キーは動作の実行、透明キーは状態表示に使います。"
+    },
+    "透明键阵列显示 Agent 状态；白键与金属控制件保留用户决策入口。": {
+      "source": "透明键阵列显示 Agent 状态；白键与金属控制件保留用户决策入口。",
+      "zh_CN": "透明键显示 Agent 状态；白键和金属控件用于操作。",
+      "en_US": "Transparent keys show Agent status; white keys and metal controls trigger actions.",
+      "locations": [
+        "views/main_window.py:5504"
+      ],
+      "ja_JP": "透明キーにエージェントの状態を表示し、白キーと金属製の操作部で動作を実行します。"
+    },
+    "当前为 Normal 模式。白色键帽用于普通按键和组合动作；透明键不会被解释成普通 RGB 灯位。": {
+      "source": "当前为 Normal 模式。白色键帽用于普通按键和组合动作；透明键不会被解释成普通 RGB 灯位。",
+      "zh_CN": "普通模式下，可为白色按键设置快捷操作；状态键灯光随任务状态变化。",
+      "en_US": "In Normal mode, assign shortcuts to white keys. Status key lights follow task status.",
+      "locations": [
+        "views/main_window.py:5514"
+      ],
+      "ja_JP": "通常モードでは白いキーにショートカットを設定できます。状態キーの光はタスクの状態に合わせて変わります。"
+    },
+    "白色键帽与金属控制件 · 发出动作": {
+      "source": "白色键帽与金属控制件 · 发出动作",
+      "zh_CN": "白色键帽与金属控制件 · 发出动作",
+      "en_US": "White keycaps and metal controls · Send actions",
+      "locations": [
+        "views/main_window.py:3572"
+      ],
+      "ja_JP": "白キー・金属操作部 · 動作を実行"
+    },
+    "白色键帽": {
+      "source": "白色键帽",
+      "zh_CN": "白色键帽",
+      "en_US": "White Keycap",
+      "ja_JP": "白キー"
+    },
+    "透明键帽": {
+      "source": "透明键帽",
+      "zh_CN": "透明键帽",
+      "en_US": "Transparent Keycap",
+      "ja_JP": "透明キー"
+    },
+    "六枚透明键帽 · 显示外部 Agent 状态": {
+      "source": "六枚透明键帽 · 显示外部 Agent 状态",
+      "zh_CN": "六枚透明键帽 · 显示外部 Agent 状态",
+      "en_US": "Six transparent keycaps · Show external Agent state",
+      "locations": [
+        "views/main_window.py:3577"
+      ],
+      "ja_JP": "6つの透明キー · 外部エージェントの状態表示"
+    },
+    "应用到设备…": {
+      "source": "应用到设备…",
+      "zh_CN": "应用到设备…",
+      "en_US": "Apply to Device…",
+      "locations": [
+        "views/main_window.py:4195",
+        "views/main_window.py:3892"
+      ],
+      "ja_JP": "本体に適用…"
+    },
+    "保存当前修改并交给设备验证；验证通过后仍需由你最终确认。": {
+      "source": "保存当前修改并交给设备验证；验证通过后仍需由你最终确认。",
+      "zh_CN": "先保存并验证，确认后写入设备。",
+      "en_US": "Save and validate, then confirm to write to the device.",
+      "locations": [
+        "views/main_window.py:3897"
+      ],
+      "ja_JP": "保存・検証後、確認して本体に書き込みます。"
+    },
+    "WHITE KEYS · 白色动作键灯": {
+      "source": "WHITE KEYS · 白色动作键灯",
+      "zh_CN": "WHITE KEYS · 白色动作键灯",
+      "en_US": "WHITE KEYS · ACTION LIGHTS",
+      "locations": [
+        "views/preferences_editor.py:603"
+      ],
+      "ja_JP": "WHITE KEYS · ACTION LIGHTS"
+    },
+    "AGENT KEYS · 透明状态键灯": {
+      "source": "AGENT KEYS · 透明状态键灯",
+      "zh_CN": "AGENT KEYS · 透明状态键灯",
+      "en_US": "AGENT KEYS · STATUS LIGHTS",
+      "locations": [
+        "views/preferences_editor.py:634"
+      ],
+      "ja_JP": "AGENT KEYS · STATUS LIGHTS"
+    },
+    "Agent 状态键": {
+      "source": "Agent 状态键",
+      "zh_CN": "Agent 状态键",
+      "en_US": "Agent Status Key",
+      "ja_JP": "エージェント状態キー"
+    },
+    "白色动作键": {
+      "source": "白色动作键",
+      "zh_CN": "白色动作键",
+      "en_US": "White Action Key",
+      "ja_JP": "白アクションキー"
+    },
+    "白色动作键灯": {
+      "source": "白色动作键灯",
+      "zh_CN": "白键灯光",
+      "en_US": "White Key Lighting",
+      "ja_JP": "白キーの照明"
+    },
+    "每颗白色按键灯可以单独设置 RGB；设为 0, 0, 0 可关闭该键灯。": {
+      "source": "每颗白色按键灯可以单独设置 RGB；设为 0, 0, 0 可关闭该键灯。",
+      "zh_CN": "点击白色按键选择灯光颜色，选择黑色可关闭该按键灯。",
+      "en_US": "Click a white key to choose its light color. Choose black to turn its light off.",
+      "locations": [
+        "views/preferences_editor.py:604"
+      ],
+      "ja_JP": "白いキーをクリックして光の色を選びます。黒を選ぶと、そのキーの光を消せます。"
+    },
+    "透明 Agent 状态键灯": {
+      "source": "透明 Agent 状态键灯",
+      "zh_CN": "Agent 状态灯",
+      "en_US": "Agent Status Lights",
+      "ja_JP": "エージェントの状態表示灯"
+    },
+    "透明键灯由 Agent 状态语义接管，不在这里作为普通 RGB 灯编辑；现有配置值保持不变。": {
+      "source": "透明键灯由 Agent 状态语义接管，不在这里作为普通 RGB 灯编辑；现有配置值保持不变。",
+      "zh_CN": "状态键灯光随任务状态变化。",
+      "en_US": "Status key lights follow task status.",
+      "locations": [
+        "views/preferences_editor.py:636"
+      ],
+      "ja_JP": "状態キーの光はタスクの状態に合わせて変わります。"
+    },
+    "在线固件发布": {
+      "source": "在线固件发布",
+      "zh_CN": "检查固件更新",
+      "en_US": "Check for firmware updates",
+      "locations": [
+        "views/main_window.py:2641"
+      ],
+      "ja_JP": "ファームウェア更新の確認"
+    },
+    "维护包检查": {
+      "source": "维护包检查",
+      "zh_CN": "安装文件",
+      "en_US": "Installation file",
+      "locations": [
+        "views/main_window.py:2727"
+      ],
+      "ja_JP": "インストールファイル"
+    },
+    "检查在线固件": {
+      "source": "检查在线固件",
+      "zh_CN": "检查更新",
+      "en_US": "Check for updates",
+      "locations": [
+        "views/main_window.py:2677"
+      ],
+      "ja_JP": "更新を確認"
+    },
+    "下载新固件": {
+      "source": "下载新固件",
+      "zh_CN": "下载新固件",
+      "en_US": "Download New Firmware",
+      "locations": [
+        "views/main_window.py:2700"
+      ],
+      "ja_JP": "新しいファームウェアを取得"
+    },
+    "安装新固件": {
+      "source": "安装新固件",
+      "zh_CN": "安装新固件",
+      "en_US": "Install New Firmware",
+      "locations": [
+        "views/main_window.py:2806"
+      ],
+      "ja_JP": "新しいファームウェアをインストール"
+    },
+    "安装所选固件": {
+      "source": "安装所选固件",
+      "zh_CN": "安装所选固件",
+      "en_US": "Install Selected Firmware",
+      "locations": [
+        "views/main_window.py:2808"
+      ],
+      "ja_JP": "選択したファームウェアをインストール"
+    },
+    "尚未导入固件维护包。可直接选择下载的 ZIP，或选择解压后的 firmware-manifest.json；导入后只执行检查，不会自动安装。": {
+      "source": "尚未导入固件维护包。可直接选择下载的 ZIP，或选择解压后的 firmware-manifest.json；导入后只执行检查，不会自动安装。",
+      "zh_CN": "可先在上方检查更新。如收到支持人员提供的维护文件，也可在这里导入；导入不会自动安装。",
+      "en_US": "Check for updates above. If support provided an update file, you can import it here. Importing does not install it automatically.",
+      "locations": [
+        "views/main_window.py:2730"
+      ],
+      "ja_JP": "まず上で更新を確認してください。サポートから更新ファイルを受け取った場合は、ここで読み込めます。自動ではインストールされません。"
+    },
+    "选择自包含维护包，先在电脑端核对镜像身份，再由用户明确确认后通过 USB CDC 更新非活动 OTA 分区。": {
+      "source": "选择自包含维护包，先在电脑端核对镜像身份，再由用户明确确认后通过 USB CDC 更新非活动 OTA 分区。",
+      "zh_CN": "检查是否有新版本，下载后确认安装。更新期间请保持 USB 连接。",
+      "en_US": "Check for a new version, download it, then confirm installation. Keep USB connected during the update.",
+      "locations": [
+        "views/main_window.py:2608"
+      ],
+      "ja_JP": "新しいバージョンを確認し、ダウンロードしてからインストールします。更新中は USB 接続を維持してください。"
+    },
+    "开发中 / 待实机联调。通过当前已认证连接将 Claude Code 的执行、审批、待回答与本轮结束状态显示在六颗状态键上。启用后请重新打开 Claude Code 会话；关闭控制台窗口可继续后台运行，退出后台则停止联动。": {
+      "source": "开发中 / 待实机联调。通过当前已认证连接将 Claude Code 的执行、审批、待回答与本轮结束状态显示在六颗状态键上。启用后请重新打开 Claude Code 会话；关闭控制台窗口可继续后台运行，退出后台则停止联动。",
+      "zh_CN": "测试功能：用状态键灯光提示 Claude Code 的任务进展。启用后请重新打开 Claude Code 会话。控制台在后台运行时可继续联动，退出后停止。",
+      "en_US": "Test feature: status key lights show Claude Code task progress. Reopen your Claude Code session after enabling. Sync continues while Console runs in the background and stops when you quit.",
+      "locations": [
+        "views/claude_status_settings.py:19"
+      ],
+      "ja_JP": "テスト機能：状態キーの光で Claude Code の進行状況を知らせます。有効にした後、Claude Code のセッションを開き直してください。Console のバックグラウンド実行中は連動し、終了すると停止します。"
+    },
+    "本地效果示意 · 点击白色按键调整灯色": {
+      "source": "本地效果示意 · 点击白色按键调整灯色",
+      "zh_CN": "本地预览 · 点击白键调整灯色",
+      "en_US": "Local Preview · Select a White Key to Change Its Color",
+      "locations": [
+        "views/main_window.py:5603"
+      ],
+      "ja_JP": "ローカルプレビュー · 白キーを選んで色を変更"
+    },
+    "Agent 灯光由任务状态控制，此处不模拟状态颜色。": {
+      "source": "Agent 灯光由任务状态控制，此处不模拟状态颜色。",
+      "zh_CN": "状态键灯光随任务状态变化。",
+      "en_US": "Status key lights follow task status.",
+      "locations": [
+        "views/main_window.py:5607",
+        "views/main_window.py:5601"
+      ],
+      "ja_JP": "状態キーの光はタスクの状態に合わせて変わります。"
+    },
+    "保存 NORMAL 映射…": {
+      "source": "保存 NORMAL 映射…",
+      "zh_CN": "保存普通模式按键…",
+      "en_US": "Save Normal mode keys…",
+      "locations": [
+        "views/main_window.py:3892"
+      ],
+      "ja_JP": "通常モードのキーを保存…"
+    },
+    "将当前灯光、震动和屏幕设置交给设备验证；确认后写入，无需先保存本地草稿。": {
+      "source": "将当前灯光、震动和屏幕设置交给设备验证；确认后写入，无需先保存本地草稿。",
+      "zh_CN": "先验证灯光、震动和屏幕设置，确认后写入设备，无需先存草稿。",
+      "en_US": "Validate these settings, then confirm to save to the device. No draft save is needed first.",
+      "locations": [
+        "views/main_window.py:4200"
+      ],
+      "ja_JP": "設定を検証し、確認後に本体へ保存します。先に下書きを保存する必要はありません。"
+    },
+    "点击应用到设备，验证后确认生效": {
+      "source": "点击应用到设备，验证后确认生效",
+      "zh_CN": "点击“应用到设备”，验证后确认。",
+      "en_US": "Select Apply to Device, then confirm after validation.",
+      "locations": [
+        "views/main_window.py:3167"
+      ],
+      "ja_JP": "「本体に適用」を選び、検証後に確認してください。"
+    },
+    "stable 渠道只接受正式发布包；sample 渠道用于工程样品联调。检查只读取版本信息，下载并校验完成后，点击“安装新固件”并确认才会写入设备。": {
+      "source": "stable 渠道只接受正式发布包；sample 渠道用于工程样品联调。检查只读取版本信息，下载并校验完成后，点击“安装新固件”并确认才会写入设备。",
+      "zh_CN": "检查和下载不会改变设备。点击“安装新固件”并确认后才会开始安装。",
+      "en_US": "Checking and downloading do not change the device. Installation starts only after you click “Install new firmware” and confirm.",
+      "locations": [
+        "views/main_window.py:2715"
+      ],
+      "ja_JP": "確認やダウンロードでは本体は変更されません。「新しいファームウェアをインストール」を押し、確認すると開始します。"
+    },
+    "透明键帽\nCodex 模式下承担外部 Agent 状态反馈；这里编辑的是设备协议动作，不定义 Agent 状态语义。": {
+      "source": "透明键帽\nCodex 模式下承担外部 Agent 状态反馈；这里编辑的是设备协议动作，不定义 Agent 状态语义。",
+      "zh_CN": "透明键帽\nCODEX 模式下显示 Agent 状态。此处仅编辑控件动作，不设置 Agent 状态。",
+      "en_US": "Transparent Keycaps\nShow Agent status in CODEX mode. Edit control actions here; Agent status is managed separately.",
+      "locations": [
+        "views/main_window.py:5447"
+      ],
+      "ja_JP": "透明キー\nCODEX モードでエージェントの状態を表示します。ここでは操作を割り当て、エージェントの状態は別途管理します。"
+    },
+    "白色键帽\n用于触发用户动作，可编辑真实按键、组合键或设备功能。": {
+      "source": "白色键帽\n用于触发用户动作，可编辑真实按键、组合键或设备功能。",
+      "zh_CN": "白色键帽\n可设置按键、快捷键或设备功能。",
+      "en_US": "White Keycaps\nAssign a key, shortcut, or device function.",
+      "locations": [
+        "views/main_window.py:5452"
+      ],
+      "ja_JP": "白キー\nキー、ショートカット、本体機能を割り当てます。"
+    },
+    "导入官方固件…": {
+      "source": "导入官方固件…",
+      "locations": [],
+      "zh_CN": "导入官方固件…",
+      "en_US": "Import official firmware…",
+      "ja_JP": "公式ファームウェアを読み込む…"
+    },
+    "导入自定义固件…": {
+      "source": "导入自定义固件…",
+      "locations": [],
+      "zh_CN": "导入自定义固件…",
+      "en_US": "Import custom firmware…",
+      "ja_JP": "カスタムファームウェアを読み込む…"
     },
     "BORING MIST · 控件示意": {
       "source": "BORING MIST · 控件示意",
@@ -20745,14 +21330,14 @@
       "ja_JP": "名前：{v1}"
     },
     "control.white": {
-      "zh_CN": "白色按键 {v1}",
-      "en_US": "White Key {v1}",
-      "ja_JP": "白キー {v1}"
+      "zh_CN": "功能键 {v1}",
+      "en_US": "Function Key {v1}",
+      "ja_JP": "機能キー {v1}"
     },
     "control.transparent": {
-      "zh_CN": "状态键 {v1}",
-      "en_US": "Status Key {v1}",
-      "ja_JP": "状態キー {v1}"
+      "zh_CN": "状态灯键 {v1}",
+      "en_US": "Status Light Key {v1}",
+      "ja_JP": "ステータスライトキー {v1}"
     },
     "joystick.axes": {
       "zh_CN": "X  {v1}    死区 {v2}\nY  {v3}    死区 {v4}",
@@ -22828,20 +23413,20 @@
       "ja_JP": "ジョイスティック：{v1}"
     },
     "views.main_window.line_5423": {
-      "zh_CN": "状态键 {v1}",
-      "en_US": "Status Key {v1}",
+      "zh_CN": "状态灯键 {v1}",
+      "en_US": "Status Light Key {v1}",
       "locations": [
         "views/main_window.py:5423"
       ],
-      "ja_JP": "状態キー {v1}"
+      "ja_JP": "ステータスライトキー {v1}"
     },
     "views.main_window.line_5425": {
-      "zh_CN": "白色按键 {v1}",
-      "en_US": "白色按键 {v1}",
+      "zh_CN": "功能键 {v1}",
+      "en_US": "Function Key {v1}",
       "locations": [
         "views/main_window.py:5425"
       ],
-      "ja_JP": "白キー {v1}"
+      "ja_JP": "機能キー {v1}"
     },
     "views.main_window.line_5532": {
       "zh_CN": "协议 / Schema  {v1} / {v2}",
@@ -22962,14 +23547,6 @@
         "views/main_window.py:3807"
       ],
       "ja_JP": "詳細プロンプト {v1}"
-    },
-    "views.onboarding.line_185": {
-      "zh_CN": "第 {v1} 步，共 {v2} 步",
-      "en_US": "第 {v1} 步，共 {v2} 步",
-      "locations": [
-        "views/onboarding.py:185"
-      ],
-      "ja_JP": "ステップ {v1}/{v2}"
     },
     "views.preferences_editor.line_595": {
       "zh_CN": "状态灯 {v1}",
@@ -23129,6 +23706,14 @@
       "zh_CN": "名称为空或太长，请填写或缩短名称（容量上限 {v1} 字节）。",
       "en_US": "Name is empty or too long. Enter a shorter name (capacity: {v1} bytes).",
       "ja_JP": "名前が空か長すぎます。短い名前を入力してください（上限 {v1} バイト）。"
+    },
+    "views.onboarding.line_185": {
+      "zh_CN": "第 {v1} 步，共 {v2} 步",
+      "en_US": "第 {v1} 步，共 {v2} 步",
+      "locations": [
+        "views/onboarding.py:185"
+      ],
+      "ja_JP": "ステップ {v1}/{v2}"
     }
   }
 }

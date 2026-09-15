@@ -23,6 +23,7 @@ from controller_config.views.preferences_editor import PreferencesEditor
 from controller_config.views.prompt_library_editor import PromptLibraryEditor
 from test_session_recovery import session
 from test_write_transaction import FakeWriteGateway
+from test_firmware_release import trust_test_signing_key
 
 
 class FakeUpdater(QObject):
@@ -47,6 +48,8 @@ class FakeUpdater(QObject):
         self.publish("downloading", version="0.2.0", received=25, total=100)
 
     def cancel(self):
+        if self.status.state not in {'checking', 'downloading'}:
+            return
         self.calls.append("cancel")
         self.publish("available", version="0.2.0")
 
@@ -109,7 +112,8 @@ def test_footer_download_progress_cancel_and_restart(update_session):
     ui.show_status(UpdateStatus(state="current"))
     assert ui.row.isHidden()
     updater.publish("available", version="0.2.0")
-    assert not ui.row.isHidden()
+    assert window._nav_buttons['settings'].text() == '更新'
+    assert ui.row.isHidden()
     assert ui.action.text() == "下载更新"
     ui.action.click()
     assert updater.calls == ["download"]
@@ -124,6 +128,15 @@ def test_footer_download_progress_cancel_and_restart(update_session):
     assert ui.restart_prepared
     assert ui.store.load()["workspace"]["page"] == vm.page
     assert not window.isEnabled()
+
+
+def test_view_model_changes_do_not_queue_recovery_without_pending_workspace(update_session):
+    _window, vm, _gateway, _snapshot, _store, ui, _updater, _shutdown = update_session
+    assert ui._pending is None
+
+    vm.changed.emit(vm.model)
+
+    assert not ui._restore_timer.isActive()
 
 
 @pytest.mark.parametrize("failure_state", ["failed", "ready"])
@@ -156,7 +169,7 @@ def test_about_settings_exposes_explicit_check(update_session):
 def test_pending_editor_survives_fresh_window_without_device_write(update_session, contract, qtbot, monkeypatch, kind):
     window, vm, gateway, _, _, ui, _, _ = update_session
     if kind == "mapping":
-        window._selected_control_id = "key.9"
+        window._selected_control_id = "key.8"
         window.render(vm.model)
         editor = window._content.findChild(ActionEditor)
         editor.set_action({"type": "key", "usage": 17, "modifiers": [227]})
@@ -375,3 +388,211 @@ def test_failed_recovery_export_retains_original_and_pending_state(update_sessio
     assert ui._pending == pending
     assert ui.blocked_reason()
     assert "export disk full" in ui.message.text()
+
+
+def test_manual_async_current_stays_visible_background_current_is_quiet(update_session, monkeypatch):
+    window, _, _, _, _, ui, updater, _ = update_session
+    window.show()
+    updater.publish('current')
+    assert ui.row.isHidden()
+    monkeypatch.setattr(updater, 'check', lambda: updater.publish('checking'))
+    ui.check()
+    updater.publish('current')
+    assert not ui.row.isHidden()
+    assert ui.message.text() == '当前已是最新版本'
+
+
+def test_manual_current_supersedes_successful_workspace_recovery_message(
+        update_session, contract, qtbot, monkeypatch):
+    _, vm, _, snapshot, _, ui, _, _ = update_session
+    vm.rename_profile(snapshot.active_profile_id, "Recovered draft")
+    assert ui.prepare_restart()
+
+    _, _, gateway, restored = _restart_destination(
+        update_session, contract, qtbot, monkeypatch)
+    restored.restore_if_ready()
+    assert gateway.commands == []
+    assert restored._pending is None
+    assert restored.message.text() == '已恢复更新前的本地草稿；尚未写入设备。'
+
+    updater = FakeUpdater(restored.prepare_restart)
+    restored.attach(updater)
+    monkeypatch.setattr(updater, 'check', lambda: updater.publish('checking'))
+    restored.check()
+    assert restored.message.text() == '正在检查应用更新…'
+    updater.publish('current')
+    assert restored.message.text() == '当前已是最新版本'
+
+
+@pytest.mark.parametrize(
+    ('state', 'values', 'expected'),
+    [
+        ('available', {'version': '0.2.0'}, '控制台有更新 0.2.0'),
+        ('failed', {'message': 'network unavailable'}, '更新未完成，可稍后重试'),
+    ],
+)
+def test_manual_terminal_result_is_not_masked_by_successful_recovery_message(
+        update_session, monkeypatch, state, values, expected):
+    _, _, _, _, _, ui, updater, _ = update_session
+    ui._recovery_message = '已恢复更新前的本地草稿；尚未写入设备。'
+    monkeypatch.setattr(updater, 'check', lambda: updater.publish('checking'))
+    ui.check()
+    updater.publish(state, **values)
+    assert ui.message.text() == expected
+
+
+@pytest.mark.parametrize('recovery_state', ['pending', 'failed'])
+def test_manual_current_keeps_unresolved_recovery_visible_and_actionable(
+        update_session, monkeypatch, recovery_state):
+    _, _, _, _, _, ui, updater, _ = update_session
+    message = '更新前的草稿尚未恢复，请连接原设备。'
+    ui._recovery_message = message
+    if recovery_state == 'pending':
+        ui._pending = {'device': {'serial': 'ORIGINAL-DEVICE'}}
+    else:
+        ui._recovery_error = True
+    ui.show_status(ui.status)
+    monkeypatch.setattr(updater, 'check', lambda: updater.publish('checking'))
+    ui.check()
+    updater.publish('current')
+    assert ui.message.text() == message
+    assert not ui.export_recovery.isHidden()
+    assert ui.blocked_reason()
+
+
+def test_snooze_and_manual_check_ready_state(update_session, tmp_path, monkeypatch):
+    from controller_config.update_reminders import UpdateReminders
+    from PySide6.QtCore import QSettings
+    window, _, _, _, _, ui, updater, _ = update_session
+    window.show()
+    now = [1000.]
+    ui.reminders = UpdateReminders(QSettings(str(tmp_path/'pause.ini'), QSettings.IniFormat), clock=lambda: now[0])
+    updater.publish('available', version='0.2.0')
+    ui.snooze.click()
+    assert ui.row.isHidden()
+    updater.publish('available', version='0.2.0')
+    assert ui.row.isHidden()
+    monkeypatch.setattr(updater, 'check', lambda: updater.publish('available', version='0.2.0'))
+    ui.check()
+    assert not ui.row.isHidden()
+    updater.publish('ready', version='0.2.0')
+    assert ui.action.text() == '重启并更新'
+    assert window._nav_buttons['settings'].text() == '更新'
+
+
+def test_update_notifications_never_resize_editor(update_session):
+    window, _, _, _, _, ui, updater, _ = update_session
+    window.resize(1100, 700)
+    window.show()
+    from PySide6.QtWidgets import QApplication
+    QApplication.processEvents()
+    before = window._content.geometry()
+    updater.publish('available', version='0.2.0')
+    QApplication.processEvents()
+    assert window._content.geometry() == before
+    updater.publish('current')
+    QApplication.processEvents()
+    assert window._content.geometry() == before
+
+
+@pytest.mark.parametrize('result', ['current', 'failed'])
+def test_manual_check_joins_inflight_background_request(update_session, result):
+    _, _, _, _, _, ui, updater, _ = update_session
+    updater.publish('checking')
+    ui.check()
+    updater.publish(result, message='network unavailable' if result == 'failed' else '')
+    assert not ui.row.isHidden()
+    assert updater.calls == []
+
+
+def test_cancelled_download_does_not_expose_later_background_error(update_session):
+    _, _, _, _, _, ui, updater, _ = update_session
+    updater.publish('available', version='0.2.0')
+    ui.activate()
+    updater.cancel()
+    updater.publish('checking')
+    updater.publish('failed', message='network unavailable')
+    assert ui.row.isHidden()
+
+
+def test_snooze_releases_native_offer_and_allows_newer_release(update_session, tmp_path):
+    from controller_config.desktop_update_macos import MacDesktopUpdater
+    from controller_config.update_reminders import UpdateReminders
+    from PySide6.QtCore import QSettings
+    _, _, _, _, _, ui, _, _ = update_session
+    ui.reminders = UpdateReminders(QSettings(str(tmp_path/'native-pause.ini'), QSettings.IniFormat))
+    native = MacDesktopUpdater({}, lambda: True)
+    ui.attach(native)
+    choices = []
+    native._version = '0.2.0'
+    native._download_reply = choices.append
+    native._publish('available')
+    ui.snooze_update()
+    assert choices == [2]  # Sparkle DISMISS, never permanent SKIP.
+    assert native._download_reply is None
+    assert ui.row.isHidden()
+    native._download_reply = choices.append
+    native._publish('available')
+    assert choices == [2, 2]
+    native._version = '0.3.0'
+    native._download_reply = choices.append
+    native._publish('available')
+    assert ui.window._nav_buttons['settings'].text() == '更新'
+    assert native._download_reply is not None
+
+
+@pytest.mark.parametrize('language', ['zh_CN', 'en_US', 'ja_JP'])
+def test_both_reminders_fit_small_window_in_all_languages(update_session, qtbot, tmp_path, language):
+    from PySide6.QtWidgets import QApplication
+    from test_firmware_reminder_ui import offer
+    window, vm, gateway, snapshot, store, ui, updater, _ = update_session
+    firmware_ui, _ = offer((window, vm, gateway, snapshot, store))
+    window._language_manager.set_language(language)
+    window.resize(1100, 700)
+    window.show()
+    updater.publish('available', version='0.2.0')
+    QApplication.processEvents()
+    button = window._nav_buttons['settings']
+    assert button.text() == window._language_manager.translate('更新')
+    assert button.property('firmwareUpdateAvailable') is True
+    assert not button.firmware_notice_visible()
+    assert button.fontMetrics().horizontalAdvance(button.text()) < button.width()
+    assert button.parentWidget().rect().contains(button.geometry())
+    assert ui.row.isHidden() and firmware_ui.row.isHidden()
+    assert window.grab().save(str(tmp_path / f'controlled-navigation-{language}.png'))
+
+
+def test_about_button_dispatches_manual_update_request(update_session, qtbot):
+    from PySide6.QtCore import Qt
+    window, vm, _, _, _, ui, updater, _ = update_session
+    window._settings_section = 'about'
+    vm.navigate('settings')
+    window.show()
+    button = window.findChild(QPushButton, 'checkDesktopUpdate')
+    qtbot.mouseClick(button, Qt.LeftButton)
+    assert updater.calls == ['check']
+    assert not ui.row.isHidden()
+
+
+@pytest.mark.parametrize('previous', ['idle', 'current'])
+def test_deferred_native_check_does_not_settle_on_previous_status(update_session, monkeypatch, previous):
+    _, _, _, _, _, ui, updater, _ = update_session
+    updater.publish(previous)
+    # Sparkle checkForUpdates returns before its checking callback is delivered.
+    monkeypatch.setattr(updater, 'check', lambda: None)
+    ui.check()
+    updater.publish('checking')
+    updater.publish('current')
+    assert not ui.row.isHidden()
+    assert ui.message.text() == '当前已是最新版本'
+
+
+@pytest.mark.parametrize('cancelled_state', ['idle', 'available'])
+def test_transfer_cancel_clears_user_error_marker_without_check_callback(update_session, cancelled_state):
+    _, _, _, _, _, ui, updater, _ = update_session
+    updater.publish('available', version='0.2.0')
+    ui.activate()
+    updater.publish(cancelled_state)
+    # Sparkle's scheduled checks need not call its user-initiated checking delegate.
+    updater.publish('failed', message='background unavailable')
+    assert ui.row.isHidden()

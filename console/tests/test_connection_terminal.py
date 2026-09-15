@@ -118,7 +118,11 @@ def test_success_animation_does_not_push_device_controls_out_of_view(qtbot, cont
         qtbot.wait(150)
         assert window._connection_terminal.present
         key = window.findChild(QPushButton, 'controlKey')
-        qtbot.waitUntil(lambda: window.rect().contains(key.mapTo(window, key.rect().center())), timeout=500)
+        qtbot.waitUntil(
+            lambda: key.isVisible()
+            and window.rect().contains(key.mapTo(window, key.rect().center())),
+            timeout=500,
+        )
         assert window._connection_terminal.present
         position = key.mapTo(window, QPoint(0, 0))
         qtbot.waitUntil(lambda: not window._connection_terminal.present, timeout=2000)

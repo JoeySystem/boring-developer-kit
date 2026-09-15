@@ -25,7 +25,7 @@ def test_recorded_modifiers_survive_edit_validate_write_and_readback(session, qt
     monkeypatch.setattr('controller_config.views.main_window.sys.platform', host)
     snapshot = replace(snapshot, status={**snapshot.status, 'platform': device, 'operating_mode': 'normal'})
     gateway.snapshot_ready.emit(snapshot)
-    window._select_physical_control('key.1')
+    window._select_physical_control('key.8')
     recorder = window.findChild(ShortcutRecorder)
     recorder.start_recording()
     qtbot.keyClick(recorder._capture, Qt.Key_N, qt_modifier)
@@ -37,11 +37,11 @@ def test_recorded_modifiers_survive_edit_validate_write_and_readback(session, qt
     assert validate.name == 'VALIDATE_CONFIG'
     config = validate.payload['config']
     profile = next(p for p in config['profiles'] if p['id'] == config['active_profile'])
-    assert next(m for m in profile['mappings'] if m['control_id'] == 'key.1')['action'] == expected
+    assert next(m for m in profile['mappings'] if m['control_id'] == 'key.8')['action'] == expected
     complete_write(vm, gateway, snapshot)
     written = next(c for c in gateway.commands if c.name == 'SET_CONFIG')
     assert written.payload['config'] == config
-    assert vm.model.snapshot.mappings['key.1']['action'] == expected
+    assert vm.model.snapshot.mappings['key.8']['action'] == expected
     assert not window.findChild(QPushButton, 'applyMappingToDevice').isEnabled()
     # Host naming must remain consistent after readback without rewriting device preferences.
     assert vm.model.snapshot.status['platform'] == device
@@ -53,7 +53,7 @@ def test_codex_editor_does_not_claim_normal_mapping_executes_in_current_mode(ses
     window, vm, gateway, snapshot, _ = session
     window._language_manager.set_language(language)
     gateway.snapshot_ready.emit(replace(snapshot, status={**snapshot.status, 'operating_mode': 'codex'}))
-    window._select_physical_control('key.1')
+    window._select_physical_control('key.8')
     notice = window.findChild(QLabel, 'mappingExecutionNotice')
     assert notice is not None and ('普通模式' if language == 'zh_CN' else 'Normal') in notice.text() and 'CODEX' in notice.text()
     if language == 'en_US':

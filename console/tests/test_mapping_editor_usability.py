@@ -3,7 +3,7 @@ from dataclasses import replace
 from copy import deepcopy
 
 import pytest
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QRect, Qt
 from PySide6.QtWidgets import QLabel, QLineEdit, QPushButton, QScrollArea, QWidget
 
 from test_session_recovery import session
@@ -19,13 +19,20 @@ def test_key_recording_visible_on_open_and_after_resize(session, qtbot, monkeypa
     window._language_manager.set_language(language)
     config_result = deepcopy(snapshot.config_result)
     profile = next(p for p in config_result['config']['profiles'] if p['id'] == config_result['config']['active_profile'])
-    next(m for m in profile['mappings'] if m['control_id'] == 'key.1')['action'] = {'type': 'key', 'usage': 17, 'modifiers': [224]}
+    profile['mappings'].append({
+        'control_id': 'key.8',
+        'short_name': 'Shortcut',
+        'action': {'type': 'key', 'usage': 17, 'modifiers': [224]},
+    })
     snapshot = replace(snapshot, config_result=config_result)
     gateway.snapshot_ready.emit(replace(snapshot, status={**snapshot.status, 'platform': 'windows_linux', 'operating_mode': mode}))
     window.resize(1100, 700)
     window.show()
-    window._select_physical_control('key.1')
+    window._fit_window_to_available_area(QRect(0, 0, 1100, 700))
+    window.resize(1100, 700)
+    window._select_physical_control('key.8')
     for width, height in ((1100, 700), (1920, 1050), (1280, 800), (1100, 700)):
+        window._fit_window_to_available_area(QRect(0, 0, width, height))
         window.resize(width, height)
         qtbot.wait(150)
         body = window.findChild(QScrollArea, 'mappingEditorBody')
@@ -50,9 +57,8 @@ def test_key_recording_visible_on_open_and_after_resize(session, qtbot, monkeypa
     assert _visible_inside(window.findChild(QPushButton, 'applyMappingToDevice'), outer.viewport())
     sync = window.findChild(QWidget, 'syncSummaryCard')
     pending = sync.findChild(QLabel, 'syncDraftState')
-    technical = sync.findChild(QPushButton, 'ghostOnDark')
     assert _visible_inside(pending, sync)
-    assert _visible_inside(technical, sync)
+    assert sync.findChild(QPushButton, 'ghostOnDark') is None
     window.findChild(QPushButton, 'saveMappingDraft').click()
     window._language_manager.set_language('zh_CN')
 
@@ -60,7 +66,7 @@ def test_key_recording_visible_on_open_and_after_resize(session, qtbot, monkeypa
 def test_more_settings_remain_available_and_survive_same_device_refresh(session, qtbot):
     window, vm, gateway, snapshot, _ = session
     window.show()
-    window._select_physical_control('key.1')
+    window._select_physical_control('key.8')
     qtbot.wait(150)
     extra = window.findChild(QWidget, 'mappingMoreSettings')
     assert not extra.isVisible()
@@ -73,4 +79,4 @@ def test_more_settings_remain_available_and_survive_same_device_refresh(session,
     assert window.findChild(QWidget, 'mappingMoreSettings').isVisible()
     assert window.findChild(QLineEdit, 'mappingShortNameEditor').text() == '保留名称'
     window.findChild(QPushButton, 'saveMappingDraft').click()
-    assert vm.draft.mapping(vm.draft.config['active_profile'], 'key.1')['short_name'] == '保留名称'
+    assert vm.draft.mapping(vm.draft.config['active_profile'], 'key.8')['short_name'] == '保留名称'

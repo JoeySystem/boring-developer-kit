@@ -15,6 +15,7 @@ from controller_config.extensions.contracts import (
     SetMappingProposalResult,
 )
 from controller_config.models import AppState, ScreenModel
+from controller_config.official_controls import is_matrix12_official_status_key
 from controller_config.protocol.contract import Contract
 from controller_config.transactions import ConfigTransaction, ConfigTransactionState
 
@@ -334,6 +335,16 @@ class ExtensionProposalCoordinator(QObject):
             or draft.base_digest != proposal.base_digest
         ):
             return ProposalState.STALE, "设备配置代际或摘要已变化", None, after_mapping, ()
+        if is_matrix12_official_status_key(
+            draft.hardware_id, proposal.control_id
+        ):
+            return (
+                ProposalState.STALE,
+                "状态灯键使用 Codex 官方功能，不支持自定义",
+                None,
+                after_mapping,
+                (),
+            )
         if self._host.write_transaction.state is not ConfigTransactionState.IDLE:
             return ProposalState.BLOCKED, "配置事务尚未回到空闲状态", None, after_mapping, ()
         if draft.is_dirty:

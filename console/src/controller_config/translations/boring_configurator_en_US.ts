@@ -138,10 +138,10 @@ Firmware maintenance requires explicit confirmation</translation></message>
     <message><source>实体动作工作台</source><translation>Physical Action Workspace</translation></message>
     <message><source>外部 Agent 工作台</source><translation>External Agent Workspace</translation></message>
     <message><source>实体控件工作台</source><translation>Physical Control Workspace</translation></message>
-    <message><source>白色键帽是主要动作入口；透明键仍保留其状态键帽身份。</source><translation>White keycaps are the primary action inputs; transparent keys retain their status-key identity.</translation></message>
-    <message><source>透明键阵列显示 Agent 状态；白键与金属控制件保留用户决策入口。</source><translation>The transparent key array displays Agent state; white keys and metal controls remain user decision inputs.</translation></message>
+    <message><source>功能键用于触发动作；状态灯键用于显示状态。</source><translation>Function keys trigger actions; status light keys show status.</translation></message>
+    <message><source>状态灯键显示 Agent 状态；功能键与金属控制件用于操作。</source><translation>Status light keys show Agent status; function keys and metal controls trigger actions.</translation></message>
     <message><source>界面只呈现设备已经报告的模式与控件能力。</source><translation>The interface only presents modes and control capabilities reported by the device.</translation></message>
-    <message><source>当前为 Normal 模式。白色键帽用于普通按键和组合动作；透明键不会被解释成普通 RGB 灯位。</source><translation>Normal mode uses white keycaps for regular keys and shortcuts. Transparent keys are not treated as ordinary RGB positions.</translation></message>
+    <message><source>当前为 Normal 模式。功能键用于普通按键和组合动作；状态灯键不作为普通 RGB 灯位。</source><translation>In Normal mode, function keys handle regular keys and shortcuts; status light keys show status.</translation></message>
     <message><source>当前为 Codex 模式。设备负责转发外部 Agent 状态，不表示设备内部运行 AI；当前协议尚未报告 Agent 来源与实时状态，因此界面不虚构这些内容。</source><translation>In Codex mode, the device relays external Agent state; it does not run AI internally. The current protocol does not report Agent source or live state, so the interface does not invent them.</translation></message>
     <message><source>当前模式没有对应的专用语义说明，控制台保留设备报告的原始模式。</source><translation>No dedicated semantics are defined for this mode. The console preserves the mode reported by the device.</translation></message>
     <message><source>这台设备与当前 BORING 控制台不兼容</source><translation>This device is incompatible with the current BORING Console.</translation></message>
@@ -150,12 +150,12 @@ Firmware maintenance requires explicit confirmation</translation></message>
     <message><source>点击实体控件进行编辑</source><translation>Select a physical control to edit it</translation></message>
     <message><source>BORING 桌面控制台 · 已连接</source><translation>BORING Desktop Console · Connected</translation></message>
     <message><source>BORING 桌面控制台 · 连接已断开</source><translation>BORING Desktop Console · Disconnected</translation></message>
-    <message><source>白色键帽与金属控制件 · 发出动作</source><translation>White keycaps and metal controls · Send actions</translation></message>
-    <message><source>白色键帽</source><translation>White Keycap</translation></message>
+    <message><source>功能键与金属控制件 · 发出动作</source><translation>Function keys and metal controls · Send actions</translation></message>
+    <message><source>功能键</source><translation>Function Key</translation></message>
     <message><source>用于触发用户动作，可编辑真实按键、组合键或设备功能。</source><translation>Triggers user actions and supports real keys, shortcuts, and device functions.</translation></message>
-    <message><source>透明键帽</source><translation>Transparent Keycap</translation></message>
+    <message><source>状态灯键</source><translation>Status Light Key</translation></message>
     <message><source>Codex 模式下承担外部 Agent 状态反馈；这里编辑的是设备协议动作，不定义 Agent 状态语义。</source><translation>Relays external Agent status in Codex mode. This editor changes device-protocol actions, not Agent-state semantics.</translation></message>
-    <message><source>六枚透明键帽 · 显示外部 Agent 状态</source><translation>Six transparent keycaps · Show external Agent state</translation></message>
+    <message><source>六个状态灯键 · 显示外部 Agent 状态</source><translation>Six status light keys · Show external Agent status</translation></message>
     <message><source>圆屏 · 模式、任务与下一步</source><translation>Round display · Mode, task, and next step</translation></message>
     <message><source>圆屏</source><translation>Round Display</translation></message>
     <message><source>设备状态</source><translation>Device Status</translation></message>
@@ -191,9 +191,9 @@ Firmware maintenance requires explicit confirmation</translation></message>
     <message><source>尚未录制键盘快捷键</source><translation>No Keyboard Shortcut Recorded</translation></message>
     <message><source>已识别，可继续修改或应用到设备。</source><translation>Recognized. You can adjust it or apply it to the device.</translation></message>
     <message><source>手动设置或选择其他动作</source><translation>Manual Settings or Other Actions</translation></message>
-    <message><source>应用到设备…</source><translation>Apply to Device…</translation></message>
+    <message><source>应用到设备</source><translation>Apply to Device</translation></message>
     <message><source>仅保存草稿</source><translation>Save Draft Only</translation></message>
-    <message><source>保存当前修改并交给设备验证；验证通过后仍需由你最终确认。</source><translation>Save and validate this change on the device. You will still confirm before writing.</translation></message>
+    <message><source>保存当前修改，完成设备验证、写入和读回确认。</source><translation>Save this change, validate and write it to the device, then verify it by reading it back.</translation></message>
     <message><source>保存到本地草稿</source><translation>Save to Local Draft</translation></message>
     <message><source>丢弃本地修改</source><translation>Discard Local Changes</translation></message>
     <message><source>下一步：点击下方任一按键、旋钮或摇杆，直接调整动作。</source><translation>Next: click any key, knob, or joystick control below to adjust its action.</translation></message>
@@ -310,8 +310,8 @@ Firmware maintenance requires explicit confirmation</translation></message>
     <message><source>亮度档位</source><translation>Brightness Level</translation></message>
     <message><source>关闭灯光</source><translation>Off</translation></message>
     <message><source>关</source><translation>Off</translation></message>
-    <message><source>WHITE KEYS · 白色动作键灯</source><translation>WHITE KEYS · ACTION LIGHTS</translation></message>
-    <message><source>AGENT KEYS · 透明状态键灯</source><translation>AGENT KEYS · STATUS LIGHTS</translation></message>
+    <message><source>FUNCTION KEYS · 功能键灯光</source><translation>FUNCTION KEYS · ACTION LIGHTS</translation></message>
+    <message><source>STATUS KEYS · 状态灯键</source><translation>STATUS KEYS · STATUS LIGHTS</translation></message>
     <message><source>低</source><translation>Low</translation></message>
     <message><source>中</source><translation>Medium</translation></message>
     <message><source>高</source><translation>High</translation></message>
@@ -332,12 +332,12 @@ Firmware maintenance requires explicit confirmation</translation></message>
     <message><source>状态 RGB</source><translation>Status RGB</translation></message>
     <message><source>当前设备没有独立状态 RGB；Schema 中的八个占位值保持原样。</source><translation>This device has no independent status RGB. The eight Schema placeholder values are preserved.</translation></message>
     <message><source>按键下方 RGB（只保存配置，不发送临时预览）</source><translation>Under-key RGB (saved to configuration; no temporary preview)</translation></message>
-    <message><source>Agent 状态键</source><translation>Agent Status Key</translation></message>
-    <message><source>白色动作键</source><translation>White Action Key</translation></message>
-    <message><source>白色动作键灯</source><translation>White Action Key Lights</translation></message>
-    <message><source>每颗白色按键灯可以单独设置 RGB；设为 0, 0, 0 可关闭该键灯。</source><translation>Set each white action key light independently. Use 0, 0, 0 to turn a key light off.</translation></message>
-    <message><source>透明 Agent 状态键灯</source><translation>Transparent Agent Status Key Lights</translation></message>
-    <message><source>透明键灯由 Agent 状态语义接管，不在这里作为普通 RGB 灯编辑；现有配置值保持不变。</source><translation>Transparent key lights are reserved for Agent status semantics and are not edited here as ordinary RGB lights. Their existing configuration values are preserved.</translation></message>
+    <message><source>状态灯键</source><translation>Status Light Key</translation></message>
+    <message><source>功能键</source><translation>Function Key</translation></message>
+    <message><source>功能键灯光</source><translation>Function Key Lights</translation></message>
+    <message><source>每颗功能键灯可以单独设置 RGB；设为 0, 0, 0 可关闭该键灯。</source><translation>Set each function key light independently. Use 0, 0, 0 to turn a key light off.</translation></message>
+    <message><source>STATUS KEYS · 状态灯键</source><translation>STATUS KEYS · STATUS LIGHTS</translation></message>
+    <message><source>状态灯键由 Agent 状态语义接管，不在这里作为普通 RGB 灯编辑；现有配置值保持不变。</source><translation>Status light keys follow Agent status and cannot be recolored here. Existing settings are preserved.</translation></message>
     <message><source>灯光可以临时发送到实体设备预览；预览不等于保存，仍需先保存到本地草稿，再完成确认式写入。</source><translation>Lighting changes can be previewed temporarily on the physical device. Previewing does not save them; save the local draft and complete the confirmed write to make them persistent.</translation></message>
     <message><source>这些修改先保存到本地草稿；当前固件没有声明临时灯光预览能力，只有完成确认式写入后才会改变实体设备。</source><translation>These changes are saved to the local draft first. The current firmware does not declare temporary lighting preview support; the physical device changes only after a confirmed write.</translation></message>
     <message><source>在设备上实时预览</source><translation>Preview Live on Device</translation></message>
@@ -871,7 +871,7 @@ Knob: confirm</translation></message>
     <message><source>请先在快捷提示词页读取设备提示词，完成后再启用。</source><translation>Read the device prompts on the Quick Prompts page before enabling this trigger.</translation></message>
     <message><source>手动步骤测试通过；实体触发仍需配置设备提示词槽位</source><translation>Steps passed the manual test. Physical triggering still requires a configured device prompt slot.</translation></message>
     <message><source>Claude Code 状态联动</source><translation>Claude Code Status</translation></message>
-    <message><source>开发中 / 待实机联调。通过当前已认证连接将 Claude Code 的执行、审批、待回答与本轮结束状态显示在六颗状态键上。启用后请重新打开 Claude Code 会话；关闭控制台窗口可继续后台运行，退出后台则停止联动。</source><translation>In development / hardware validation pending. Show Claude Code activity, approvals, questions and response completion on six status keys over the currently authenticated connection. Reopen Claude Code sessions after enabling. Closing the window can keep the helper running; quitting it stops forwarding.</translation></message>
+    <message><source>开发中 / 待实机联调。通过当前已认证连接将 Claude Code 的执行、审批、待回答与本轮结束状态显示在六个状态灯键上。启用后请重新打开 Claude Code 会话；关闭控制台窗口可继续后台运行，退出后台则停止联动。</source><translation>In development / hardware validation pending. Show Claude Code activity, approvals, questions and response completion on six status keys over the currently authenticated connection. Reopen Claude Code sessions after enabling. Closing the window can keep the helper running; quitting it stops forwarding.</translation></message>
     <message><source>只传事件与进程身份，不传提示词、回复正文或工具参数。USB 与蓝牙共用当前已认证的设备连接；蓝牙链路待实机验收，Windows 原生和 WSL 待独立验证。120 秒无新事件会清除陈旧状态，长时间静默任务可能提前熄灯；缺少可靠结束信号时不会显示完成。</source><translation>Only lifecycle events and process identity are forwarded, never prompts, replies or tool inputs. USB and Bluetooth use the currently authenticated device connection; Bluetooth still needs hardware acceptance, while native Windows and WSL need separate validation. Stale states clear after 120 seconds without events; quiet long-running tasks may go dark early. Completion requires a reliable end event.</translation></message>
     <message><source>检测 Claude Code</source><translation>Detect Claude Code</translation></message>
     <message><source>启用状态联动…</source><translation>Enable Status…</translation></message>
@@ -959,8 +959,8 @@ Knob: confirm</translation></message>
     <message><source>当前设置尚未保存</source><translation>Current settings are not saved</translation></message>
     <message><source>本地草稿尚未写入设备</source><translation>Local draft has not been written to the device</translation></message>
     <message><source>已同步 · 没有本地变更</source><translation>Synced · No local changes</translation></message>
-    <message><source>本地效果示意 · 点击白色按键调整灯色</source><translation>Local visual preview · Click a white key to adjust its light</translation></message>
-    <message><source>Agent 灯光由任务状态控制，此处不模拟状态颜色。</source><translation>Agent lighting follows task status; status colors are not simulated here.</translation></message>
+    <message><source>本地效果示意 · 点击功能键调整灯色</source><translation>Local visual preview · Click a function key to adjust its light</translation></message>
+    <message><source>状态灯键的灯光由任务状态控制，此处不模拟状态颜色。</source><translation>Agent lighting follows task status; status colors are not simulated here.</translation></message>
     <message><source>点击调整该按键灯颜色</source><translation>Click to adjust this key's light color</translation></message>
     <message><source>旋钮不带可配置灯光</source><translation>The knob has no configurable lighting</translation></message>
     <message><source>震动说明</source><translation>Haptic Details</translation></message>
@@ -970,11 +970,11 @@ Knob: confirm</translation></message>
     <message><source>当前模式的专用按键由固件处理；未被专用功能占用的控件仍使用这套映射。切换模式不会切换正在编辑的方案。</source><translation>Firmware handles dedicated controls in the current mode; other controls still use these mappings. Changing mode does not select a different profile for editing.</translation></message>
     <message><source>录制与编辑使用 {host} 按键名称。设备系统设置为 {device}；已有动作不自动转换。</source><translation>Recording and editing use {host} key names. The device system is set to {device}; existing actions are not converted.</translation></message>
     <message><source>此处编辑 NORMAL 映射；{mode} 模式使用专用动作。切回 NORMAL 后才会执行此映射。</source><translation>This edits the NORMAL mapping. {mode} mode uses dedicated actions. Switch to NORMAL to execute this mapping.</translation></message>
-    <message><source>保存 NORMAL 映射…</source><translation>Save NORMAL mapping…</translation></message>
-    <message><source>将当前灯光、震动和屏幕设置交给设备验证；确认后写入，无需先保存本地草稿。</source><translation>Validate the current lighting, haptics and display settings, then confirm to apply. Saving a local draft first is not required.</translation></message>
+    <message><source>应用 NORMAL 映射</source><translation>Apply Normal Mode Keys</translation></message>
+    <message><source>保存当前灯光、震动和屏幕设置，完成设备验证、写入和读回确认。</source><translation>Save the current lighting, haptics and display settings, then validate, write and verify them by reading them back.</translation></message>
     <message><source>当前设置尚未应用到设备</source><translation>Current settings have not been applied to the device</translation></message>
     <message><source>当前控件有未应用的修改</source><translation>This control has unapplied changes</translation></message>
-    <message><source>点击应用到设备，验证后确认生效</source><translation>Click Apply to Device, then confirm after validation</translation></message>
+    <message><source>点击应用到设备，完成验证、写入与读回</source><translation>Select Apply to Device to validate, write and verify the change.</translation></message>
     <message><source>配置修订：{generation}（成功写入后递增）</source><translation>Configuration revision: {generation} (increments after a successful write)</translation></message>
     <message><source>菜单栏显示</source><translation>Menu Bar Display</translation></message>
     <message><source>紧凑 · 仅 BORING</source><translation>Compact · BORING only</translation></message>

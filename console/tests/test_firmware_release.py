@@ -49,6 +49,37 @@ _TEST_SIGNING_KEY = Ed25519PrivateKey.generate()
 
 
 @pytest.fixture(autouse=True)
+def official_demo_release(
+    monkeypatch, contract, trust_test_signing_key, isolated_firmware_release_history
+):
+    from controller_config.firmware_origin import FirmwareReleaseHistory
+    import controller_config.transport.demo as demo
+
+    original = demo._power_v2_snapshot
+
+    def official_snapshot(contract, *, read_only):
+        snapshot = original(contract, read_only=read_only)
+        return replace(
+            snapshot,
+            versions={**snapshot.versions, "build_id": "20260901.01-g12345678"},
+        )
+
+    snapshot = official_snapshot(contract, read_only=False)
+    FirmwareReleaseHistory().remember(
+        sign_manifest(
+            {
+                "product_id": snapshot.identity["product_id"],
+                "hardware_id": snapshot.identity["hardware_id"],
+                "version": snapshot.versions["firmware"],
+                "build_id": snapshot.versions["build_id"],
+            },
+            _TEST_SIGNING_KEY,
+        )
+    )
+    monkeypatch.setattr(demo, "_power_v2_snapshot", official_snapshot)
+
+
+@pytest.fixture(autouse=True)
 def trust_test_signing_key(monkeypatch):
     monkeypatch.setattr(
         firmware_signature, "default_firmware_public_key",
@@ -346,7 +377,7 @@ def test_firmware_page_exposes_check_download_and_install_as_separate_actions(
     check = window.findChild(QPushButton, "checkRemoteFirmware")
     assert check is not None and check.isEnabled()
     download = window.findChild(QPushButton, "downloadRemoteFirmware")
-    assert download is not None and download.text() == "下载新固件"
+    assert download is not None and download.text() == "下载固件更新"
     download.click()
     source.download_progress.emit(512, 1024)
     progress = window.findChild(QProgressBar, "remoteFirmwareProgress")
@@ -354,7 +385,7 @@ def test_firmware_page_exposes_check_download_and_install_as_separate_actions(
 
     source.download_completed.emit(bundle)
     install = window.findChild(QPushButton, "startFirmwareUpdate")
-    assert install is not None and install.text() == "安装新固件"
+    assert install is not None and install.text() == "安装下载的固件更新"
     assert not any(command.name.startswith("FW_") for command in gateway.commands)
 
 
@@ -590,3 +621,27 @@ def test_signed_sample_passes_online_validation_and_package_loader(contract):
     ), contract)
     assert package.build_id == bundle.manifest["build_id"]
     assert package.validation_state == "built"
+
+
+def remember_test_snapshot(vm, snapshot):
+    snapshot = replace(
+        snapshot,
+        versions={
+            **snapshot.versions,
+            "build_id": snapshot.versions.get(
+                "build_id", "20260901.01-g12345678"
+            ),
+        },
+    )
+    vm._firmware_release_history.remember(
+        sign_manifest(
+            {
+                "product_id": snapshot.identity["product_id"],
+                "hardware_id": snapshot.identity["hardware_id"],
+                "version": snapshot.versions["firmware"],
+                "build_id": snapshot.versions["build_id"],
+            },
+            _TEST_SIGNING_KEY,
+        )
+    )
+    return snapshot

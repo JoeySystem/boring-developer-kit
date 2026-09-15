@@ -4,6 +4,7 @@ import copy
 import hashlib
 from dataclasses import replace
 from pathlib import Path
+from time import monotonic
 from typing import Protocol
 
 from PySide6.QtCore import QObject, QTimer, Signal
@@ -42,10 +43,11 @@ from controller_config.firmware_update import (
     firmware_end_command,
     firmware_status_command,
 )
+from controller_config.firmware_origin import FirmwareReleaseHistory
+from controller_config.firmware_signature import FirmwareSignatureError
 from controller_config.firmware_release import (
     release_is_newer,
     load_local_firmware_package,
-    is_custom_firmware,
     validate_minimum_app_version,
     FirmwareReleaseError,
     FirmwareReleaseSource,
@@ -111,7 +113,7 @@ class DeviceGateway(Protocol):
     failure: Signal
     disconnected: Signal
 
-    def scan(self) -> None: ...
+    def scan(self, *, usb_only: bool = False) -> None: ...
 
     def connect_port(self, port_name: str) -> None: ...
 
@@ -140,6 +142,7 @@ class MainViewModel(QObject):
         workflow_store: WorkflowStore | None = None,
         host_action_registry: HostActionRegistry | None = None,
         parent: QObject | None = None,
+        firmware_release_history: FirmwareReleaseHistory | None = None,
     ) -> None:
         super().__init__(parent)
         self._gateway = gateway
@@ -151,6 +154,7 @@ class MainViewModel(QObject):
         self.claude_status = ClaudeStatusBridge(gateway, parent=self)
         self._contract = contract
         self._firmware_release_source = firmware_release_source
+        self._firmware_release_history = firmware_release_history or FirmwareReleaseHistory()
         self._prompt_library_store = prompt_library_store or PromptLibraryStore()
         self._prompt_library: PromptLibrary | None = None
         self._prompt_library_error = ""
@@ -160,6 +164,7 @@ class MainViewModel(QObject):
         self._draft: LocalDraft | None = None
         self._config_refresh: tuple[str, str] | None = None
         self._write_transaction = ConfigTransaction()
+        self._confirm_write_after_validation = False
         self._firmware_update = FirmwareUpdateTransaction()
         self._remote_firmware = RemoteFirmwareCheck(
             state=(
@@ -174,6 +179,7 @@ class MainViewModel(QObject):
             ),
         )
         self._remote_firmware_device: tuple[str, str, str] | None = None
+        self._remote_firmware_last_check: dict[tuple[str, str, str], float] = {}
         self._calibration = CalibrationTransaction()
         self.screen_icon = ScreenIconTransfer(contract, gateway.execute_command, self)
         self.screen_glyphs = ScreenGlyphTransfer(gateway.execute_command, self)
@@ -216,8 +222,14 @@ class MainViewModel(QObject):
         self._write_deadline.setInterval(10_000)
         self._write_deadline.timeout.connect(self._on_write_deadline)
         self._reconnect_timer = QTimer(self)
-        self._reconnect_timer.setInterval(1000)
+        self._reconnect_timer.setInterval(500)
         self._reconnect_timer.timeout.connect(self._scan_for_reconnect)
+        # A lightweight tick retries deferred checks; network attempts remain six hours apart.
+        self._remote_firmware_check_timer = QTimer(self)
+        self._remote_firmware_check_timer.setInterval(60_000)
+        self._remote_firmware_check_timer.timeout.connect(self.auto_check_remote_firmware)
+        if firmware_release_source is not None:
+            self._remote_firmware_check_timer.start()
         self._firmware_status_timer = QTimer(self)
         self._firmware_status_timer.setSingleShot(True)
         self._firmware_status_timer.setInterval(200)
@@ -842,6 +854,7 @@ class MainViewModel(QObject):
             raise ValueError("请先连接可配置的 BORING 设备")
         if (self._firmware_update.blocks_editing or self._calibration.blocks_editing
                 or self._write_transaction.blocks_editing
+                or self._write_transaction.state is ConfigTransactionState.AWAITING_CONFIRMATION
                 or self._write_transaction.state is ConfigTransactionState.UNKNOWN
                 or self._prompt_device.status.is_busy):
             raise ValueError("设备维护或写入尚未结束，请稍后操作圆屏图标")
@@ -865,14 +878,18 @@ class MainViewModel(QObject):
             return
         if self._model.state not in {AppState.READY, AppState.READ_ONLY}:
             return
-        if self._firmware_update.blocks_editing or self._calibration.blocks_editing or self._write_transaction.blocks_editing:
+        if (self._firmware_update.blocks_editing or self._calibration.blocks_editing
+                or self._write_transaction.blocks_editing
+                or self._write_transaction.state is ConfigTransactionState.AWAITING_CONFIRMATION):
             return
         self.screen_icon.refresh()
 
     def refresh_screen_glyphs(self, icon_id: str | None = None) -> None:
         if self._model.state is not AppState.READY or self.screen_icon.busy:
             return
-        if self._firmware_update.blocks_editing or self._calibration.blocks_editing or self._write_transaction.blocks_editing:
+        if (self._firmware_update.blocks_editing or self._calibration.blocks_editing
+                or self._write_transaction.blocks_editing
+                or self._write_transaction.state is ConfigTransactionState.AWAITING_CONFIRMATION):
             return
         if not self.screen_glyphs.catalog:
             self.screen_glyphs.load_catalog()
@@ -1110,7 +1127,8 @@ class MainViewModel(QObject):
             return ("共享配置 Schema 不可用",)
         return self._draft.validate(self._contract)
 
-    def prepare_device_write(self) -> None:
+    def prepare_device_write(self, *, confirm_after_validation: bool = False) -> None:
+        self._confirm_write_after_validation = False
         self._ensure_ble_name_idle()
         if self._config_refresh is not None:
             raise ValueError("正在读取设备最新配置，请稍后再操作")
@@ -1136,6 +1154,7 @@ class MainViewModel(QObject):
             raise ValueError("设备当前不可写入")
         if snapshot.compatibility.get("write") is not True:
             raise ValueError("设备当前只读，不允许写入配置")
+        draft.platform = str(snapshot.status.get("platform", ""))
         if not draft.is_dirty:
             raise ValueError("本地草稿没有需要写入的修改")
         errors = self.validate_draft()
@@ -1170,6 +1189,7 @@ class MainViewModel(QObject):
                 device_serial=draft.serial,
             )
         )
+        self._confirm_write_after_validation = confirm_after_validation
         self._gateway.execute_command(
             Command("VALIDATE_CONFIG", 0x11, {"config": candidate, "digest": digest})
         )
@@ -1269,6 +1289,16 @@ class MainViewModel(QObject):
             raise ValueError("当前没有可编辑草稿")
         return self._draft
 
+    def _sync_draft_platform(self, snapshot: DeviceSnapshot) -> None:
+        draft = self._draft
+        if (
+            draft is None
+            or draft.serial != str(snapshot.identity.get("serial", ""))
+            or draft.hardware_id != str(snapshot.identity.get("hardware_id", ""))
+        ):
+            return
+        draft.platform = str(snapshot.status.get("platform", ""))
+
     def start_joystick_calibration(self) -> None:
         self._ensure_ble_name_idle()
         if self._config_refresh is not None:
@@ -1356,6 +1386,73 @@ class MainViewModel(QObject):
                 calibration_cancel_command(transaction.session_id)
             )
 
+    @property
+    def remote_firmware_device(self) -> tuple[str, str, str] | None:
+        """The connected device owning this result; offline results are not actionable."""
+        snapshot = self._model.snapshot
+        if snapshot is None or self._model.state is not AppState.READY:
+            return None
+        identity = tuple(str(snapshot.identity.get(field, ""))
+                         for field in ("serial", "product_id", "hardware_id"))
+        return identity if identity == self._remote_firmware_device else None
+
+    @property
+    def firmware_origin(self) -> str:
+        return self._firmware_release_history.classify(self._model.snapshot)
+
+    @property
+    def firmware_origin_notice(self) -> str:
+        if self.firmware_origin == "custom":
+            return "当前为自定义固件，不主动提醒官方更新。可查看官方版本，确认后替换自定义功能。"
+        if self.firmware_origin == "unknown":
+            return "固件来源未确认，不主动提醒官方更新。可查看官方版本，确认后替换当前固件。"
+        return "设备报告的版本与构建编号匹配官方签名发布记录；不代表对运行代码进行了验真。"
+
+    @property
+    def firmware_online_message(self) -> str:
+        if (self._model.snapshot is not None and self.firmware_origin != "official"
+                and self._remote_firmware.state in {RemoteFirmwareState.IDLE, RemoteFirmwareState.CURRENT}):
+            return self.firmware_origin_notice
+        return self._remote_firmware.message
+
+    @property
+    def can_auto_check_remote_firmware(self) -> bool:
+        snapshot = self._model.snapshot
+        if (self._firmware_release_source is None or snapshot is None
+                or self._model.state is not AppState.READY
+                or self.firmware_origin != "official"):
+            return False
+        features = snapshot.capabilities.get("features")
+        if not isinstance(features, dict) or features.get("firmware_update") is not True:
+            return False
+        return not (
+            self._remote_firmware.state in {
+                RemoteFirmwareState.CHECKING, RemoteFirmwareState.DOWNLOADING,
+                RemoteFirmwareState.DOWNLOADED,
+            }
+            or self._firmware_update.blocks_editing
+            or (self._firmware_update.package is not None
+                and self._firmware_update.state is not FirmwareUpdateState.COMPLETED)
+            or self._calibration.blocks_editing or self._write_transaction.blocks_editing
+            or self._write_transaction.state is ConfigTransactionState.UNKNOWN
+            or self._config_refresh is not None or self.screen_icon.busy or self.screen_glyphs.busy
+            or self._prompt_device.status.is_busy or self.ble_name.busy
+            or snapshot.status.get("pending") is not None
+        )
+
+    def auto_check_remote_firmware(self) -> bool:
+        """Quiet background discovery; manual checks deliberately bypass the interval."""
+        if not self.can_auto_check_remote_firmware:
+            return False
+        snapshot = self._model.snapshot
+        identity = tuple(str(snapshot.identity.get(field, ""))
+                         for field in ("serial", "product_id", "hardware_id"))
+        last_check = self._remote_firmware_last_check.get(identity)
+        if last_check is not None and monotonic() - last_check < 6 * 60 * 60:
+            return False
+        self.check_remote_firmware()
+        return True
+
     def check_remote_firmware(self) -> None:
         source = self._firmware_release_source
         snapshot = self._model.snapshot
@@ -1370,8 +1467,6 @@ class MainViewModel(QObject):
             raise ValueError("新固件已经下载，请先安装或放弃当前维护包")
         if snapshot is None or self._model.state is not AppState.READY:
             raise ValueError("请先连接可写兼容的 BORING 设备")
-        if is_custom_firmware(snapshot):
-            raise ValueError("当前运行自定义固件；如需恢复官方版本，请导入官方签名固件包并确认替换")
         if self._firmware_update.is_busy:
             raise ValueError("固件维护事务进行中，不能检查其他发布包")
         if self._calibration.blocks_editing:
@@ -1385,10 +1480,12 @@ class MainViewModel(QObject):
             str(snapshot.identity.get(field, ""))
             for field in ("serial", "product_id", "hardware_id")
         )
+        self._remote_firmware_last_check[self._remote_firmware_device] = monotonic()
         self._set_remote_firmware(
             RemoteFirmwareCheck(
                 state=RemoteFirmwareState.CHECKING,
                 message="正在通过 HTTPS 检查当前硬件的发布固件",
+                restoration=self.firmware_origin != "official",
             )
         )
         try:
@@ -1397,7 +1494,8 @@ class MainViewModel(QObject):
             self._on_remote_firmware_failed(str(exc))
 
     def _on_remote_firmware_release_found(self, value: object) -> None:
-        if self._remote_firmware.state is not RemoteFirmwareState.CHECKING:
+        if (self._remote_firmware.state is not RemoteFirmwareState.CHECKING
+                or self.remote_firmware_device is None):
             return
         snapshot = self._model.snapshot
         if not isinstance(value, RemoteFirmwareRelease) or snapshot is None:
@@ -1409,9 +1507,18 @@ class MainViewModel(QObject):
             return
         try:
             validate_minimum_app_version(value.manifest)
-            newer = release_is_newer(value, snapshot)
-        except FirmwareReleaseError as exc:
+            self._firmware_release_history.remember(value.manifest)
+            restoration = self._remote_firmware.restoration and self.firmware_origin != "official"
+            newer = False if restoration else release_is_newer(value, snapshot)
+        except (FirmwareReleaseError, FirmwareSignatureError) as exc:
             self._on_remote_firmware_failed(str(exc))
+            return
+        if restoration:
+            self._set_remote_firmware(RemoteFirmwareCheck(
+                state=RemoteFirmwareState.RESTORE_AVAILABLE,
+                message="可恢复官方版本。安装将替换当前固件及自定义功能，不会合并代码。",
+                release=value, restoration=True,
+            ))
             return
         if not newer:
             self._set_remote_firmware(
@@ -1438,6 +1545,7 @@ class MainViewModel(QObject):
             raise ValueError("在线固件服务尚未配置")
         if release is None or self._remote_firmware.state not in {
             RemoteFirmwareState.AVAILABLE,
+            RemoteFirmwareState.RESTORE_AVAILABLE,
             RemoteFirmwareState.FAILED,
         }:
             raise ValueError("当前没有可下载的在线固件")
@@ -1446,7 +1554,9 @@ class MainViewModel(QObject):
         if self._firmware_update.is_busy:
             raise ValueError("固件维护事务进行中，不能下载其他发布包")
         validate_minimum_app_version(release.manifest)
-        if not release_is_newer(release, snapshot):
+        if self.remote_firmware_device is None:
+            raise ValueError("设备已断开或切换，请重新检查官方版本")
+        if not self._remote_firmware.restoration and (self.firmware_origin != "official" or not release_is_newer(release, snapshot)):
             raise ValueError("当前设备已不需要此在线更新，请重新检查版本")
         self._set_remote_firmware(
             RemoteFirmwareCheck(
@@ -1454,6 +1564,7 @@ class MainViewModel(QObject):
                 message=f"正在下载发布版本 {release.version}",
                 release=release,
                 total_size=release.size,
+                restoration=self._remote_firmware.restoration,
             )
         )
         try:
@@ -1516,11 +1627,14 @@ class MainViewModel(QObject):
                 release=state.release,
                 received_size=package.size,
                 total_size=package.size,
+                restoration=state.restoration,
             )
         )
 
     def _on_remote_firmware_failed(self, error: object) -> None:
         previous = self._remote_firmware
+        if previous.state not in {RemoteFirmwareState.CHECKING, RemoteFirmwareState.DOWNLOADING}:
+            return
         downloading = previous.state is RemoteFirmwareState.DOWNLOADING
         kind = error.kind if isinstance(error, FirmwareReleaseError) else ""
         unpublished = kind == "unpublished" and not downloading
@@ -1542,6 +1656,7 @@ class MainViewModel(QObject):
                 message=message,
                 technical=str(error),
                 release=None if unpublished else previous.release,
+                restoration=previous.restoration,
             )
         )
 
@@ -1559,6 +1674,8 @@ class MainViewModel(QObject):
         snapshot = self._model.snapshot
         if snapshot is not None:
             package.validate_for_device(snapshot)
+        if package.source_kind == "official":
+            self._firmware_release_history.remember(package.manifest)
         self._set_firmware_update(
             FirmwareUpdateTransaction(
                 state=FirmwareUpdateState.PACKAGE_READY,
@@ -1606,7 +1723,9 @@ class MainViewModel(QObject):
             if release is None:
                 raise ValueError("在线发布信息已失效，请重新下载")
             validate_minimum_app_version(release.manifest)
-            if not release_is_newer(release, snapshot):
+            if self.remote_firmware_device is None:
+                raise ValueError("设备已断开或切换，请重新检查官方版本")
+            if not self._remote_firmware.restoration and (self.firmware_origin != "official" or not release_is_newer(release, snapshot)):
                 raise ValueError("设备已不需要此在线更新，请重新检查版本")
         if self._write_transaction.is_busy or self._write_transaction.state is ConfigTransactionState.UNKNOWN:
             raise ValueError("配置写入事务尚未结束")
@@ -1695,7 +1814,8 @@ class MainViewModel(QObject):
             self._set_remote_firmware(
                 RemoteFirmwareCheck(
                     state=(
-                        RemoteFirmwareState.AVAILABLE
+                        (RemoteFirmwareState.RESTORE_AVAILABLE if self._remote_firmware.restoration
+                         else RemoteFirmwareState.AVAILABLE)
                         if release is not None
                         else RemoteFirmwareState.IDLE
                     ),
@@ -1705,6 +1825,7 @@ class MainViewModel(QObject):
                         else "可以重新检查面向当前硬件的在线发布固件"
                     ),
                     release=release,
+                    restoration=self._remote_firmware.restoration,
                 )
             )
 
@@ -1725,6 +1846,7 @@ class MainViewModel(QObject):
         self.diagnostics_changed.emit()
 
     def refresh(self) -> None:
+        self._cancel_remote_firmware_request()
         self.screen_glyphs.attach(None)
         self.screen_icon.attach(None)
         self.claude_status.unbind(clear=True)
@@ -1739,6 +1861,7 @@ class MainViewModel(QObject):
             self._gateway.scan()
 
     def connect_candidate(self, port_name: str) -> None:
+        self._cancel_remote_firmware_request()
         self.screen_glyphs.attach(None)
         self.screen_icon.attach(None)
         self.claude_status.unbind(clear=True)
@@ -1760,6 +1883,7 @@ class MainViewModel(QObject):
         self._write_deadline.stop()
         self._firmware_status_timer.stop()
         self._firmware_deadline.stop()
+        self._remote_firmware_check_timer.stop()
         self._calibration_sample_timer.stop()
         self._calibration_activation_deadline.stop()
         self._diagnostic_capture_heartbeat.stop()
@@ -1839,6 +1963,7 @@ class MainViewModel(QObject):
             )
             if not same_device_dirty_draft:
                 self._draft = self._drafts.setdefault(candidate.key, candidate)
+            self._sync_draft_platform(snapshot)
             serial = str(snapshot.identity.get("serial", ""))
             self._workflow_host.bind(serial)
             self._automation_host.bind(serial)
@@ -1887,15 +2012,30 @@ class MainViewModel(QObject):
         self.claude_status.bind(snapshot)
         if self.ble_name.supported and self.ble_name.connected:
             self.ble_name.read()
-        if (
-            state is AppState.READY
-            and self._firmware_release_source is not None
-            and self._remote_firmware.state is RemoteFirmwareState.IDLE
-            and self._firmware_update.package is None
-            and isinstance(snapshot.capabilities.get("features"), dict)
-            and snapshot.capabilities["features"].get("firmware_update") is True
-        ):
-            self.check_remote_firmware()
+        self._reconcile_remote_firmware_version(snapshot)
+        self.auto_check_remote_firmware()
+
+    def _reconcile_remote_firmware_version(self, snapshot: DeviceSnapshot) -> None:
+        current = self._remote_firmware
+        # A package being installed still needs full OTA partition/rollback reconciliation.
+        if current.state not in {RemoteFirmwareState.AVAILABLE, RemoteFirmwareState.CURRENT}:
+            return
+        if current.release is None:
+            return
+        if self.firmware_origin != "official":
+            self._set_remote_firmware(RemoteFirmwareCheck(state=RemoteFirmwareState.IDLE))
+            return
+        try:
+            newer = release_is_newer(current.release, snapshot)
+        except FirmwareReleaseError:
+            self._set_remote_firmware(RemoteFirmwareCheck(state=RemoteFirmwareState.IDLE))
+            return
+        self._set_remote_firmware(replace(
+            current,
+            state=RemoteFirmwareState.AVAILABLE if newer else RemoteFirmwareState.CURRENT,
+            message=(f"发现发布版本 {current.release.version}，可由你决定是否下载" if newer
+                     else f"没有更新的在线固件（服务端版本 {current.release.version}）"),
+        ))
 
     def _reset_remote_firmware_for_changed_device(self, snapshot: DeviceSnapshot) -> None:
         identity = tuple(
@@ -1922,6 +2062,8 @@ class MainViewModel(QObject):
                 else FirmwareUpdateTransaction()
             )
         self._remote_firmware_device = identity
+        # We retain one result, so selecting another device must fetch its own result.
+        self._remote_firmware_last_check.pop(identity, None)
         self._set_remote_firmware(
             RemoteFirmwareCheck(
                 state=(RemoteFirmwareState.IDLE if self._firmware_release_source is not None
@@ -1986,6 +2128,7 @@ class MainViewModel(QObject):
             for field in ("connected", "usb_connected", "ble_connected", "mode", "active_slot", "slots")
         )
         updated = replace(snapshot, status=dict(status))
+        self._sync_draft_platform(updated)
         state = AppState.READ_ONLY if updated.is_read_only else AppState.READY
         model = ScreenModel(state, updated.config_status_label, snapshot=updated)
         if presentation_changed:
@@ -2112,6 +2255,8 @@ class MainViewModel(QObject):
             return
         transaction = self._write_transaction
         if command_name == "VALIDATE_CONFIG" and transaction.state is ConfigTransactionState.VALIDATING:
+            confirm_after_validation = self._confirm_write_after_validation
+            self._confirm_write_after_validation = False
             self._set_write_transaction(
                 replace(
                     transaction,
@@ -2119,6 +2264,15 @@ class MainViewModel(QObject):
                     message="设备验证通过，等待用户确认写入",
                 )
             )
+            if confirm_after_validation:
+                try:
+                    self.confirm_device_write()
+                except ValueError as exc:
+                    self._finish_write(
+                        ConfigTransactionState.FAILED,
+                        "设备验证通过，但未能开始写入",
+                        str(exc),
+                    )
             return
         if command_name == "SET_CONFIG" and transaction.state is ConfigTransactionState.WRITING:
             self._set_write_transaction(
@@ -2331,7 +2485,19 @@ class MainViewModel(QObject):
         else:
             self._lighting_preview_sent = False
 
+    def _cancel_remote_firmware_request(self) -> None:
+        if self._remote_firmware.state not in {
+            RemoteFirmwareState.CHECKING, RemoteFirmwareState.DOWNLOADING,
+        }:
+            return
+        if self._firmware_release_source is not None:
+            self._firmware_release_source.cancel()
+        # A canceled attempt is eligible after reconnection, unlike an ordinary network failure.
+        self._remote_firmware_last_check.pop(self._remote_firmware_device, None)
+        self._set_remote_firmware(RemoteFirmwareCheck(state=RemoteFirmwareState.IDLE))
+
     def _on_failure(self, kind: BootstrapKind, message: str, technical: str) -> None:
+        self._cancel_remote_firmware_request()
         self.screen_glyphs.attach(None)
         self.screen_icon.attach(None)
         self._reconnect_timer.stop()
@@ -2382,6 +2548,7 @@ class MainViewModel(QObject):
             self._reconnect_timer.start()
 
     def _on_disconnected(self, technical: str) -> None:
+        self._cancel_remote_firmware_request()
         self.screen_glyphs.attach(None)
         self.screen_icon.attach(None)
         self.claude_status.unbind()
@@ -2405,6 +2572,7 @@ class MainViewModel(QObject):
         )
         if not self._reconnect_timer.isActive():
             self._reconnect_timer.start()
+        self._scan_for_reconnect()
         if self._firmware_update.is_busy:
             if self._firmware_update.state in {
                 FirmwareUpdateState.FINALIZING,
@@ -2466,7 +2634,13 @@ class MainViewModel(QObject):
             )
         )
         if reconnectable:
-            if self._firmware_update.is_busy:
+            usb_only = self._firmware_update.is_busy
+            snapshot = self._model.snapshot
+            preferred_port = str(getattr(snapshot, "port_name", "") or "")
+            targeted_scan = getattr(self._gateway, "scan_reconnect", None)
+            if preferred_port and callable(targeted_scan):
+                targeted_scan(preferred_port, usb_only=usb_only)
+            elif usb_only:
                 self._gateway.scan(usb_only=True)
             else:
                 self._gateway.scan()
@@ -3659,6 +3833,7 @@ class MainViewModel(QObject):
         message: str,
         technical: str = "",
     ) -> None:
+        self._confirm_write_after_validation = False
         self._write_deadline.stop()
         self._gateway.set_status_poll_interval(500)
         self._set_write_transaction(

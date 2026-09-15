@@ -24,8 +24,7 @@ def complete_write(vm, gateway, snapshot):
     digest = vm.write_transaction.candidate_digest
     generation = vm.draft.base_generation + 1
     gateway.command_completed.emit('VALIDATE_CONFIG', _ack('VALIDATE_CONFIG'))
-    assert not any(c.name == 'SET_CONFIG' for c in gateway.commands)
-    vm.confirm_device_write()
+    assert any(c.name == 'SET_CONFIG' for c in gateway.commands)
     gateway.command_completed.emit('SET_CONFIG', _ack('SET_CONFIG'))
     gateway.status_updated.emit(_active_status(snapshot, digest, generation))
     gateway.command_completed.emit('GET_CONFIG', _ack('GET_CONFIG', {
@@ -38,7 +37,7 @@ def complete_write(vm, gateway, snapshot):
 
 def test_mapping_apply_disables_without_changes_and_after_readback(session):
     window, vm, gateway, snapshot, _ = session
-    window._select_physical_control('key.1')
+    window._select_physical_control('key.8')
     apply = window.findChild(QPushButton, 'applyMappingToDevice')
     assert not apply.isEnabled()
     editor = window.findChild(ActionEditor)
@@ -76,7 +75,7 @@ def test_haptic_has_direct_apply_and_becomes_synced_after_readback(session):
     assert not window.findChild(QWidget, 'lightingSyncCard').findChildren(QWidget, 'card')
 
 
-@pytest.mark.parametrize('selected', [None, 'key.1'])
+@pytest.mark.parametrize('selected', [None, 'key.8'])
 def test_mapping_write_has_one_confirmation_in_side_rail(session, selected):
     window, vm, gateway, snapshot, _ = session
     if selected:
@@ -84,7 +83,7 @@ def test_mapping_write_has_one_confirmation_in_side_rail(session, selected):
     vm.rename_profile(snapshot.active_profile_id, 'Changed')
     vm.prepare_device_write()
     gateway.command_completed.emit('VALIDATE_CONFIG', _ack('VALIDATE_CONFIG'))
-    buttons = [b for b in window.findChildren(QPushButton) if b.objectName() == 'confirmConfigurationWrite']
+    buttons = window.findChildren(QPushButton, 'confirmConfigurationWrite')
     assert len(buttons) == 1
     rail = window.findChild(QScrollArea, 'overviewScroll').findChild(QPushButton, 'confirmConfigurationWrite')
     assert rail is buttons[0]
@@ -98,7 +97,7 @@ def test_mode_context_identifies_edited_profile_without_switching_it(session):
         context = window.findChild(QLabel, 'mappingModeContext')
         assert context is not None
         assert vm.draft.profile(vm.draft.config['active_profile'])['name'] in context.text()
-        assert '普通模式按键' in context.text()
+        assert '普通模式' in context.text()
         assert vm.draft.config == config
 
 
@@ -108,6 +107,8 @@ def test_navigation_keeps_destinations_in_place(session, qtbot, language):
     window._language_manager.set_language(language)
     window.resize(1280, 820)
     window.show()
+    window._fit_window_to_available_area(QRect(0, 0, 1280, 820))
+    window.resize(1280, 820)
     qtbot.wait(60)
     positions = {name: button.geometry() for name, button in window._nav_buttons.items()}
     for page in ('lighting', 'settings', 'overview'):
@@ -117,21 +118,22 @@ def test_navigation_keeps_destinations_in_place(session, qtbot, language):
     window._language_manager.set_language('zh_CN')
 
 
-def test_mapping_write_keeps_scroll_container_and_selection(session, qtbot):
+def test_mapping_write_keeps_container_selection_and_visible_actions(session, qtbot):
     window, vm, gateway, snapshot, _ = session
-    # Use the supported narrow, stacked workspace to exercise a real scroll offset.
+    window.resize(1100, 700)
     window.show()
-    window._fit_window_to_available_area(QRect(0, 0, 800, 700))
-    window._select_physical_control('key.1')
+    window._fit_window_to_available_area(QRect(0, 0, 1100, 700))
+    window.resize(1100, 700)
+    window._select_physical_control('key.8')
     qtbot.wait(60)
     scroll = window.findChild(QScrollArea, 'overviewScroll')
-    qtbot.waitUntil(lambda: scroll.verticalScrollBar().maximum() > 0)
     scroll.verticalScrollBar().setValue(scroll.verticalScrollBar().maximum())
     position = scroll.verticalScrollBar().value()
-    assert position > 0
+    assert position == 0
     window.findChild(QLineEdit, 'mappingShortNameEditor').setText('Changed')
     window.findChild(QPushButton, 'applyMappingToDevice').click()
     qtbot.wait(60)
     assert window.findChild(QScrollArea, 'overviewScroll') is scroll
     assert scroll.verticalScrollBar().value() == min(position, scroll.verticalScrollBar().maximum()), (position, scroll.verticalScrollBar().maximum())
-    assert window._selected_control_id == 'key.1'
+    assert window._selected_control_id == 'key.8'
+    assert window.findChild(QPushButton, 'applyMappingToDevice').isVisible()

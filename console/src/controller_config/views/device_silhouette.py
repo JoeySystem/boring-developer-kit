@@ -42,6 +42,10 @@ from controller_config.appearance import V4_STYLE, V4_TOKENS
 from controller_config.digital_font import layout_text
 from controller_config.i18n import translate_ui_text
 from controller_config.models import DeviceSnapshot
+from controller_config.official_controls import (
+    MATRIX12_AGENT_STATUS_KEYS,
+    MATRIX12_HARDWARE_IDS,
+)
 from controller_config.views.digital_label import Boring5RLabel
 
 
@@ -68,13 +72,6 @@ _MODEL_MANIFEST = {'source_size': [420, 420],
               'key.12': [212, 274, 276, 338],
               'encoder': [20, 280, 130, 390],
               'joystick': [284, 280, 344, 340]}}
-
-MATRIX12_HARDWARE_IDS = frozenset(
-    {"WMP-S3-MATRIX12-V1", "WMP-S3-MATRIX12-POWER-V2"}
-)
-MATRIX12_AGENT_STATUS_KEYS = frozenset(
-    {"key.1", "key.2", "key.4", "key.5", "key.6", "key.7"}
-)
 
 DEVICE_SILHOUETTE_STYLE = """
 QPushButton#controlKey { background: #f7f7f2; border: 1px solid #aeb3b1; border-radius: 6px; text-align: left; }
@@ -915,7 +912,7 @@ def create_lighting_silhouette_preview(
                 translate_ui_text("Agent 灯光由任务状态控制，此处不模拟状态颜色。")
             )
     layout.addWidget(shell, 0, Qt.AlignCenter)
-    caption = QLabel("本地效果示意 · 点击白色按键调整灯色", objectName="muted")
+    caption = QLabel("本地效果示意 · 点击功能键调整灯色", objectName="muted")
     caption.setWordWrap(True)
     caption.setAlignment(Qt.AlignCenter)
     layout.addWidget(caption)
@@ -1377,9 +1374,9 @@ def control_display_name(control_id: str) -> str:
     if control_id.startswith("key."):
         index = control_id.split(".", 1)[1]
         return (
-            f"透明状态键 {index}"
+            f"状态灯键 {index}"
             if control_id in MATRIX12_AGENT_STATUS_KEYS
-            else f"白色按键 {index}"
+            else f"功能键 {index}"
         )
     return {
         "encoder.ccw": "旋钮逆时针",

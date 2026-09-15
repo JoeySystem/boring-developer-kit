@@ -32,3 +32,12 @@ def load_fixture(protocol_dir: Path):
         return value
 
     return load
+
+
+@pytest.fixture(autouse=True)
+def isolated_firmware_release_history(monkeypatch, tmp_path):
+    # Newly remembered test releases must never enter the user's application settings.
+    from PySide6.QtCore import QSettings
+    import controller_config.firmware_origin as origin
+    monkeypatch.setattr(origin, 'QSettings', lambda *_: QSettings(
+        str(tmp_path / 'firmware-history.ini'), QSettings.IniFormat))

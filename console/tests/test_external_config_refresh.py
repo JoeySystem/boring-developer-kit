@@ -14,7 +14,11 @@ from test_write_transaction import FakeWriteGateway, _ack, _active_status
 def changed_config(snapshot, generation=None):
     config = copy.deepcopy(snapshot.config)
     config['profiles'][0]['name'] = 'Changed on device'
-    config['profiles'][0]['mappings'][0]['action'] = {'type':'key','usage':5}
+    mapping = next(
+        item for item in config['profiles'][0]['mappings']
+        if item['control_id'] == 'encoder.cw'
+    )
+    mapping['action'] = {'type':'consumer','usage':234}
     result = {'config':config, 'generation':generation or snapshot.config_result['generation']+1,
               'digest':hashlib.sha256(canonical_json_bytes(config)).hexdigest()}
     return result, _active_status(snapshot, result['digest'], result['generation'])

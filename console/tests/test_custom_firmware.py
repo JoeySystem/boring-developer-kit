@@ -92,6 +92,11 @@ def test_custom_install_needs_confirmation_and_keeps_existing_pipeline(qtbot, co
     assert package.source_kind == 'custom' and not gateway.commands
     vm.navigate('firmware');window.show()
     qtbot.waitUntil(lambda: window.findChild(QPushButton,'selectCustomFirmwarePackage').isVisible())
+    assert window.findChild(QPushButton, 'startFirmwareUpdate').text() == {
+        'zh_CN': '安装导入的自定义固件',
+        'en_US': 'Install imported custom firmware',
+        'ja_JP': '読み込んだカスタムファームウェアをインストール',
+    }[language]
     assert window.findChild(QLabel,'firmwarePackageSource').text() in (
         '自定义固件 · 未经官方验证', 'Custom firmware · Not verified by BORING', 'カスタムファームウェア · BORING 未検証')
     dialogs=[]
@@ -119,7 +124,7 @@ def test_official_restoration_requires_confirmation(qtbot, contract, tmp_path, m
     dialogs=[]
     monkeypatch.setattr(QMessageBox,'warning',lambda *args: dialogs.append(args[2]) or QMessageBox.Cancel)
     window._confirm_firmware_update()
-    assert '替换当前自定义功能' in dialogs[-1]
+    assert '替换当前固件及自定义功能' in dialogs[-1]
     assert not gateway.commands
     vm.shutdown()
 
@@ -152,7 +157,7 @@ def test_custom_device_never_shows_cached_official_current_status(qtbot, contrac
     vm.navigate('firmware'); window.show()
     label = window.findChild(QLabel, 'remoteFirmwareMessage')
     assert '自定义' in label.text() and '已是最新' not in label.text()
-    assert not window.findChild(QPushButton, 'checkRemoteFirmware').isEnabled()
+    assert window.findChild(QPushButton, 'checkRemoteFirmware').text() == '查看官方版本'
     vm.changed.emit(vm.model)
     assert '已是最新' not in window.findChild(QLabel, 'remoteFirmwareMessage').text()
     vm.shutdown()

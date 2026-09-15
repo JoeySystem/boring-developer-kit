@@ -16,7 +16,7 @@ class ClaudeStatusSettings(QFrame):
         layout.setContentsMargins(16, 17, 16, 17)
         layout.addWidget(QLabel("Claude Code 状态联动", objectName="inspectorTitle"))
         description = QLabel(
-            "开发中 / 待实机联调。通过当前已认证连接将 Claude Code 的执行、审批、待回答与本轮结束状态显示在六颗状态键上。"
+            "开发中 / 待实机联调。通过当前已认证连接将 Claude Code 的执行、审批、待回答与本轮结束状态显示在六个状态灯键上。"
             "启用后请重新打开 Claude Code 会话；关闭控制台窗口可继续后台运行，退出后台则停止联动。"
         )
         description.setWordWrap(True)

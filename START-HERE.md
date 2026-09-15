@@ -1,16 +1,16 @@
 # 从这里开始
 
-本次是 `v0.1.0-preview.7` 开发者预发布。固件源码已对齐 Power V2 当前 `20260914.03 / sample-verified` 权威参考，保留 DIY 修改边界、控制台源码、SDK、示例和协议。可以从源码运行 BORING Console Community，也可在兼容官方宿主中使用扩展。控制台源码仍为 0.1.24，实际验证范围见 [发布验证](docs/verification.md)。
+本次是 `v0.1.0-preview.8` 开发者预发布。固件源码对齐 Power V2 当前 `20260914.03 / sample-verified` 权威参考，控制台公开适配源码同步到 0.1.46，并保留 DIY 修改边界、SDK、示例和协议。可以从源码运行 BORING Console Community，也可在兼容官方宿主中使用扩展。实际验证范围见 [发布验证](docs/verification.md)。
 
 ## 先决定是否需要源码
 
 如果只是安装控制台或尝试扩展，先下载 [0.1.13 M 系列 Mac 测试版](https://github.com/JoeySystem/boring-developer-kit/releases/download/console-v0.1.13/BORING-Console-0.1.13-macOS-arm64.zip)，按 [安装说明](docs/install-console.md) 操作即可，不需要先配置 Python。安装交付 ZIP 内是 DMG、说明和许可；它不是固件包。
 
-只有查看或修改源码时，才需要下面的源码开发环境。公开安装版仍是 0.1.13，源码已到 0.1.24；两者的功能和验收范围分别说明。
+只有查看或修改源码时，才需要下面的源码开发环境。公开安装版仍是 0.1.13，源码已到 0.1.46；两者的功能和验收范围分别说明。
 
 ## 1. 下载和许可
 
-从 [本次 Release](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.7) 下载 `BORING-Developer-Kit-v0.1.0-preview.7.zip` 并解压。阅读 [许可](LICENSING.md) 和 [兼容说明](docs/versions.md)。
+从 [本次 Release](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.8) 下载 `BORING-Developer-Kit-v0.1.0-preview.8.zip` 并解压。阅读 [许可](LICENSING.md) 和 [兼容说明](docs/versions.md)。
 
 完整开发包中的 `examples/packages/` 放有三个独立扩展 ZIP。导入控制台的是其中一个扩展 ZIP，不是整个开发包。仓库源码用户也可直接导入 `examples/extensions/` 下的单个示例目录。
 

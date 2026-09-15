@@ -60,6 +60,7 @@ class ConfigTransaction:
     @property
     def blocks_editing(self) -> bool:
         return self.state in {
+            ConfigTransactionState.VALIDATING,
             ConfigTransactionState.WRITING,
             ConfigTransactionState.PENDING,
             ConfigTransactionState.VERIFYING,

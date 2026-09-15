@@ -196,7 +196,7 @@ def test_old_ble_firmware_shows_usb_recovery_and_blocks_device_write(qtbot, cont
         if previous_session:
             snapshot = _power_v2_snapshot(contract, read_only=False)
             gateway.snapshot_ready.emit(snapshot)
-            window._select_physical_control("key.1")
+            window._select_physical_control("key.9")
         gateway.failure.emit(BootstrapKind.FIRMWARE_UPDATE_REQUIRED,
             '请通过 USB 更新固件后再使用蓝牙配置', '请连接 USB 数据线后重新扫描，认证后进入设置 → 固件维护。')
         assert vm.model.state is AppState.FIRMWARE_UPDATE_REQUIRED

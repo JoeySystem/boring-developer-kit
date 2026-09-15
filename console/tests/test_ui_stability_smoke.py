@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QApplication, QMessageBox
 from shiboken6 import isValid
 
 from controller_config.automation import AutomationStore
@@ -45,4 +45,5 @@ def test_repeated_navigation_resize_and_reconnect(qtbot, contract, tmp_path, mon
         qtbot.waitUntil(lambda: vm.draft is not None, timeout=2000)
         assert not vm.draft.is_dirty
     assert window.isVisible()
-    assert window.minimumWidth() == 1100
+    available_width = QApplication.primaryScreen().availableGeometry().width()
+    assert window.minimumWidth() == min(1100, available_width)

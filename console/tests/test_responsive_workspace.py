@@ -47,7 +47,7 @@ def test_resize_retains_edit_and_scaled_key_hit_targets(session, qtbot):
     window.resize(1100, 700)
     window.show()
     qtbot.wait(300)
-    key = next(button for button in window.findChildren(QPushButton) if button.property("controlId") == "key.3")
+    key = next(button for button in window.findChildren(QPushButton) if button.property("controlId") == "key.8")
     qtbot.mouseClick(key, Qt.LeftButton, pos=key.rect().center())
     name = window.findChild(QLineEdit, "mappingShortNameEditor")
     name.setText("缩放后保留")
@@ -58,7 +58,7 @@ def test_resize_retains_edit_and_scaled_key_hit_targets(session, qtbot):
         assert window.findChild(QLineEdit, "mappingShortNameEditor") is name
         assert name.text() == "缩放后保留"
         assert name.cursorPosition() == 3
-        assert window._selected_control_id == "key.3"
+        assert window._selected_control_id == "key.8"
         outer = window.findChild(QScrollArea, "overviewScroll")
         assert outer.widget().width() <= outer.viewport().width()
         if height >= 1000:
@@ -81,7 +81,7 @@ def test_small_logical_screen_keeps_stacked_controls_reachable(session, qtbot):
     window._fit_window_to_available_area(QRect(0, 0, 960, 640))
     window.resize(960, 640)
     qtbot.wait(500)
-    window._select_physical_control("key.3")
+    window._select_physical_control("key.8")
     qtbot.wait(200)
     overview = window.findChild(QScrollArea, "overviewScroll")
     assert overview.widget().width() <= overview.viewport().width()

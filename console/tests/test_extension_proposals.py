@@ -23,7 +23,7 @@ def _proposal(view_model: MainViewModel, contract, **changes) -> SetMappingPropo
         "base_generation": draft.base_generation,
         "base_digest": draft.base_digest,
         "profile_id": draft.config["active_profile"],
-        "control_id": "key.12",
+        "control_id": "key.8",
         "action": {"type": "key", "usage": 40, "modifiers": []},
     }
     payload.update(changes)
@@ -93,7 +93,7 @@ def test_overwriting_approved_target_marks_proposal_stale(qtbot, contract) -> No
 
     view_model.set_mapping(
         int(draft.config["active_profile"]),
-        "key.12",
+        "key.8",
         "Other action",
         {"type": "key", "usage": 41, "modifiers": []},
     )
@@ -112,7 +112,7 @@ def test_proposal_is_blocked_by_existing_dirty_draft(qtbot, contract) -> None:
     profile_id = int(draft.config["active_profile"])
     view_model.set_mapping(
         profile_id,
-        "key.11",
+        "key.8",
         "Local change",
         {"type": "key", "usage": 41, "modifiers": []},
     )
@@ -127,6 +127,36 @@ def test_proposal_is_blocked_by_existing_dirty_draft(qtbot, contract) -> None:
     coordinator.reconcile()
 
     assert coordinator.record("proposal-1").state is ProposalState.REVIEWABLE
+
+
+def test_extension_can_propose_a_custom_matrix12_function_key(qtbot, contract) -> None:
+    gateway = FakeGateway()
+    view_model = MainViewModel(gateway, contract)
+    gateway.snapshot_ready.emit(_power_v2_snapshot(contract, read_only=False))
+    coordinator = _coordinator(view_model, contract)
+
+    result = coordinator.submit(
+        _proposal(view_model, contract, control_id="key.3")
+    )
+
+    assert result.status == "pending"
+    assert coordinator.record("proposal-1").state is ProposalState.REVIEWABLE
+
+
+def test_extension_cannot_propose_a_custom_matrix12_status_key(
+    qtbot, contract
+) -> None:
+    gateway = FakeGateway()
+    view_model = MainViewModel(gateway, contract)
+    gateway.snapshot_ready.emit(_power_v2_snapshot(contract, read_only=False))
+    coordinator = _coordinator(view_model, contract)
+
+    result = coordinator.submit(
+        _proposal(view_model, contract, control_id="key.1")
+    )
+
+    assert result.status == "stale"
+    assert "状态灯键" in result.message
 
 
 def test_proposal_for_old_generation_is_stale(qtbot, contract) -> None:

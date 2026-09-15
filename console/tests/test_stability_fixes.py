@@ -89,11 +89,11 @@ def test_all_device_preferences_are_guarded_before_navigation(session, monkeypat
 def test_import_rebuilds_selected_mapping_from_new_config(session, monkeypatch, tmp_path):
     window, vm, gateway, snapshot, store = session
     action = {"type": "key", "usage": 27}
-    vm.set_mapping(0, "key.12", "X", action)
+    vm.set_mapping(0, "key.8", "X", action)
     path = tmp_path / "incoming.json"
     vm.export_configuration(path, kind="draft")
     vm.discard_draft()
-    window._select_physical_control("key.12")
+    window._select_physical_control("key.8")
     assert window._content.findChild(ActionEditor).action() != action
     selected = []
     def choose(prompt):
@@ -106,7 +106,7 @@ def test_import_rebuilds_selected_mapping_from_new_config(session, monkeypatch, 
     window._import_configuration()
     assert window._content.findChild(ActionEditor).action() == action
     window._content.findChild(QPushButton, "saveMappingDraft").click()
-    assert vm.draft.mapping(0, "key.12")["action"] == action
+    assert vm.draft.mapping(0, "key.8")["action"] == action
 
 
 def test_trigger_enable_requires_device_readback_not_local_draft(session, tmp_path):
@@ -159,8 +159,8 @@ def test_advanced_trigger_requires_confirmed_mapping_and_reconnect_readback(sess
     assert "不在四向提示词盘" in vm.prompt_trigger_problem(5)
     config = copy.deepcopy(snapshot.config)
     profile = next(p for p in config["profiles"] if p["id"] == config["active_profile"])
-    profile["mappings"] = [m for m in profile["mappings"] if m["control_id"] != "key.12"]
-    profile["mappings"].append({"control_id": "key.12", "action": {"type": "prompt", "prompt_id": 5}})
+    profile["mappings"] = [m for m in profile["mappings"] if m["control_id"] != "key.8"]
+    profile["mappings"].append({"control_id": "key.8", "action": {"type": "prompt", "prompt_id": 5}})
     mapped = replace(snapshot, config_result={**snapshot.config_result, "config": config})
     gateway.snapshot_ready.emit(mapped)
     assert not vm.prompt_trigger_problem(5)

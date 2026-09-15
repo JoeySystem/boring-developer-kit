@@ -134,14 +134,14 @@
     },
     {
       "message": "lighting.rgb",
-      "match": "(Agent 状态键|白色动作键) (\\d+)\\n(.+)",
+      "match": "(状态灯键|功能键) (\\d+)\\n(.+)",
       "translate": [
         1
       ]
     },
     {
       "message": "lighting.accessible",
-      "match": "(Agent 状态键|白色动作键) (\\d+)：(.+)",
+      "match": "(状态灯键|功能键) (\\d+)：(.+)",
       "translate": [
         1
       ]
@@ -225,11 +225,11 @@
     },
     {
       "message": "control.white",
-      "match": "白色按键 (\\d+)"
+      "match": "功能键 (\\d+)"
     },
     {
       "message": "control.transparent",
-      "match": "透明状态键 (\\d+)"
+      "match": "状态灯键 (\\d+)"
     },
     {
       "message": "joystick.axes",
@@ -1370,11 +1370,11 @@
     },
     {
       "message": "views.main_window.line_5423",
-      "match": "透明状态键\\ (.*?)"
+      "match": "状态灯键\\ (.*?)"
     },
     {
       "message": "views.main_window.line_5425",
-      "match": "白色按键\\ (.*?)"
+      "match": "功能键\\ (.*?)"
     },
     {
       "message": "views.main_window.line_5532",
@@ -1438,10 +1438,6 @@
     {
       "message": "views.main_window.line_3807",
       "match": "当前高级提示词\\ (.*?)"
-    },
-    {
-      "message": "views.onboarding.line_185",
-      "match": "第\\ (.*?)\\ 步，共\\ (.*?)\\ 步"
     },
     {
       "message": "views.preferences_editor.line_595",

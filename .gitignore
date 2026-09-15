@@ -5,6 +5,7 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+output/
 .DS_Store
 
 firmware/artifacts/

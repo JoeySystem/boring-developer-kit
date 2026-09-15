@@ -37,7 +37,7 @@ class FakeGateway(QObject):
         self.interval = 0
         self.shutdowns = 0
 
-    def scan(self) -> None:
+    def scan(self, *, preferred_port: str | None = None) -> None:
         self.scans += 1
         self.candidates_found.emit(self.candidates)
 
@@ -245,7 +245,7 @@ def test_device_gateway_routes_only_active_transport(qtbot, contract: Contract) 
 
 def test_reconnect_tick_does_not_restart_pending_bluetooth_scan(qtbot, contract: Contract) -> None:
     class PendingBle(FakeGateway):
-        def scan(self):
+        def scan(self, *, preferred_port: str | None = None):
             self.scans += 1
 
     usb = FakeGateway()
@@ -263,6 +263,50 @@ def test_reconnect_tick_does_not_restart_pending_bluetooth_scan(qtbot, contract:
     assert found == [()]
     gateway.scan()  # A completed empty scan must allow the next retry.
     assert ble.scans == 2
+
+
+def test_reconnect_usb_probe_is_not_blocked_by_pending_bluetooth_scan(qtbot, contract: Contract) -> None:
+    class PendingGateway(FakeGateway):
+        def scan(self, *, preferred_port: str | None = None) -> None:
+            self.scans += 1
+
+    usb = PendingGateway()
+    ble = PendingGateway()
+    gateway = DeviceGateway(contract, usb_gateway=usb, ble_gateway=ble)
+    found: list[tuple[PortCandidate, ...]] = []
+    gateway.candidates_found.connect(found.append)
+
+    gateway.scan_reconnect("ble:known-device")
+    assert usb.scans == 1
+    usb.candidates_found.emit(())
+    assert ble.scans == 1
+
+    # USB hot-plug must still be probed while the targeted BLE scan is pending.
+    gateway.scan_reconnect("ble:known-device")
+    assert usb.scans == 2
+    returned = (PortCandidate("cu.returned"),)
+    usb.candidates_found.emit(returned)
+
+    assert found == [returned]
+    assert ble.stops == 1
+
+
+def test_preferred_bluetooth_candidate_finishes_reconnect_without_scan_timeout(
+    qtbot, contract: Contract
+) -> None:
+    worker = BleWorker(contract)
+    worker._scan_sources_pending = 1
+    worker._preferred_port = "ble:12345678-1234-1234-1234-123456789abc"
+    found: list[tuple[PortCandidate, ...]] = []
+    worker.candidates_found.connect(found.append)
+
+    worker._add_connected_device(
+        "12345678-1234-1234-1234-123456789abc", "BORING MIST"
+    )
+    qtbot.waitUntil(lambda: bool(found), timeout=250)
+
+    assert found[0][0].port_name == "ble:12345678-1234-1234-1234-123456789abc"
+    assert worker._scan_sources_pending == 0
 
 
 def test_ble_natural_scan_completion_publishes_results_once(qtbot, contract: Contract) -> None:

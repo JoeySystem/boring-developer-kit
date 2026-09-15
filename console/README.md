@@ -1,6 +1,6 @@
 # BORING 控制台源码
 
-此目录是基于 Console **0.1.24** 已归档提交 `333b6fb103d864243d602a45056138184e235521` 的源码适配，随开发包 `v0.1.0-preview.5` 交付。[官方 0.1.13 安装包](../docs/install-console.md) 另行交付，本目录已同步到 0.1.24，保留素材替换和配置隔离适配，不能把源码版本当作该安装包的版本。公开源码构建仍使用 BORING Console Community 作为程序标识，以区分官方安装版。
+此目录是 Console **0.1.46** 的公开源码适配，随开发包 `v0.1.0-preview.8` 交付。[官方 0.1.13 安装包](../docs/install-console.md) 另行交付，不能把源码版本当作该安装包的版本。公开源码构建仍使用 BORING Console Community 作为程序标识，以区分官方安装版。
 
 ## 安装和运行
 
@@ -31,8 +31,8 @@ console/.venv/Scripts/python.exe -m controller_config --demo ready
 - 认证、配置确认和更新客户端源代码保留。源码开发态及原生包 production 策略沿用原设计；production 不接受测试根或缺失认证能力的设备。
 - 社区构建不能生成生产身份，不包含生产私钥或签发工具。
 - `firmware-source.json` 和 `app-update-source.json` 均未配置服务；源码构建不会加入官方应用更新渠道。维护包不在开发包中，官方导入要求有效的发布者签名。旧无签名维护 ZIP 不能直接通过此入口。
-- 更新后新增的蓝牙名称、三语言文案、草稿恢复与更新客户端说明见 [本轮变化](../docs/console-source.md)。自定义固件入口的限制见 [固件维护边界](../docs/firmware-maintenance.md)。
-- 可交互设备示意由 Qt 简单绘制；不附 Blender 产品模型、固件屏幕动画或 Companion 引导素材，原有文字引导保留。
+- 0.1.46 增加功能键灯光编辑、一次点击完成验证/写入/读回、写入后 generation 刷新、快速重连、更新提醒和官方/自定义固件恢复逻辑。具体范围见 [本轮变化](../docs/console-source.md)，自定义固件入口限制见 [固件维护边界](../docs/firmware-maintenance.md)。
+- 可交互设备示意由 Qt 简单绘制；不附 Blender/STEP 产品模型、官方图标、固件屏幕素材或 Companion 引导素材，文字引导保留。
 
 ## 测试与构建
 

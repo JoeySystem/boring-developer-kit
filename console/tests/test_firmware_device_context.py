@@ -1,3 +1,4 @@
+from test_firmware_release import remember_test_snapshot, trust_test_signing_key
 """Online discovery and downloaded packages belong to the selected device."""
 from dataclasses import replace
 
@@ -25,7 +26,7 @@ def context(qapp, contract):
     source = CancelTrackingSource()
     gateway = FirmwareGateway()
     vm = MainViewModel(gateway, contract, firmware_release_source=source)
-    snapshot = _power_v2_snapshot(contract, read_only=False)
+    snapshot = remember_test_snapshot(vm, _power_v2_snapshot(contract, read_only=False))
     gateway.snapshot_ready.emit(snapshot)
     yield vm, gateway, source, snapshot
     vm.shutdown()
@@ -55,6 +56,7 @@ def test_current_result_is_rechecked_for_changed_device_identity(context, contra
     source.release_found.emit(release)
     assert vm.remote_firmware.state is RemoteFirmwareState.CURRENT
     device_b = replace(snapshot, identity={**snapshot.identity, identity_field: "DIFFERENT"})
+    device_b = remember_test_snapshot(vm, device_b)
     gateway.snapshot_ready.emit(device_b)
     assert source.canceled == 1
     assert len(source.snapshots) == 2

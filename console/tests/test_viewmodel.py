@@ -34,7 +34,7 @@ class FakeGateway(QObject):
         self.connected_ports: list[str] = []
         self.commands = []
 
-    def scan(self) -> None:
+    def scan(self, *, usb_only: bool = False) -> None:
         self.scan_calls += 1
 
     def connect_port(self, port_name: str) -> None:
@@ -268,8 +268,9 @@ def test_disconnected_device_is_polled_and_reconnected_when_it_returns(qtbot) ->
     gateway.disconnected.emit("port gone")
 
     assert view_model._reconnect_timer.isActive()
-    view_model._reconnect_timer.timeout.emit()
     assert gateway.scan_calls == 1
+    view_model._reconnect_timer.timeout.emit()
+    assert gateway.scan_calls == 2
     assert view_model.model.state is AppState.DISCONNECTED
     assert view_model.model.snapshot is snapshot
 

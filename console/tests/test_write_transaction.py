@@ -29,7 +29,7 @@ class FakeWriteGateway(QObject):
         self.poll_intervals = []
         self.scan_calls = 0
 
-    def scan(self) -> None:
+    def scan(self, *, usb_only: bool = False) -> None:
         self.scan_calls += 1
 
     def connect_port(self, _port_name: str) -> None:
@@ -120,6 +120,38 @@ def test_write_happy_path_validates_confirms_polls_and_rebases_draft(contract) -
     assert view_model.draft is not None and not view_model.draft.is_dirty
     assert view_model.pending_dirty_workspaces() == ()
     assert gateway.poll_intervals[-1] == 500
+
+
+def test_one_click_write_does_not_let_icon_read_preempt_validated_config(contract) -> None:
+    view_model, gateway, _snapshot = _dirty_view_model(contract)
+    view_model.screen_glyphs.supported = True
+    view_model.screen_glyphs.writable = True
+
+    view_model.prepare_device_write(confirm_after_validation=True)
+
+    assert view_model.write_transaction.state is ConfigTransactionState.VALIDATING
+    assert view_model.write_transaction.blocks_editing
+    view_model.refresh_screen_glyphs()
+    assert not view_model.screen_glyphs.busy
+
+    gateway.command_completed.emit("VALIDATE_CONFIG", _ack("VALIDATE_CONFIG"))
+
+    assert view_model.write_transaction.state is ConfigTransactionState.WRITING
+    assert gateway.commands[-1].name == "SET_CONFIG"
+
+
+def test_icon_read_waits_while_manual_write_confirmation_is_pending(contract) -> None:
+    view_model, gateway, _snapshot = _dirty_view_model(contract)
+    view_model.screen_glyphs.supported = True
+    view_model.screen_glyphs.writable = True
+    view_model.prepare_device_write()
+    gateway.command_completed.emit("VALIDATE_CONFIG", _ack("VALIDATE_CONFIG"))
+
+    assert view_model.write_transaction.state is ConfigTransactionState.AWAITING_CONFIRMATION
+    view_model.refresh_screen_glyphs()
+
+    assert not view_model.screen_glyphs.busy
+    assert gateway.commands[-1].name == "VALIDATE_CONFIG"
 
 
 def test_generation_conflict_is_terminal_and_never_retries_set(contract) -> None:
@@ -430,10 +462,11 @@ def test_unknown_reconcile_while_disconnected_scans_without_sending_command(cont
     gateway.failure.emit(BootstrapKind.READ_FAILED, "设备连接已中断", "short write")
     gateway.disconnected.emit("gone")
     command_count = len(gateway.commands)
+    scan_count = gateway.scan_calls
 
     view_model.reconcile_device_write()
 
-    assert gateway.scan_calls == 1
+    assert gateway.scan_calls == scan_count + 1
     assert len(gateway.commands) == command_count
     assert [command.name for command in gateway.commands].count("SET_CONFIG") == 1
 

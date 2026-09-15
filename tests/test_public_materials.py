@@ -109,7 +109,7 @@ def test_release_archives_have_importable_roots_and_licenses(tmp_path):
         assert any(name.endswith("firmware/main/app_main.c") for name in names)
         assert any(name.endswith("firmware/DIY-GUIDE.md") for name in names)
         assert any(name.endswith("firmware/tools/pack_custom_firmware.py") for name in names)
-        assert not any("/artifacts/" in name or "/managed_components/" in name for name in names)
+        assert not any("/artifacts/" in name or "/managed_components/" in name or "/output/" in name for name in names)
         assert not any(name.endswith(("provision_device.py", "prepare_online_firmware.py", ".pem", ".bin", ".elf")) for name in names)
         assert any(name.endswith("console/LICENSE") for name in names)
         assert not any("font-pack.json" in name or "boring-console-icon" in name for name in names)
@@ -159,6 +159,9 @@ def test_public_build_does_not_subscribe_to_official_updates():
     for settings in application.values():
         assert settings['feed_url'] == settings['public_key'] == ''
     assert json.loads((assets / 'firmware-source.json').read_text())['manifest_url'] == ''
+    assert json.loads((assets / 'official-firmware-releases.json').read_text()) == []
     assert not (assets / 'onboarding').exists()
+    assert not (assets / 'boring_mist_3d').exists()
+    assert not any(assets.glob('boring-console-icon.*'))
     assert not (assets / 'boring-mist-wireframe.png').exists()
     assert not (assets / 'mist-screen-source-preview.gif').exists()

@@ -45,6 +45,7 @@ class RemoteFirmwareState(str, Enum):
     IDLE = "idle"
     CHECKING = "checking"
     AVAILABLE = "available"
+    RESTORE_AVAILABLE = "restore_available"
     DOWNLOADING = "downloading"
     DOWNLOADED = "downloaded"
     CURRENT = "current"
@@ -79,6 +80,7 @@ class RemoteFirmwareCheck:
     release: RemoteFirmwareRelease | None = None
     received_size: int = 0
     total_size: int = 0
+    restoration: bool = False
 
     @property
     def progress_percent(self) -> int:

@@ -18,7 +18,13 @@ import controller_config.firmware_release as releases
 from controller_config.i18n import translate_ui_text
 from controller_config.firmware_update import FirmwareUpdateState
 from controller_config.viewmodels.main import MainViewModel
-from test_firmware_release import _bundle, _resign, RecordingDemoGateway, trust_test_signing_key
+from test_firmware_release import (
+    _bundle,
+    _resign,
+    RecordingDemoGateway,
+    official_demo_release,
+    trust_test_signing_key,
+)
 
 
 @pytest.fixture
@@ -109,7 +115,6 @@ def test_https_discovery_download_validation_install_and_reconnect(qtbot, contra
         qtbot.waitUntil(lambda: model.remote_firmware.state in {releases.RemoteFirmwareState.AVAILABLE, releases.RemoteFirmwareState.FAILED}, timeout=5000)
         assert model.remote_firmware.state is releases.RemoteFirmwareState.AVAILABLE, model.remote_firmware.technical
         assert requests == ["/firmware-manifest.json"]
-        model.model.snapshot.versions["build_id"] = "20260908.01"
         # Check the ordinary maintenance page exposes current and target data.
         from PySide6.QtWidgets import QLabel
         from controller_config.views.main_window import MainWindow

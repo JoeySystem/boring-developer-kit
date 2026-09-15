@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from controller_config.models import DeviceSnapshot
+from controller_config.official_controls import is_matrix12_official_status_key
 from controller_config.protocol.contract import ConfigEditorRules, Contract, ContractError
 from controller_config.protocol.framing import canonical_json_bytes
 
@@ -31,6 +32,7 @@ class LocalDraft:
         limits: dict[str, int],
         features: dict[str, Any],
         editor_rules: ConfigEditorRules,
+        platform: str,
         config: dict[str, Any],
     ) -> None:
         self.serial = serial
@@ -44,6 +46,7 @@ class LocalDraft:
         self.limits = dict(limits)
         self.features = copy.deepcopy(features)
         self.editor_rules = editor_rules
+        self.platform = platform
         self._baseline = copy.deepcopy(config)
         self.config = copy.deepcopy(config)
 
@@ -84,6 +87,7 @@ class LocalDraft:
             else {},
             features=features if isinstance(features, dict) else {},
             editor_rules=contract.editor_rules,
+            platform=str(snapshot.status.get("platform", "")),
             config=snapshot.config,
         )
 
@@ -393,6 +397,8 @@ class LocalDraft:
     ) -> None:
         if control_id not in self.controls:
             raise ValueError(f"{control_id} 不在设备 CAPABILITIES 中")
+        if is_matrix12_official_status_key(self.hardware_id, control_id):
+            raise ValueError("状态灯键使用 Codex 官方功能，不支持自定义")
         action_type = action.get("type")
         if action_type not in self.actions:
             raise ValueError(f"设备不支持 {action_type} 动作")
@@ -441,6 +447,27 @@ class LocalDraft:
             errors.append("按键序列 ID 不能重复")
         macro_id_set = set(macro_ids)
         profile_id_set = set(profile_ids)
+        baseline_status_mappings: dict[tuple[Any, str], dict[str, Any]] = {}
+        reusable_status_mappings: dict[str, list[dict[str, Any]]] = {}
+        baseline_profile_ids: set[Any] = set()
+        if self.hardware_id == config.get("hardware_id"):
+            for profile in self._baseline.get("profiles", ()):
+                if not isinstance(profile, dict):
+                    continue
+                profile_id = profile.get("id")
+                baseline_profile_ids.add(profile_id)
+                for mapping in profile.get("mappings", ()):
+                    if not isinstance(mapping, dict):
+                        continue
+                    control_id = mapping.get("control_id")
+                    if is_matrix12_official_status_key(self.hardware_id, control_id):
+                        baseline_status_mappings[(profile_id, control_id)] = mapping
+                        reusable_status_mappings.setdefault(control_id, []).append(mapping)
+            for control_id in self.controls:
+                if is_matrix12_official_status_key(self.hardware_id, control_id):
+                    reusable_status_mappings.setdefault(control_id, []).append(
+                        {"control_id": control_id, "short_name": "", "action": {"type": "none"}}
+                    )
         for profile in profiles:
             mappings = profile.get("mappings")
             if not isinstance(mappings, list):
@@ -456,6 +483,15 @@ class LocalDraft:
                 action = mapping.get("action") if isinstance(mapping, dict) else None
                 if not isinstance(action, dict):
                     continue
+                control_id = mapping.get("control_id")
+                if is_matrix12_official_status_key(self.hardware_id, control_id):
+                    profile_id = profile.get("id")
+                    if profile_id in baseline_profile_ids:
+                        allowed = mapping == baseline_status_mappings.get((profile_id, control_id))
+                    else:
+                        allowed = mapping in reusable_status_mappings.get(control_id, ())
+                    if not allowed:
+                        errors.append("状态灯键使用 Codex 官方功能，不支持自定义")
                 if mapping.get("control_id") not in self.controls:
                     errors.append(f"{mapping.get('control_id')} 不在设备 CAPABILITIES 中")
                 if action.get("type") not in self.actions:

@@ -45,7 +45,7 @@ def test_first_failure_keeps_preview_navigation_and_collapsed_details(qtbot, con
 
 def test_mapping_survives_relink_no_device_and_failure_without_device_commands(session):
     window, vm, gateway, snapshot, _ = session
-    window._select_physical_control('key.1')
+    window._select_physical_control('key.8')
     window.findChild(QLineEdit, 'mappingShortNameEditor').setText('离线编辑')
     draft = vm.draft
     gateway.disconnected.emit('unplugged')
@@ -57,13 +57,13 @@ def test_mapping_survives_relink_no_device_and_failure_without_device_commands(s
     assert vm.model.snapshot is snapshot
     assert vm.draft is draft
     assert window.findChild(QLineEdit, 'mappingShortNameEditor').text() == '离线编辑'
-    assert window._selected_control_id == 'key.1'
+    assert window._selected_control_id == 'key.8'
     assert not window.findChild(QPushButton, 'applyMappingToDevice').isEnabled()
     assert '已同步' not in window.findChild(QLabel, 'syncChangeCount').text()
     assert '离线草稿' in window.findChild(QLabel, 'syncDraftState').text()
     commands = list(gateway.commands)
     window.findChild(QPushButton, 'saveMappingDraft').click()
-    assert vm.draft.mapping(snapshot.active_profile_id, 'key.1')['short_name'] == '离线编辑'
+    assert vm.draft.mapping(snapshot.active_profile_id, 'key.8')['short_name'] == '离线编辑'
     assert gateway.commands == commands
     with pytest.raises(ValueError, match='不可写入'):
         vm.prepare_device_write()
@@ -74,7 +74,7 @@ def test_mapping_survives_relink_no_device_and_failure_without_device_commands(s
 
 def test_unsaved_mapping_is_not_restored_into_another_device(session):
     window, vm, gateway, snapshot, _ = session
-    window._select_physical_control('key.1')
+    window._select_physical_control('key.8')
     window.findChild(QLineEdit, 'mappingShortNameEditor').setText('Only A')
     vm.refresh()
     gateway.snapshot_ready.emit(replace(snapshot, identity={**snapshot.identity, 'serial': 'CP01-001122334455'}))

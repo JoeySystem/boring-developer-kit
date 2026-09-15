@@ -357,11 +357,13 @@ class BleWorker(SerialWorker):
         self._connected_finder: MacConnectedDeviceFinder | None = None
         self._scan_timer: QTimer | None = None
         self._scan_sources_pending = 0
+        self._preferred_port = ""
 
     @Slot()
-    def scan(self) -> None:
+    def scan(self, *, preferred_port: str | None = None) -> None:
         self.close()
         self.stop_scan()
+        self._preferred_port = preferred_port or ""
         self.progress.emit("正在查找已配对的 BORING 蓝牙设备…")
         self._candidates_by_port.clear()
         self._device_info_by_port.clear()
@@ -413,6 +415,7 @@ class BleWorker(SerialWorker):
         if self._scan_sources_pending:
             self._scan_sources_pending = 0
             self.candidates_found.emit(tuple(self._candidates_by_port.values()))
+        self._preferred_port = ""
 
     @Slot(object)
     def _add_discovered_device(self, info: QBluetoothDeviceInfo) -> None:
@@ -437,6 +440,9 @@ class BleWorker(SerialWorker):
             description=info.name() or DEVICE_DISPLAY_NAME,
             transport="bluetooth",
         )
+        if port_name == self._preferred_port:
+            # Avoid nesting the candidates signal inside the discovery callback.
+            QTimer.singleShot(0, self.stop_scan)
 
     @Slot()
     def _scan_source_finished(self, *_args: object) -> None:
@@ -536,8 +542,8 @@ class BleGateway(QObject):
         ):
             getattr(self._worker, name).connect(getattr(self, name))
 
-    def scan(self) -> None:
-        self._worker.scan()
+    def scan(self, *, preferred_port: str | None = None) -> None:
+        self._worker.scan(preferred_port=preferred_port)
 
     def stop_scan(self) -> None:
         self._worker.stop_scan()

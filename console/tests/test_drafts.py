@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-
 from controller_config.drafts import LocalDraft
 from controller_config.transport.demo import DemoGateway
 
@@ -37,12 +36,12 @@ def test_mapping_edit_reuses_schema_valid_action_and_can_be_discarded(qtbot, con
     snapshot = _snapshot(qtbot, contract)
     draft = LocalDraft.from_snapshot(snapshot, contract)
     action = {"type": "key", "usage": 40, "modifiers": []}
-    original_mapping = draft.mapping(snapshot.active_profile_id, "key.12")
+    original_mapping = draft.mapping(snapshot.active_profile_id, "key.8")
 
-    draft.set_mapping(snapshot.active_profile_id, "key.12", "Enter", action)
+    draft.set_mapping(snapshot.active_profile_id, "key.8", "Enter", action)
 
-    assert draft.mapping(snapshot.active_profile_id, "key.12") == {
-        "control_id": "key.12",
+    assert draft.mapping(snapshot.active_profile_id, "key.8") == {
+        "control_id": "key.8",
         "short_name": "Enter",
         "action": action,
     }
@@ -52,7 +51,152 @@ def test_mapping_edit_reuses_schema_valid_action_and_can_be_discarded(qtbot, con
     draft.discard()
 
     assert not draft.is_dirty
-    assert draft.mapping(snapshot.active_profile_id, "key.12") == original_mapping
+    assert draft.mapping(snapshot.active_profile_id, "key.8") == original_mapping
+
+
+def test_matrix12_status_key_cannot_be_changed_through_draft_api(qtbot, contract) -> None:
+    snapshot = _snapshot(qtbot, contract)
+    draft = LocalDraft.from_snapshot(snapshot, contract)
+
+    try:
+        draft.set_mapping(
+            snapshot.active_profile_id,
+            "key.1",
+            "Enter",
+            {"type": "key", "usage": 40, "modifiers": []},
+        )
+    except ValueError as exc:
+        assert "状态灯键" in str(exc)
+    else:
+        raise AssertionError("official status keys must not accept custom mappings")
+
+
+def test_matrix12_import_candidate_cannot_change_status_key(qtbot, contract) -> None:
+    snapshot = _snapshot(qtbot, contract)
+    draft = LocalDraft.from_snapshot(snapshot, contract)
+    candidate = copy.deepcopy(draft.config)
+    mapping = next(
+        item
+        for item in candidate["profiles"][0]["mappings"]
+        if item["control_id"] == "key.1"
+    )
+    mapping.update(
+        short_name="Enter",
+        action={"type": "key", "usage": 40, "modifiers": []},
+    )
+
+    assert any("状态灯键" in error for error in draft.validate_candidate(candidate, contract))
+
+
+def test_matrix12_import_candidate_cannot_swap_status_keys_between_profiles(
+    qtbot, contract
+) -> None:
+    snapshot = _snapshot(qtbot, contract)
+    first = snapshot.config_result["config"]["profiles"][0]
+    second = copy.deepcopy(first)
+    second["id"] = 1
+    second["name"] = "Second"
+    second_status = next(
+        item for item in second["mappings"] if item["control_id"] == "key.1"
+    )
+    second_status.update(
+        short_name="B",
+        action={"type": "key", "usage": 5, "modifiers": []},
+    )
+    snapshot.config_result["config"]["profiles"].append(second)
+    draft = LocalDraft.from_snapshot(snapshot, contract)
+    candidate = copy.deepcopy(draft.config)
+    first_status = next(
+        item for item in candidate["profiles"][0]["mappings"] if item["control_id"] == "key.1"
+    )
+    candidate_second_status = next(
+        item for item in candidate["profiles"][1]["mappings"] if item["control_id"] == "key.1"
+    )
+    candidate_second_status.clear()
+    candidate_second_status.update(copy.deepcopy(first_status))
+
+    assert any("状态灯键" in error for error in draft.validate_candidate(candidate, contract))
+
+
+def test_matrix12_function_key_mapping_is_customizable_for_normal_mode(
+    qtbot, contract
+) -> None:
+    snapshot = _snapshot(qtbot, contract)
+    draft = LocalDraft.from_snapshot(snapshot, contract)
+    action = {"type": "key", "usage": 40, "modifiers": []}
+
+    draft.set_mapping(snapshot.active_profile_id, "key.8", "Enter", action)
+
+    assert draft.mapping(snapshot.active_profile_id, "key.8") == {
+        "control_id": "key.8",
+        "short_name": "Enter",
+        "action": action,
+    }
+    assert draft.validate(contract) == ()
+    assert draft.is_dirty
+
+
+def test_matrix12_function_key_color_is_saved_when_preferences_change(
+    qtbot, contract
+) -> None:
+    snapshot = _snapshot(qtbot, contract)
+    draft = LocalDraft.from_snapshot(snapshot, contract)
+    original = copy.deepcopy(draft.config["lighting"])
+    edited = copy.deepcopy(original)
+    edited["brightness"] = 80
+    edited["under_key"][2] = {"r": 255, "g": 0, "b": 0}
+
+    draft.set_preferences(
+        lighting=edited,
+        haptic=draft.config["haptic"],
+        display=draft.config["display"],
+    )
+
+    assert draft.config["lighting"]["brightness"] == 80
+    assert draft.config["lighting"]["under_key"][2] == {"r": 255, "g": 0, "b": 0}
+
+
+def test_matrix12_candidate_can_replace_function_key_normal_mapping(
+    qtbot, contract
+) -> None:
+    snapshot = _snapshot(qtbot, contract)
+    draft = LocalDraft.from_snapshot(snapshot, contract)
+    candidate = copy.deepcopy(draft.config)
+    candidate["profiles"][0]["mappings"].append(
+        {
+            "control_id": "key.3",
+            "short_name": "Custom",
+            "action": {"type": "key", "usage": 40, "modifiers": []},
+        }
+    )
+
+    assert draft.validate_candidate(candidate, contract) == ()
+
+
+def test_discard_restores_device_function_mapping_and_light(
+    qtbot, contract
+) -> None:
+    snapshot = _snapshot(qtbot, contract)
+    mappings = snapshot.config_result["config"]["profiles"][0]["mappings"]
+    custom_mapping = {
+        "control_id": "key.3",
+        "short_name": "Custom",
+        "action": {"type": "key", "usage": 40, "modifiers": []},
+    }
+    mappings.append(custom_mapping)
+    snapshot.config_result["config"]["lighting"]["under_key"][2] = {
+        "r": 255,
+        "g": 0,
+        "b": 0,
+    }
+    draft = LocalDraft.from_snapshot(snapshot, contract)
+
+    assert not draft.is_dirty
+    draft.discard()
+
+    assert not draft.is_dirty
+    assert draft.mapping(snapshot.active_profile_id, "key.3") == custom_mapping
+    assert draft.config["lighting"]["under_key"][2] == {"r": 255, "g": 0, "b": 0}
 
 
 def test_draft_rejects_control_outside_capabilities(qtbot, contract) -> None:
@@ -77,10 +221,9 @@ def test_profile_create_copy_and_delete_stay_schema_valid(qtbot, contract) -> No
     assert new_id == 1
     assert copied_id == 2
     assert draft.profile(new_id)["name"] == "新配置方案"
-    assert all(
-        mapping["action"] == {"type": "none"}
-        for mapping in draft.profile(new_id)["mappings"]
-    )
+    assert draft.mapping(new_id, "key.1")["action"] == {"type": "none"}
+    assert draft.mapping(new_id, "key.3")["action"] == {"type": "none"}
+    assert draft.mapping(new_id, "key.9")["action"] == {"type": "none"}
     assert draft.profile(copied_id)["name"].endswith("副本")
     assert draft.validate(contract) == ()
 

@@ -55,13 +55,19 @@ from PySide6.QtWidgets import (
 
 from controller_config.actions import action_field_choices, describe_action
 from controller_config import __version__
+from controller_config.official_controls import (
+    MATRIX12_AGENT_STATUS_KEYS,
+    MATRIX12_CODEX_KEY_NAMES,
+    MATRIX12_HARDWARE_IDS,
+    is_matrix12_official_status_key,
+)
 from controller_config.appearance import install_macos_vibrancy, V4_STYLE, V4_TOKENS
 from controller_config.views.v4_widgets import V4Card, UsageRings, StatusMark
 from controller_config.views.connection_terminal import ConnectionTerminal
 from controller_config.codex_usage import CodexUsageSnapshot, CodexUsageStatus
 from controller_config.background_helper import PromptBackgroundController
 from controller_config.firmware_update import FirmwareUpdateState
-from controller_config.firmware_release import is_custom_firmware, RemoteFirmwareState
+from controller_config.firmware_release import RemoteFirmwareState
 from controller_config.joystick_calibration import (
     CalibrationState,
     CalibrationTransaction,
@@ -96,8 +102,6 @@ from controller_config.views.device_silhouette import (
     DEVICE_SILHOUETTE_STYLE,
     DeviceModelShell,
     DeviceModelCanvas,
-    MATRIX12_AGENT_STATUS_KEYS,
-    MATRIX12_HARDWARE_IDS,
     control_display_name,
     create_device_silhouette,
     create_lighting_silhouette_preview,
@@ -747,7 +751,13 @@ class _TopNavigationButton(QPushButton):
 
     def sizeHint(self) -> QSize:  # noqa: N802 - Qt virtual method
         size = super().sizeHint()
-        size.setWidth(max(size.width(), self.fontMetrics().horizontalAdvance(self.text()) + self.iconSize().width() + 28))
+        if self.property("settingsDestination"):
+            translate = self.window()._language_manager.translate
+            captions = (translate("设置"), translate("更新"), "100%")
+            width = max(self.fontMetrics().horizontalAdvance(caption) for caption in captions)
+            size.setWidth(width + (24 if self.property("compactNavigation") else 48))
+        else:
+            size.setWidth(max(size.width(), self.fontMetrics().horizontalAdvance(self.text()) + self.iconSize().width() + 28))
         return size
 
     def set_navigation_icons(self, *, active: QIcon, inactive: QIcon) -> None:
@@ -756,6 +766,9 @@ class _TopNavigationButton(QPushButton):
         self._apply_navigation_icon()
 
     def _apply_navigation_icon(self) -> None:
+        if self.property("desktopUpdateState"):
+            self.setIcon(QIcon())
+            return
         icon = (
             getattr(self, "_active_navigation_icon", QIcon())
             if self.property("active") is True
@@ -766,11 +779,63 @@ class _TopNavigationButton(QPushButton):
 
     def set_active(self, active: bool) -> None:
         self.setProperty("active", active)
-        self.setText("" if self.property("compactNavigation") else self.accessibleName())
+        if self.property("settingsDestination"):
+            self.set_update_notice()
+        else:
+            self.setText("" if self.property("compactNavigation") else self.accessibleName())
         self._apply_navigation_icon()
         self.style().unpolish(self)
         self.style().polish(self)
+        if self.property("settingsDestination"):
+            # Stylesheet polishing reapplies its min/max widths, so restore
+            # the reserved navigation width after polishing as well.
+            self.setFixedWidth(max(62, self.sizeHint().width()))
         self.updateGeometry()
+
+    def firmware_notice_visible(self) -> bool:
+        # Keep the device offer for manual access; suppress only its reminder.
+        desktop_priority = self.property("desktopUpdateState") in {
+            "available", "downloading", "verifying", "ready", "installing",
+        }
+        return bool(self.property("firmwareUpdateAvailable")) and not desktop_priority
+
+    def set_update_notice(self, *, desktop=None, firmware=None, detail=None, progress=None) -> None:
+        if desktop is not None:
+            self.setProperty("desktopUpdateState", desktop)
+            if desktop != "downloading":
+                self.setProperty("desktopUpdateProgress", None)
+        if firmware is not None:
+            self.setProperty("firmwareUpdateAvailable", firmware)
+        if detail is not None:
+            self._update_detail = detail
+        if progress is not None:
+            self.setProperty("desktopUpdateProgress", progress)
+        translate = self.window()._language_manager.translate
+        updating = bool(self.property("desktopUpdateState"))
+        caption = translate("更新" if updating else "设置")
+        self.setAccessibleName(caption)
+        displayed = caption
+        download_progress = self.property("desktopUpdateProgress")
+        if (
+            self.property("desktopUpdateState") == "downloading"
+            and isinstance(download_progress, int)
+            and download_progress >= 0
+        ):
+            displayed = f"{download_progress}%"
+        self.setText(displayed if updating or not self.property("compactNavigation") else "")
+        detail = getattr(self, "_update_detail", "") if updating else caption
+        if self.firmware_notice_visible():
+            detail += "\n" + translate("设备固件有更新")
+        if updating:
+            detail += "\n" + translate("右键打开设置")
+        self.setToolTip(detail)
+        self.setAccessibleDescription(detail)
+        self._apply_navigation_icon()
+        # Qt's native minimumSizeHint also depends on the current text/icon.
+        # Reserve the same translated width for both settings and update states.
+        self.setFixedWidth(max(62, self.sizeHint().width()))
+        self.updateGeometry()
+        self.update()
 
     def _style_option(self) -> QStyleOptionButton:
         option = QStyleOptionButton()
@@ -784,7 +849,27 @@ class _TopNavigationButton(QPushButton):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
-        if self.property("active") is True:
+        if self.property("desktopUpdateState"):
+            painter.setPen(Qt.PenStyle.NoPen)
+            downloading = self.property("desktopUpdateState") == "downloading"
+            painter.setBrush(QColor("#344466") if downloading else QColor("#4E7CF3"))
+            painter.drawRoundedRect(rect, rect.height() / 2, rect.height() / 2)
+            progress = self.property("desktopUpdateProgress")
+            if downloading and isinstance(progress, int) and progress > 0:
+                painter.save()
+                capsule = QPainterPath()
+                capsule.addRoundedRect(rect, rect.height() / 2, rect.height() / 2)
+                painter.setClipPath(capsule)
+                painter.fillRect(
+                    QRectF(
+                        rect.left(), rect.top(),
+                        rect.width() * min(progress, 100) / 100,
+                        rect.height(),
+                    ),
+                    QColor("#4E7CF3"),
+                )
+                painter.restore()
+        elif self.property("active") is True:
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(V4_TOKENS["baseDark"]))
             painter.drawRoundedRect(rect, rect.height() / 2, rect.height() / 2)
@@ -807,7 +892,16 @@ class _TopNavigationButton(QPushButton):
         painter.end()
         option.text = option.text.replace("&", "&&")
         label_painter = QStylePainter(self)
-        label_painter.drawControl(QStyle.ControlElement.CE_PushButtonLabel, option)
+        if self.property("desktopUpdateState"):
+            label_painter.setPen(QColor("#FFFFFF"))
+            label_painter.drawText(self.rect(), Qt.AlignCenter, option.text)
+        else:
+            label_painter.drawControl(QStyle.ControlElement.CE_PushButtonLabel, option)
+        if self.firmware_notice_visible():
+            label_painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            label_painter.setPen(QPen(QColor(V4_TOKENS["baseDark"]), 1.5))
+            label_painter.setBrush(QColor("#FF5F57"))
+            label_painter.drawEllipse(QRectF(self.width() - 11, 3, 7, 7))
 
 
 class _DottedRoot(QWidget):
@@ -1013,11 +1107,20 @@ class _ResponsiveMappingWorkspace(QWidget):
             if self.maximumHeight() != 16777215:
                 self.setMaximumHeight(16777215)
         else:
-            rail_height = rail.layout().totalHeightForWidth(rail.width()) if rail is not None else 0
-            inspector_height = 0
-            if self._inspector is not None:
-                inspector_height = self._inspector.layout().totalHeightForWidth(inspector_width)
-            height = max(available_height, rail_height, inspector_height, 440)
+            bounded_editor = (
+                self._inspector is not None
+                and self._inspector.findChild(QScrollArea, "mappingEditorBody") is not None
+            )
+            if bounded_editor:
+                height = max(available_height, 440)
+            else:
+                rail_height = rail.layout().totalHeightForWidth(rail.width()) if rail is not None else 0
+                inspector_height = (
+                    self._inspector.layout().totalHeightForWidth(inspector_width)
+                    if self._inspector is not None
+                    else 0
+                )
+                height = max(available_height, rail_height, inspector_height, 440)
             if self.minimumHeight() != height or self.maximumHeight() != height:
                 self.setFixedHeight(height)
         self._layout.activate()
@@ -1207,9 +1310,19 @@ class MainWindow(QMainWindow):
         self._content_layout = QVBoxLayout(self._content)
         self._content_layout.setContentsMargins(26, 8, 26, 18)
         console_layout.addWidget(self._content, 1)
+        self._update_notice_area = QWidget(objectName="updateNoticeArea")
+        self._update_notice_area.setFixedHeight(44)
+        self._update_notice_area.setStyleSheet("#updateNoticeArea QPushButton { min-height: 24px; max-height: 28px; padding: 2px 8px; }")
+        notice_layout = QHBoxLayout(self._update_notice_area)
+        notice_layout.setContentsMargins(26, 2, 26, 6)
+        notice_layout.setSpacing(16)
         self._desktop_update_footer = QWidget(objectName="desktopUpdateFooter")
         self._desktop_update_footer.hide()
-        console_layout.addWidget(self._desktop_update_footer)
+        notice_layout.addWidget(self._desktop_update_footer, 1)
+        self._firmware_update_footer = QWidget(objectName="firmwareUpdateFooter")
+        self._firmware_update_footer.hide()
+        notice_layout.addWidget(self._firmware_update_footer, 1)
+        console_layout.addWidget(self._update_notice_area)
         root_layout.addWidget(console_frame)
         self.setCentralWidget(root)
         self._macos_vibrancy_enabled = False
@@ -1228,6 +1341,8 @@ class MainWindow(QMainWindow):
             )
             self._background_controller.codex_usage_changed.connect(self._update_home_usage)
         self.render(view_model.model)
+        from controller_config.views.firmware_reminder import FirmwareReminderUi
+        self._firmware_update_ui = FirmwareReminderUi(self)
 
     def showEvent(self, event) -> None:  # noqa: N802 - Qt virtual method
         super().showEvent(event)
@@ -1473,13 +1588,23 @@ class MainWindow(QMainWindow):
             button.setAccessibleDescription("切换界面")
             button.set_active(page == "overview")
             button.setEnabled(enabled)
-            button.clicked.connect(
-                lambda _checked=False, target=page: self._navigate(target)
-            )
+            if page == "settings":
+                button.setProperty("settingsDestination", True)
+                button.setProperty(SKIP_TRANSLATION_PROPERTY, True)
+                button.clicked.connect(self._activate_settings_navigation)
+                button.setContextMenuPolicy(Qt.CustomContextMenu)
+                button.customContextMenuRequested.connect(self._settings_navigation_menu)
+            else:
+                button.clicked.connect(
+                    lambda _checked=False, target=page: self._navigate(target)
+                )
             self._nav_buttons[page] = button
             nav_layout.addWidget(button)
             shortcut = QShortcut(QKeySequence(f"Ctrl+{index}"), self)
-            shortcut.activated.connect(lambda button=button: button.click() if button.isEnabled() else None)
+            if page == "settings":
+                shortcut.activated.connect(lambda: self._navigate("settings") if self._nav_buttons["settings"].isEnabled() else None)
+            else:
+                shortcut.activated.connect(lambda button=button: button.click() if button.isEnabled() else None)
         layout.addWidget(capsule, 0, Qt.AlignCenter)
         layout.addStretch(1)
 
@@ -1547,6 +1672,32 @@ class MainWindow(QMainWindow):
                 return self._save_preferences(editor)
             return choice == QMessageBox.Discard
         return True
+
+    def _activate_settings_navigation(self) -> None:
+        button = self._nav_buttons["settings"]
+        updater_ui = getattr(self, "_desktop_update_ui", None)
+        if button.property("desktopUpdateState") and updater_ui is not None:
+            updater_ui.activate_navigation()
+        elif button.property("firmwareUpdateAvailable"):
+            self._firmware_update_ui.open_update()
+        else:
+            self._navigate("settings")
+
+    def _settings_navigation_menu(self, point) -> None:
+        button = self._nav_buttons["settings"]
+        menu = QMenu(button)
+        menu.addAction(self._language_manager.translate("打开设置"), lambda: self._navigate("settings"))
+        if button.property("firmwareUpdateAvailable"):
+            menu.addAction(self._language_manager.translate("查看固件更新"), self._firmware_update_ui.open_update)
+        updater_ui = getattr(self, "_desktop_update_ui", None)
+        if button.property("desktopUpdateState") and updater_ui is not None:
+            menu.addAction(self._language_manager.translate("查看更新详情"), lambda: updater_ui.show_status(updater_ui.status, force=True))
+            if updater_ui.status.state == "available":
+                menu.addAction(self._language_manager.translate("稍后提醒"), updater_ui.snooze_update)
+            elif updater_ui.status.state == "downloading":
+                menu.addAction(self._language_manager.translate("取消下载"), updater_ui.updater.cancel)
+        menu.exec(button.mapToGlobal(point))
+        menu.deleteLater()
 
     def _navigate(self, page: str) -> None:
         if page != self._view_model.page and not self._confirm_leave_page():
@@ -1729,6 +1880,8 @@ class MainWindow(QMainWindow):
             and current_preferences_page.property("transactionState")
             == self._view_model.write_transaction.state.value
             and model.snapshot is not None
+            and current_preferences_page.property("configGeneration")
+            == model.snapshot.config_result.get("generation")
             and current_preferences_page.property("devicePort")
             == model.snapshot.port_name
         )
@@ -2526,9 +2679,7 @@ class MainWindow(QMainWindow):
             ("remoteFirmware", remote, remote.total_size),
         ):
             message = scroll.findChild(QLabel, prefix + "Message")
-            text = ("当前为自定义固件，不自动比较或安装官方更新。"
-                    if prefix == "remoteFirmware" and self._view_model.model.snapshot
-                    and is_custom_firmware(self._view_model.model.snapshot) else status.message)
+            text = self._view_model.firmware_online_message if prefix == "remoteFirmware" else status.message
             set_translatable_text(message, text)
             progress = scroll.findChild(QProgressBar, prefix + "Progress")
             if progress is not None:  # Download progress exists only while downloading.
@@ -2561,7 +2712,7 @@ class MainWindow(QMainWindow):
         heading.addWidget(_digital_caption("FIRMWARE MAINTENANCE"))
         heading.addWidget(QLabel("固件维护", objectName="inspectorTitle"))
         intro = QLabel(
-            "选择自包含维护包，先在电脑端核对镜像身份，再由用户明确确认后通过 USB CDC 更新非活动 OTA 分区。",
+            "在线检查并安装官方固件，也可在需要时从文件安装。开始安装前会再次确认。",
             objectName="muted",
         )
         intro.setWordWrap(True)
@@ -2592,8 +2743,12 @@ class MainWindow(QMainWindow):
         device_layout.addWidget(current)
         _add_technical_details(device_layout, "firmwareDeviceDetails",
                               "\n".join(_planned_tool_facts("firmware", snapshot)))
-        if snapshot and is_custom_firmware(snapshot):
-            note = QLabel("当前运行自定义固件。恢复官方版本请导入官方签名固件包；安装会替换你的自定义功能。", objectName="customFirmwareNotice")
+        if snapshot:
+            origin_text = {"official": "固件来源：匹配官方发布", "custom": "固件来源：自定义固件", "unknown": "固件来源：未确认"}[self._view_model.firmware_origin]
+            origin = QLabel(origin_text, objectName="firmwareOrigin")
+            origin.setWordWrap(True)
+            device_layout.addWidget(origin)
+            note = QLabel(self._view_model.firmware_origin_notice, objectName="customFirmwareNotice")
             note.setWordWrap(True)
             device_layout.addWidget(note)
         layout.addWidget(device_card)
@@ -2604,9 +2759,8 @@ class MainWindow(QMainWindow):
         online_layout.setContentsMargins(24, 20, 24, 22)
         online_layout.setSpacing(8)
         online_layout.addWidget(QLabel("ONLINE RELEASE", objectName="eyebrow"))
-        online_layout.addWidget(QLabel("在线固件发布", objectName="inspectorTitle"))
-        online_message = QLabel("当前为自定义固件，不自动比较或安装官方更新。"
-                               if snapshot and is_custom_firmware(snapshot) else remote.message, objectName="muted")
+        online_layout.addWidget(QLabel("在线更新（推荐）", objectName="inspectorTitle"))
+        online_message = QLabel(self._view_model.firmware_online_message, objectName="muted")
         online_message.setObjectName("remoteFirmwareMessage")
         online_message.setStyleSheet("color: #dc9b86;" if remote.state is RemoteFirmwareState.FAILED else "color: #9A958C;")
         online_message.setWordWrap(True)
@@ -2646,7 +2800,7 @@ class MainWindow(QMainWindow):
         online_buttons = QHBoxLayout()
         check_online = QPushButton(
             "重新检查" if remote.state in {RemoteFirmwareState.UNPUBLISHED, RemoteFirmwareState.FAILED}
-            else "检查在线固件", objectName="secondary")
+            else ("查看官方版本" if self._view_model.firmware_origin != "official" else "检查在线更新"), objectName="secondary")
         check_online.setObjectName("checkRemoteFirmware")
         check_online.setEnabled(
             remote.state is not RemoteFirmwareState.UNCONFIGURED
@@ -2655,7 +2809,6 @@ class MainWindow(QMainWindow):
             and remote.state is not RemoteFirmwareState.DOWNLOADED
             and snapshot is not None
             and capability is True
-            and not is_custom_firmware(snapshot)
             and model.state is AppState.READY
             and not transaction.is_busy
             and not self._view_model.calibration.blocks_editing
@@ -2665,12 +2818,13 @@ class MainWindow(QMainWindow):
         online_buttons.addWidget(check_online)
         if remote.release is not None and remote.state in {
             RemoteFirmwareState.AVAILABLE,
+            RemoteFirmwareState.RESTORE_AVAILABLE,
             RemoteFirmwareState.FAILED,
         }:
             download_online = QPushButton(
-                "重新下载新固件"
+                "下载官方恢复固件" if remote.restoration else "重新下载新固件"
                 if remote.state is RemoteFirmwareState.FAILED
-                else "下载新固件",
+                else "下载固件更新",
                 objectName="primary",
             )
             download_online.setObjectName("downloadRemoteFirmware")
@@ -2685,7 +2839,7 @@ class MainWindow(QMainWindow):
         online_buttons.addStretch(1)
         online_layout.addLayout(online_buttons)
         online_boundary = QLabel(
-            "stable 渠道只接受正式发布包；sample 渠道用于工程样品联调。检查只读取版本信息，下载并校验完成后，点击“安装新固件”并确认才会写入设备。",
+            "检查和下载不会改动设备。下载并验证完成后，页面只会提供一个“安装固件更新”按钮；确认后才会写入设备。",
             objectName="roleContext",
         )
         online_boundary.setWordWrap(True)
@@ -2697,10 +2851,10 @@ class MainWindow(QMainWindow):
         package_layout.setContentsMargins(24, 20, 24, 22)
         package_layout.setSpacing(8)
         package_layout.addWidget(QLabel("UPDATE PACKAGE", objectName="eyebrow"))
-        package_layout.addWidget(QLabel("维护包检查", objectName="inspectorTitle"))
+        package_layout.addWidget(QLabel("从文件安装（高级）", objectName="inspectorTitle"))
         if package is None:
             package_note = QLabel(
-                "尚未导入固件维护包。可直接选择下载的 ZIP，或选择解压后的 firmware-manifest.json；导入后只执行检查，不会自动安装。",
+                "仅在收到支持人员提供的固件文件，或安装自己制作的固件时使用。选择文件后只会检查，不会自动安装。",
                 objectName="muted",
             )
             package_note.setWordWrap(True)
@@ -2718,7 +2872,7 @@ class MainWindow(QMainWindow):
                 f"\nsize: {package.size} bytes\nvalidation_state: {package.validation_state}"
                 f"\ngit_dirty: {package.git_dirty}"
             ))
-        choose = QPushButton("导入官方固件…", objectName="secondary")
+        choose = QPushButton("选择官方固件文件…", objectName="secondary")
         choose.setObjectName("selectFirmwarePackage")
         choose.setEnabled(
             not transaction.is_busy
@@ -2729,7 +2883,7 @@ class MainWindow(QMainWindow):
         )
         choose.clicked.connect(self._select_firmware_package)
         package_layout.addWidget(choose, 0, Qt.AlignLeft)
-        custom = QPushButton("导入自定义固件…", objectName="selectCustomFirmwarePackage")
+        custom = QPushButton("选择自定义固件文件…", objectName="selectCustomFirmwarePackage")
         custom.setEnabled(choose.isEnabled())
         custom.clicked.connect(lambda: self._select_firmware_package(custom=True))
         package_layout.addWidget(custom, 0, Qt.AlignLeft)
@@ -2785,12 +2939,14 @@ class MainWindow(QMainWindow):
         elif transaction.state in {
             FirmwareUpdateState.PACKAGE_READY,
             FirmwareUpdateState.FAILED,
-            FirmwareUpdateState.COMPLETED,
         }:
             start = QPushButton(
-                "安装新固件"
+                "恢复官方固件…" if package and package.source_kind == "official" and (self._view_model.firmware_origin != "official" or remote.restoration)
+                else "安装下载的固件更新"
                 if remote.state is RemoteFirmwareState.DOWNLOADED
-                else "安装所选固件",
+                else "安装导入的自定义固件"
+                if package and package.source_kind == "custom"
+                else "安装导入的官方固件",
                 objectName="primary",
             )
             start.setObjectName("startFirmwareUpdate")
@@ -2885,6 +3041,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "无法恢复出厂设置", str(exc))
 
     def _check_remote_firmware(self) -> None:
+        self._firmware_update_ui.reveal()
         try:
             self._view_model.check_remote_firmware()
         except ValueError as exc:
@@ -2920,8 +3077,8 @@ class MainWindow(QMainWindow):
         warning = ""
         if package.source_kind == "custom":
             warning = translate_ui_text("此固件未经官方验证。安装将替换当前固件，可能改变功能、配置兼容性及后续连接能力。请先导出重要配置并准备恢复用的官方固件。") + "\n\n"
-        elif is_custom_firmware(snapshot):
-            warning = translate_ui_text("恢复官方固件将替换当前自定义功能。请先保留你的源码和重要配置。") + "\n\n"
+        elif self._view_model.firmware_origin != "official" or self._view_model.remote_firmware.restoration:
+            warning = translate_ui_text("恢复官方固件将替换当前固件及自定义功能，不会合并代码。请先保留你的源码和重要配置。") + "\n\n"
         choice = QMessageBox.warning(
             self,
             translate_ui_text("确认安装固件"),
@@ -3162,7 +3319,7 @@ class MainWindow(QMainWindow):
                 set_translatable_text(summary, "当前控件有未应用的修改" if pending else saved_summary)
                 set_translatable_text(draft_state,
                     "离线草稿 · 连接后才能应用到设备" if state not in {AppState.READY, AppState.READ_ONLY}
-                    else "点击应用到设备，验证后确认生效" if pending else saved_state)
+                    else "点击应用到设备，完成验证、写入与读回" if pending else saved_state)
 
             action_editor.action_changed.connect(refresh_pending)
             short_name.textChanged.connect(refresh_pending)
@@ -3250,9 +3407,6 @@ class MainWindow(QMainWindow):
             )
             save_to_device.clicked.connect(self._prepare_device_write)
             actions_row.addWidget(save_to_device)
-        technical = QPushButton("技术详情", objectName="ghostOnDark")
-        technical.clicked.connect(lambda: self._show_technical_details(snapshot))
-        actions_row.addWidget(technical)
         bottom_layout.addLayout(actions_row)
         if self._view_model.write_transaction.state not in {ConfigTransactionState.IDLE, ConfigTransactionState.ACTIVE}:
             transaction_card = self._write_transaction_card(snapshot, base_changed, show_prepare=False)
@@ -3574,12 +3728,12 @@ class MainWindow(QMainWindow):
         details_box.setSpacing(12)
         human = _semantic_role_card(
             "HUMAN INPUT",
-            "白色键帽与金属控制件 · 发出动作",
+            "功能键与金属控制件 · 发出动作",
             "roleHuman",
         )
         agent = _semantic_role_card(
             "AGENT STATUS",
-            "六枚透明键帽 · 显示外部 Agent 状态",
+            "六个状态灯键 · 显示外部 Agent 状态",
             "roleAgent",
         )
         context = _semantic_role_card(
@@ -3647,6 +3801,36 @@ class MainWindow(QMainWindow):
             draft.hardware_id in MATRIX12_HARDWARE_IDS
             and mode in {"codex", "claude_code"}
         )
+        official_status_key = is_matrix12_official_status_key(
+            draft.hardware_id, self._selected_control_id
+        )
+        if official_status_key:
+            card.setProperty("officialReadOnly", True)
+            official_title = QLabel(
+                "Codex 官方定义",
+                objectName="officialControlDefinitionTitle",
+            )
+            official_title.setStyleSheet("font-size: 17px; font-weight: 800;")
+            card_layout.addWidget(official_title)
+            action_name = MATRIX12_CODEX_KEY_NAMES.get(
+                self._selected_control_id,
+                "设备专用动作",
+            )
+            explanation = self._language_manager.translate(
+                "{action} · 六个状态灯键由官方功能接管，不能自定义。"
+            ).format(action=action_name)
+            notice = QLabel(explanation, objectName="officialControlDefinitionNote")
+            notice.setWordWrap(True)
+            card_layout.addWidget(notice)
+            boundary = QLabel(
+                "NORMAL 模式下，六个功能键、旋钮和摇杆仍可自定义。",
+                objectName="officialControlCustomizationBoundary",
+            )
+            boundary.setWordWrap(True)
+            card_layout.addWidget(boundary)
+            card_layout.addStretch(1)
+            return card
+
         if uses_dedicated_actions:
             execution_notice = QLabel(
                 self._language_manager.translate(
@@ -3894,15 +4078,14 @@ class MainWindow(QMainWindow):
                 self._suppress_mapping_edit_restore = False
 
         editing_enabled = not self._view_model.write_transaction.blocks_editing
-        # System fonts and translated labels need the full inspector width.
-        save_actions = QVBoxLayout()
+        save_actions = QHBoxLayout()
         apply_to_device = QPushButton(
-            "保存 NORMAL 映射…" if uses_dedicated_actions else "应用到设备…",
+            "应用 NORMAL 映射" if uses_dedicated_actions else "应用到设备",
             objectName="applyMappingToDevice",
         )
         apply_to_device.setProperty("buttonRole", "primary")
         apply_to_device.setToolTip(
-            "保存当前修改并交给设备验证；验证通过后仍需由你最终确认。"
+            "保存当前修改，完成设备验证、写入和读回确认。"
         )
         can_apply = (
             editing_enabled
@@ -3919,8 +4102,13 @@ class MainWindow(QMainWindow):
 
         def update_apply_state() -> None:
             try:
+                baseline_action = (
+                    editing_action
+                    if isinstance(editing_action, dict)
+                    else {"type": "none"}
+                )
                 pending = (short_name_editor.text() != str(mapping.get("short_name", "未映射") if mapping else "未映射")
-                           or _canonical_action(action_editor.action()) != _canonical_action(editing_action))
+                           or _canonical_action(action_editor.action()) != _canonical_action(baseline_action))
             except ValueError:
                 pending = False
             apply_to_device.setEnabled(can_apply and (pending or draft.is_dirty))
@@ -3929,11 +4117,11 @@ class MainWindow(QMainWindow):
         short_name_editor.textChanged.connect(update_apply_state)
         update_apply_state()
 
-        def save_and_prepare() -> None:
+        def save_and_apply() -> None:
             if save_local_draft():
-                self._prepare_device_write()
+                self._prepare_device_write(confirm_after_validation=True)
 
-        apply_to_device.clicked.connect(save_and_prepare)
+        apply_to_device.clicked.connect(save_and_apply)
         save_actions.addWidget(apply_to_device, 1)
         if self._view_model.model.state not in {AppState.READY, AppState.READ_ONLY}:
             apply_to_device.setToolTip("需要连接并读取设备；当前修改可先保存为本地草稿。")
@@ -4088,6 +4276,9 @@ class MainWindow(QMainWindow):
         scroll.setProperty(
             "transactionState", self._view_model.write_transaction.state.value
         )
+        scroll.setProperty(
+            "configGeneration", snapshot.config_result.get("generation")
+        )
         scroll.setProperty("devicePort", snapshot.port_name)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
@@ -4097,7 +4288,8 @@ class MainWindow(QMainWindow):
         layout.setSpacing(14)
 
         preview = self._view_model.lighting_preview
-        editor_lighting = copy.deepcopy(draft.config["lighting"])
+        editor_config = copy.deepcopy(draft.config)
+        editor_lighting = editor_config["lighting"]
         if preview.candidate is not None:
             editor_lighting.update(copy.deepcopy(preview.candidate))
         editor = PreferencesEditor(
@@ -4200,12 +4392,12 @@ class MainWindow(QMainWindow):
         sync_layout.addWidget(sync_summary)
         save_actions = QVBoxLayout()
         save_to_device = QPushButton(
-            "应用到设备…", objectName="savePreferencesToDevice"
+            "应用到设备", objectName="savePreferencesToDevice"
         )
         save_to_device.setProperty("buttonRole", "primary")
         save_to_device.setMinimumHeight(40)
         save_to_device.setToolTip(
-            "将当前灯光、震动和屏幕设置交给设备验证；确认后写入，无需先保存本地草稿。"
+            "保存当前灯光、震动和屏幕设置，完成设备验证、写入和读回确认。"
         )
         can_apply = (
             editing_enabled
@@ -4303,15 +4495,6 @@ class MainWindow(QMainWindow):
         message = QLabel(transaction.message, objectName="muted")
         message.setWordWrap(True)
         layout.addWidget(message)
-        details = transaction.technical
-        if transaction.candidate_digest:
-            generation = (snapshot.config_result.get("generation")
-                          if transaction.state is ConfigTransactionState.ACTIVE
-                          else transaction.base_generation)
-            details += f"\nconfiguration revision: {generation}\ncandidate digest: {transaction.candidate_digest}"
-        if details:
-            _add_technical_details(layout, "configurationWrite", details.strip())
-
         buttons = QHBoxLayout() if show_prepare else QVBoxLayout()
         if transaction.state is ConfigTransactionState.AWAITING_CONFIRMATION:
             confirm = QPushButton("确认写入设备", objectName="confirmConfigurationWrite")
@@ -4356,9 +4539,11 @@ class MainWindow(QMainWindow):
         layout.addLayout(buttons)
         return card
 
-    def _prepare_device_write(self) -> None:
+    def _prepare_device_write(self, *, confirm_after_validation: bool = False) -> None:
         try:
-            self._view_model.prepare_device_write()
+            self._view_model.prepare_device_write(
+                confirm_after_validation=confirm_after_validation
+            )
         except ValueError as exc:
             QMessageBox.warning(self, "无法验证设备配置", str(exc))
 
@@ -4438,6 +4623,8 @@ class MainWindow(QMainWindow):
         card = self._current_mapping_card()
         editing_state = self._current_mapping_editing_state()
         if draft is None or card is None:
+            return False
+        if card.property("officialReadOnly") is True:
             return False
         if editing_state is None:
             return True
@@ -4648,7 +4835,7 @@ class MainWindow(QMainWindow):
 
     def _save_preferences_and_prepare(self, editor: PreferencesEditor) -> None:
         if self._save_preferences(editor):
-            self._prepare_device_write()
+            self._prepare_device_write(confirm_after_validation=True)
 
     def _toggle_lighting_preview(
         self,
@@ -4814,10 +5001,16 @@ class MainWindow(QMainWindow):
         if draft is None:
             return
         related = _related_controls(control_id, draft.controls)
-        if related and related[0] != self._selected_control_id:
+        selected_control_id = (
+            control_id if control_id in related else related[0] if related else None
+        )
+        if (
+            selected_control_id is not None
+            and selected_control_id != self._selected_control_id
+        ):
             if not self._confirm_leave_mapping_editor():
                 return
-            self._selected_control_id = related[0]
+            self._selected_control_id = selected_control_id
             self._pending_mapping_editing_state = None
             if not self._refresh_mapping_workspace():
                 self.render(self._view_model.model)
@@ -4848,6 +5041,9 @@ class MainWindow(QMainWindow):
         device = workspace.findChild(QFrame, "deviceWorkspace")
         if device is None:
             return False
+        canvas = device.findChild(DeviceModelCanvas, "deviceModelCanvas")
+        if canvas is not None:
+            canvas.set_selected_control(self._selected_control_id)
         for button in device.findChildren(QPushButton):
             control_id = button.property("controlId")
             if not isinstance(control_id, str):
@@ -4862,9 +5058,6 @@ class MainWindow(QMainWindow):
             button.style().polish(button)
             button.update()
 
-        canvas = device.findChild(DeviceModelCanvas)
-        if canvas is not None:
-            canvas.set_selected_control(self._selected_control_id)
         inspector = self._mapping_editor(snapshot, None)
         if inspector is None:
             inspector = self._selection_inspector(snapshot)
@@ -5467,12 +5660,12 @@ def _control_role_copy(control_id: str) -> tuple[str, str]:
     if control_id in MATRIX12_AGENT_STATUS_KEYS:
         return (
             "AGENT STATUS",
-            "透明键帽\nCodex 模式下承担外部 Agent 状态反馈；这里编辑的是设备协议动作，不定义 Agent 状态语义。",
+            "状态灯键\n用于 Agent 状态与选择，由官方功能接管，不提供自定义。",
         )
     if control_id.startswith("key."):
         return (
             "HUMAN INPUT",
-            "白色键帽\n用于触发用户动作，可编辑真实按键、组合键或设备功能。",
+            "功能键\n用于触发用户动作，可编辑真实按键、组合键或设备功能。",
         )
     return (
         "HUMAN INPUT",
@@ -5524,9 +5717,9 @@ def _canvas_title(mode: str) -> str:
 
 def _canvas_context(mode: str) -> str:
     if mode == "codex":
-        return "透明键阵列显示 Agent 状态；白键与金属控制件保留用户决策入口。"
+        return "状态灯键显示 Agent 状态；功能键与金属控制件用于操作。"
     if mode == "normal":
-        return "白色键帽是主要动作入口；透明键仍保留其状态键帽身份。"
+        return "功能键用于触发动作；状态灯键用于显示状态。"
     return "界面只呈现设备已经报告的模式与控件能力。"
 
 
@@ -5534,7 +5727,7 @@ def _mode_explanation(mode: str) -> str:
     if mode == "codex":
         return "当前为 Codex 模式。设备负责转发外部 Agent 状态，不表示设备内部运行 AI；当前协议尚未报告 Agent 来源与实时状态，因此界面不虚构这些内容。"
     if mode == "normal":
-        return "当前为 Normal 模式。白色键帽用于普通按键和组合动作；透明键不会被解释成普通 RGB 灯位。"
+        return "当前为 Normal 模式。功能键用于普通按键和组合动作；状态灯键不作为普通 RGB 灯位。"
     return "当前模式没有对应的专用语义说明，控制台保留设备报告的原始模式。"
 
 

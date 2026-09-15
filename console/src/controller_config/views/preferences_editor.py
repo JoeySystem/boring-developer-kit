@@ -227,6 +227,9 @@ class RgbButton(QPushButton):
             return
         self._dialog_original = self._rgb
         dialog = QColorDialog(QColor(*self._rgb), self)
+        # Keep confirmation/cancel visible instead of a detached native color panel.
+        dialog.setOption(QColorDialog.DontUseNativeDialog, True)
+        dialog.setStyleSheet("QColorDialog { background-color: #242522; }")
         dialog.setWindowTitle(translate_ui_text(self._label))
         dialog.currentColorChanged.connect(self._preview_color)
         dialog.rejected.connect(self._restore_dialog_color)
@@ -266,9 +269,11 @@ class RgbButton(QPushButton):
             self, f"{self._label}：{red}, {green}, {blue}"
         )
         self.setStyleSheet(
+            "QPushButton#rgbButton { "
             f"background: rgb({red}, {green}, {blue}); color: {text_color}; "
             f"padding: {0 if compact else 10}px; border: none; border-radius: {17 if compact else 14}px;"
             + (" min-width: 34px; max-width: 34px; min-height: 34px; max-height: 34px; margin: 0;" if compact else "")
+            + " }"
         )
 
 
@@ -755,8 +760,11 @@ class PreferencesEditor(QWidget):
 
         under_key_values = self._lighting.get("under_key")
         if under_key_count > 0 and isinstance(under_key_values, list):
-            layout.addWidget(QLabel("WHITE KEYS · 白色动作键灯", objectName="eyebrow"))
-            note = QLabel("每颗白色按键灯可以单独设置 RGB；设为 0, 0, 0 可关闭该键灯。")
+            layout.addWidget(QLabel("FUNCTION KEYS · 功能键灯光", objectName="eyebrow"))
+            note = QLabel(
+                "每颗功能键灯可以单独设置 RGB；设为 0, 0, 0 可关闭该键灯。",
+                objectName="functionKeyLightingNote",
+            )
             note.setWordWrap(True)
             layout.addWidget(note)
             colors = QGridLayout()
@@ -767,7 +775,7 @@ class PreferencesEditor(QWidget):
                     or control_id in self._agent_status_control_ids
                 ):
                     continue
-                button = RgbButton(f"白色动作键 {index + 1}", value, control_id=control_id)
+                button = RgbButton(f"功能键 {index + 1}", value, control_id=control_id)
                 button.setProperty("underKeyIndex", index)
                 button.value_changed.connect(self._emit_lighting_changed)
                 self._under_key_colors.append((index, button))
@@ -786,9 +794,9 @@ class PreferencesEditor(QWidget):
                 colors.addWidget(swatch, visible_index // 6, visible_index % 6)
             layout.addLayout(colors)
             if self._agent_status_control_ids:
-                layout.addWidget(QLabel("AGENT KEYS · 透明状态键灯", objectName="eyebrow"))
+                layout.addWidget(QLabel("STATUS KEYS · 状态灯键", objectName="eyebrow"))
                 agent_note = QLabel(
-                    "透明键灯由 Agent 状态语义接管，不在这里作为普通 RGB 灯编辑；现有配置值保持不变。"
+                    "状态灯键由 Agent 状态语义接管，不在这里作为普通 RGB 灯编辑；现有配置值保持不变。"
                 )
                 agent_note.setWordWrap(True)
                 layout.addWidget(agent_note)

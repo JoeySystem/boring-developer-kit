@@ -382,11 +382,13 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
         "Appearance & Feedback",
         "Settings",
     }
-    assert window._nav_buttons["overview"].text() == "Key Mapping"
+    assert window._nav_buttons["overview"].text() == (
+        "" if window._nav_buttons["overview"].property("compactNavigation") else "Key Mapping"
+    )
     assert all(
         button.text() == button.accessibleName()
-        for page, button in window._nav_buttons.items()
-        if page != "overview"
+        or (button.text() == "" and button.property("compactNavigation"))
+        for button in window._nav_buttons.values()
     )
     assert {
         button.toolTip() for button in window._nav_buttons.values()
@@ -395,7 +397,7 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
     }
     assert {
         button.accessibleDescription() for button in window._nav_buttons.values()
-    } == {"Switch View"}
+    } == {"Switch View", "Settings"}
     qtbot.waitUntil(
         lambda: window._device_auth_summary.text() == "Development · Unverified [ DEV ]",
         timeout=1000,
@@ -410,8 +412,12 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
     english_action = window.findChild(QAction, "languageAction_en_US")
     assert english_action is not None and english_action.isChecked()
     qtbot.mouseClick(window._nav_buttons["settings"], Qt.LeftButton)
-    assert window._nav_buttons["settings"].text() == "Settings"
-    assert window._nav_buttons["overview"].text() == "Key Mapping"
+    assert window._nav_buttons["settings"].text() in {"", "Settings"}
+    if window._nav_buttons["settings"].text() == "":
+        assert window._nav_buttons["settings"].property("compactNavigation")
+    assert window._nav_buttons["overview"].text() == (
+        "" if window._nav_buttons["overview"].property("compactNavigation") else "Key Mapping"
+    )
     assert window.findChild(QPushButton, "openDiagnosticsSettings").text() == (
         "Open Diagnostics"
     )
@@ -575,7 +581,9 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
         timeout=1000,
     )
     assert manager.language == SIMPLIFIED_CHINESE
-    assert window._nav_buttons["settings"].text() == "设置"
+    assert window._nav_buttons["settings"].text() in {"", "设置"}
+    if window._nav_buttons["settings"].text() == "":
+        assert window._nav_buttons["settings"].property("compactNavigation")
     language_buttons = {
         button.text(): button
         for button in window.findChildren(QPushButton, "settingsLanguageButton")

@@ -72,7 +72,7 @@ class UsageRings(QWidget):
         self.seven_day: float | None = None
         self.five_hour: float | None = None
         self._labels = ("7D", "5H")
-        self.setMinimumSize(104, 104)
+        self.setFixedSize(104, 104)
         self.set_usage(seven_day=None, five_hour=None)
 
     def sizeHint(self) -> QSize:

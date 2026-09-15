@@ -33,7 +33,7 @@ class CalibrationGateway(QObject):
         self.poll_intervals = []
         self.scan_calls = 0
 
-    def scan(self) -> None:
+    def scan(self, *, usb_only: bool = False) -> None:
         self.scan_calls += 1
 
     def connect_port(self, _port_name: str) -> None:

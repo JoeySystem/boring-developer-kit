@@ -28,7 +28,7 @@ def test_battery_requires_valid_percentage(contract, status, expected):
 def test_battery_updates_in_place_and_disconnect_hides_stale_value(session, port):
     window, vm, gateway, snapshot, _ = session
     gateway.snapshot_ready.emit(replace(snapshot, port_name=port))
-    window._select_physical_control('key.1')
+    window._select_physical_control('key.8')
     editor = window.findChild(QLineEdit, 'mappingShortNameEditor')
     editor.setText('Unsaved')
     label = window.findChild(QLabel, 'deviceBatterySummary')

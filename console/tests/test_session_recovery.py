@@ -54,8 +54,15 @@ def session(qtbot, qapp, contract, tmp_path):
         # readers before clearing the draft during teardown.
         view_model.screen_icon.attach(None)
         view_model.screen_glyphs.attach(None)
-        if view_model.draft is not None and view_model.draft.is_dirty:
-            view_model.discard_draft()
+        for pending_draft in view_model.pending_dirty_workspaces():
+            pending_draft.discard()
+        window._selected_control_id = None
+        window._pending_mapping_editing_state = None
+        window.render(view_model.model)
+        window._confirm_leave_page = lambda: True
+        window._confirm_discard_screen_icons = lambda: True
+        window._confirm_discard_ble_names = lambda: True
+        view_model.pending_dirty_workspaces = lambda: ()
 
     qtbot.addWidget(window, before_close_func=cleanup_window)
     yield window, view_model, gateway, snapshot, store

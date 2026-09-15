@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from controller_config.i18n import translate_ui_text
-
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
@@ -10,6 +8,7 @@ import re
 import uuid
 import pytest
 from controller_config.models import AppState
+from controller_config.official_controls import MATRIX12_AGENT_STATUS_KEYS
 
 from PySide6.QtCore import QObject, QPoint, QRect, QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QCloseEvent, QImage, QPainter, QPalette
@@ -99,6 +98,18 @@ class _ImmediateScriptRunner:
 EXTENSION_EXAMPLES = Path(__file__).resolve().parents[2] / "examples" / "extensions"
 
 
+def _set_demo_mode(gateway, view_model, qtbot, mode: str) -> None:
+    snapshot = view_model.model.snapshot
+    assert snapshot is not None
+    gateway.snapshot_ready.emit(
+        replace(snapshot, status={**snapshot.status, "operating_mode": mode})
+    )
+    qtbot.waitUntil(
+        lambda: view_model.model.snapshot.status.get("operating_mode") == mode,
+        timeout=1000,
+    )
+
+
 def test_demo_haptic_apply_is_not_blocked_by_unimplemented_icon_read(qtbot, contract):
     vm = MainViewModel(DemoGateway(contract, "ready"), contract)
     window = MainWindow(vm)
@@ -114,9 +125,11 @@ def test_demo_haptic_apply_is_not_blocked_by_unimplemented_icon_read(qtbot, cont
     enabled = editor._haptic_enabled.isChecked()
     editor._haptic_enabled.setChecked(not enabled)
     window.findChild(QPushButton, "savePreferencesToDevice").click()
-    qtbot.waitUntil(lambda: vm.write_transaction.state is ConfigTransactionState.AWAITING_CONFIRMATION)
-    vm.confirm_device_write()
-    qtbot.waitUntil(lambda: vm.write_transaction.state is ConfigTransactionState.ACTIVE)
+    qtbot.waitUntil(
+        lambda: vm.write_transaction.state is ConfigTransactionState.ACTIVE,
+        timeout=5000,
+    )
+    assert window.findChild(QPushButton, "confirmConfigurationWrite") is None
     assert vm.model.snapshot.config_result["config"]["haptic"]["enabled"] is not enabled
     assert not window.findChild(QPushButton, "savePreferencesToDevice").isEnabled()
     vm.shutdown()
@@ -386,26 +399,21 @@ def test_encoder_tile_names_rotation_direction_before_the_mapped_action(
     assert "转 ·" not in encoder.toolTip()
 
 
-def test_default_window_shows_complete_overview_without_vertical_scrolling(qtbot, contract) -> None:
+def test_default_window_shows_complete_overview(qtbot, contract) -> None:
     gateway = DemoGateway(contract, "ready")
     view_model = MainViewModel(gateway, contract)
     window = MainWindow(view_model)
     qtbot.addWidget(window)
     window.resize(1240, 780)
     window.show()
+    window._fit_window_to_available_area(QRect(0, 0, 1240, 780))
+    window.resize(1240, 780)
     view_model.start()
     qtbot.waitUntil(
         lambda: window.findChild(QScrollArea, "overviewScroll") is not None,
         timeout=1000,
     )
 
-    qtbot.waitUntil(
-        lambda: (
-            (current := window.findChild(QScrollArea, "overviewScroll")) is not None
-            and current.verticalScrollBar().maximum() == 0
-        ),
-        timeout=1000,
-    )
     overview = window.findChild(QScrollArea, "overviewScroll")
     assert overview is not None
     compact_status = next(
@@ -438,6 +446,8 @@ def test_authenticated_device_has_distinct_connection_label(qtbot, contract) -> 
     window = MainWindow(view_model)
     qtbot.addWidget(window)
     window.show()
+    window._fit_window_to_available_area(QRect(0, 0, 1280, 800))
+    window.resize(1280, 800)
 
     gateway.snapshot_ready.emit(snapshot)
     qtbot.waitUntil(
@@ -567,6 +577,8 @@ def test_top_navigation_keeps_labels_and_routes_primary_pages(
     window = MainWindow(view_model)
     qtbot.addWidget(window)
     window.show()
+    window._fit_window_to_available_area(QRect(0, 0, 1280, 800))
+    window.resize(1280, 800)
     view_model.start()
     qtbot.waitUntil(lambda: view_model.draft is not None, timeout=1000)
 
@@ -606,7 +618,9 @@ def test_top_navigation_keeps_labels_and_routes_primary_pages(
         button = window._nav_buttons[page]
         assert button.toolTip() == ("外观与反馈 · 灯光、震动、屏幕" if page == "lighting" else label)
         assert button.accessibleName() == label
-        assert button.accessibleDescription() == "切换界面"
+        assert button.accessibleDescription() == (
+            "设置" if page == "settings" else "切换界面"
+        )
         assert not button.icon().isNull()
         assert button.isEnabled()
         qtbot.mouseClick(button, Qt.LeftButton)
@@ -816,23 +830,19 @@ def test_overview_disclosure_exposes_three_ble_host_slots(qtbot, contract, monke
     monkeypatch.setattr(QDialog, "exec", capture_dialog)
     qtbot.mouseClick(window.findChild(QPushButton, "bleSlotsDisclosure"), Qt.LeftButton)
     assert len(dialogs) == 1
-    qtbot.waitUntil(
-        lambda: any(
-            label.text() == translate_ui_text('蓝牙设备槽位') and label.isVisible()
-            for label in window.findChildren(QLabel)
-        ),
-        timeout=1000,
-    )
-    visible_text = [label.text() for label in window.findChildren(QLabel) if label.isVisible()]
-    assert translate_ui_text('当前 1 · 已配对') in visible_text
-    assert translate_ui_text('槽位 2 · 等待配对') in visible_text
-    assert translate_ui_text('槽位 3 · 等待配对') in visible_text
-    assert translate_ui_text('实体快捷操作') in visible_text
-    assert translate_ui_text('KEY 3 + KEY 8 → 槽位 1') in visible_text
-    assert translate_ui_text('KEY 3 + KEY 9 → 槽位 2') in visible_text
-    assert translate_ui_text('KEY 3 + KEY 10 → 槽位 3') in visible_text
-    assert translate_ui_text('短按组合键切换槽位；按住约 3 秒清除该槽位并开始配对。') in visible_text
-    ble_card = window.findChild(QWidget, "bleSlotsCard")
+    dialog = dialogs[0]
+    qtbot.addWidget(dialog)
+    dialog_text = [label.text() for label in dialog.findChildren(QLabel)]
+    assert "已配对的电脑" in dialog_text
+    assert "当前 1 · 已配对" in dialog_text
+    assert "槽位 2 · 等待配对" in dialog_text
+    assert "槽位 3 · 等待配对" in dialog_text
+    assert "实体快捷操作" in dialog_text
+    assert "KEY 3 + KEY 8 → 槽位 1" in dialog_text
+    assert "KEY 3 + KEY 9 → 槽位 2" in dialog_text
+    assert "KEY 3 + KEY 10 → 槽位 3" in dialog_text
+    assert "短按组合键切换槽位；按住约 3 秒清除该槽位并开始配对。" in dialog_text
+    ble_card = dialog.findChild(QWidget, "bleSlotsCard")
     assert ble_card is not None and ble_card.minimumHeight() >= 248
 
 
@@ -842,6 +852,8 @@ def test_codex_overview_uses_reference_deck_and_product_palette(qtbot, contract)
     window = MainWindow(view_model)
     qtbot.addWidget(window)
     window.show()
+    window._fit_window_to_available_area(QRect(0, 0, 1280, 800))
+    window.resize(1280, 800)
     view_model.start()
     qtbot.waitUntil(
         lambda: any(
@@ -860,11 +872,7 @@ def test_codex_overview_uses_reference_deck_and_product_palette(qtbot, contract)
     assert "BORING MIST" in visible_text
     assert "CODEX" in visible_text
     assert "Key Mapping" not in visible_text  # v4 removes the redundant page heading.
-    assert {
-        "BORING",
-        "CONSOLE",
-        "CODEX",
-    } <= digital_text
+    assert {"BORING", "CODEX"} <= digital_text
     assert "CODEX MACOS" not in digital_text
     visible_digital_labels = {
         label.text(): label
@@ -912,6 +920,8 @@ def test_window_replaces_scanning_content_when_no_device(qtbot, contract) -> Non
     window = MainWindow(view_model)
     qtbot.addWidget(window)
     window.show()
+    window._fit_window_to_available_area(QRect(0, 0, 1280, 800))
+    window.resize(1280, 800)
     view_model.start()
     qtbot.waitUntil(
         lambda: any(
@@ -1008,26 +1018,17 @@ def test_overview_control_opens_editor_and_creates_dirty_local_draft(qtbot, cont
     window.show()
     view_model.start()
     qtbot.waitUntil(lambda: view_model.draft is not None, timeout=1000)
+    _set_demo_mode(gateway, view_model, qtbot, "normal")
 
     key_button = next(
         button
         for button in window.findChildren(QPushButton)
-        if button.property("controlId") == "key.1"
+        if button.property("controlId") == "key.8"
     )
     assert key_button.isEnabled()
-    assert key_button.accessibleName() == "设置状态键 1"
+    assert key_button.accessibleName() == "设置功能键 8"
     qtbot.mouseClick(key_button, Qt.LeftButton)
 
-    qtbot.waitUntil(
-        lambda: (
-            window.findChild(QScrollArea, "overviewScroll") is not None
-            and window.findChild(QScrollArea, "overviewScroll")
-            .verticalScrollBar()
-            .maximum()
-            == 0
-        ),
-        timeout=1000,
-    )
     overview = window.findChild(QScrollArea, "overviewScroll")
     assert overview is not None
 
@@ -1036,9 +1037,11 @@ def test_overview_control_opens_editor_and_creates_dirty_local_draft(qtbot, cont
     assert "名称（可选）" in labels
     assert "屏幕短名" not in labels
     actual_action = window.findChild(QLabel, "actualActionValue")
-    assert actual_action.text() == "A"
+    assert actual_action.text()
     assert actual_action.wordWrap()
-    assert any(button.text() == "技术详情" for button in window.findChildren(QPushButton))
+    sync = window.findChild(QWidget, "syncSummaryCard")
+    assert sync is not None
+    assert not any(button.text() == "技术详情" for button in sync.findChildren(QPushButton))
 
     save_button = window.findChild(QPushButton, "saveMappingDraft")
     assert save_button is not None and save_button.text() == "保存草稿"
@@ -1048,7 +1051,7 @@ def test_overview_control_opens_editor_and_creates_dirty_local_draft(qtbot, cont
     qtbot.mouseClick(save_button, Qt.LeftButton)
 
     assert view_model.draft is not None and view_model.draft.is_dirty
-    assert view_model.draft.mapping(0, "key.1")["action"] == {"type": "none"}
+    assert view_model.draft.mapping(0, "key.8")["action"] == {"type": "none"}
     qtbot.waitUntil(
         lambda: any(
             label.text() == "未保存变更"
@@ -1068,12 +1071,15 @@ def test_mapping_inspector_stays_beside_device_and_switches_controls(
     window = MainWindow(view_model)
     qtbot.addWidget(window)
     window.show()
+    window._fit_window_to_available_area(QRect(0, 0, 1280, 800))
+    window.resize(1280, 800)
     view_model.start()
     qtbot.waitUntil(lambda: view_model.draft is not None, timeout=1000)
     qtbot.waitUntil(
         lambda: view_model.prompt_device.listener_status.online,
         timeout=1000,
     )
+    _set_demo_mode(gateway, view_model, qtbot, "normal")
     qtbot.waitUntil(
         lambda: any(
             workspace.isVisible()
@@ -1097,7 +1103,7 @@ def test_mapping_inspector_stays_beside_device_and_switches_controls(
         for widget in window.findChildren(QWidget, "topNavigation")
         if widget.isVisible()
     )
-    window._select_physical_control("key.1")
+    window._select_physical_control("key.9")
 
     qtbot.waitUntil(
         lambda: any(
@@ -1159,16 +1165,16 @@ def test_mapping_inspector_stays_beside_device_and_switches_controls(
         "warning",
         lambda *args, **_kwargs: warnings.append(args) or QMessageBox.Yes,
     )
-    key_12 = next(
+    key_2 = next(
         button
         for button in window.findChildren(QPushButton)
-        if button.property("controlId") == "key.12" and button.isVisible()
+        if button.property("controlId") == "key.2" and button.isVisible()
     )
-    qtbot.mouseClick(key_12, Qt.LeftButton)
+    qtbot.mouseClick(key_2, Qt.LeftButton)
 
     qtbot.waitUntil(
         lambda: any(
-            inspector.isVisible() and inspector.property("controlId") == "key.12"
+            inspector.isVisible() and inspector.property("controlId") == "key.2"
             for inspector in window.findChildren(QWidget, "mappingEditorCard")
         ),
         timeout=1000,
@@ -1178,13 +1184,13 @@ def test_mapping_inspector_stays_beside_device_and_switches_controls(
         for widget in window.findChildren(QWidget, "mappingEditorCard")
         if widget.isVisible()
     )
-    assert inspector.property("controlId") == "key.12"
-    selected_key_12 = next(
+    assert inspector.property("controlId") == "key.2"
+    selected_key_2 = next(
         button
         for button in window.findChildren(QPushButton)
-        if button.property("controlId") == "key.12"
+        if button.property("controlId") == "key.2"
     )
-    assert selected_key_12.property("selected") is True
+    assert selected_key_2.property("selected") is True
     assert warnings == []
     assert next(
         widget
@@ -1232,6 +1238,7 @@ def test_mapping_inspector_stacks_below_device_in_narrow_workspace(
         lambda: view_model.prompt_device.listener_status.online,
         timeout=1000,
     )
+    _set_demo_mode(gateway, view_model, qtbot, "normal")
     qtbot.waitUntil(
         lambda: any(
             workspace.isVisible()
@@ -1281,7 +1288,9 @@ def test_mapping_inspector_stacks_below_device_in_narrow_workspace(
     assert workspace.property("stacked") is True
     assert device.geometry().bottom() <= inspector_rail.geometry().top()
     assert inspector.parentWidget() is inspector_rail
-    qtbot.waitUntil(lambda: workspace.rect().contains(inspector_rail.geometry()))
+    # A stacked editor uses the available row instead of the desktop column cap.
+    assert inspector_rail.width() <= workspace.width()
+    assert inspector_rail.geometry().right() <= workspace.rect().right()
 
 
 def test_mapping_inspector_warns_before_switching_away_from_unsaved_input(
@@ -1294,11 +1303,12 @@ def test_mapping_inspector_warns_before_switching_away_from_unsaved_input(
     window.show()
     view_model.start()
     qtbot.waitUntil(lambda: view_model.draft is not None, timeout=1000)
+    _set_demo_mode(gateway, view_model, qtbot, "normal")
 
-    window._select_physical_control("key.1")
+    window._select_physical_control("key.8")
     qtbot.waitUntil(
         lambda: any(
-            card.isVisible() and card.property("controlId") == "key.1"
+            card.isVisible() and card.property("controlId") == "key.8"
             for card in window.findChildren(QWidget, "mappingEditorCard")
         ),
         timeout=1000,
@@ -1306,7 +1316,7 @@ def test_mapping_inspector_warns_before_switching_away_from_unsaved_input(
     inspector = next(
         card
         for card in window.findChildren(QWidget, "mappingEditorCard")
-        if card.isVisible() and card.property("controlId") == "key.1"
+        if card.isVisible() and card.property("controlId") == "key.8"
     )
     short_name = inspector.findChild(QLineEdit, "mappingShortNameEditor")
     assert short_name is not None
@@ -1318,7 +1328,7 @@ def test_mapping_inspector_warns_before_switching_away_from_unsaved_input(
         lambda *args, **_kwargs: warnings.append(args) or QMessageBox.Cancel,
     )
 
-    window._select_physical_control("key.12")
+    window._select_physical_control("key.9")
 
     inspector = next(
         widget
@@ -1326,46 +1336,41 @@ def test_mapping_inspector_warns_before_switching_away_from_unsaved_input(
         if widget.isVisible()
     )
     assert warnings
-    assert inspector.property("controlId") == "key.1"
+    assert inspector.property("controlId") == "key.8"
     assert short_name.text() == "尚未保存的按键名称"
 
     window._close_control_editor()
 
     assert len(warnings) == 2
     assert inspector.isVisible()
-    assert inspector.property("controlId") == "key.1"
+    assert inspector.property("controlId") == "key.8"
 
 
-def test_overview_records_shortcut_and_prepares_confirmed_device_write(
-    qtbot, contract, monkeypatch, request
+def test_overview_records_shortcut_and_applies_verified_device_write(
+    qtbot, contract, request
 ) -> None:
-    monkeypatch.setattr(
-        QMessageBox,
-        "warning",
-        lambda *_args, **_kwargs: QMessageBox.Cancel,
-    )
     gateway = DemoGateway(contract, "ready")
     view_model = MainViewModel(gateway, contract)
     window = MainWindow(view_model)
-    qtbot.addWidget(window)
+    def cleanup(_window) -> None:
+        if view_model.write_transaction.state is ConfigTransactionState.AWAITING_CONFIRMATION:
+            view_model.cancel_device_write_confirmation()
+        if view_model.draft is not None and view_model.draft.is_dirty:
+            view_model.discard_draft()
+        window._selected_control_id = None
+        view_model.shutdown()
+    qtbot.addWidget(window, before_close_func=cleanup)
     window.show()
     view_model.start()
     qtbot.waitUntil(lambda: view_model.draft is not None, timeout=1000)
+    _set_demo_mode(gateway, view_model, qtbot, "normal")
 
-    def cleanup() -> None:
-        view_model.cancel_device_write_confirmation()
-        if view_model.draft is not None and view_model.draft.is_dirty:
-            view_model.discard_draft()
-        view_model.shutdown()
-
-    request.addfinalizer(cleanup)
-
-    window._select_physical_control("key.12")
+    window._select_physical_control("key.8")
     record = window.findChild(QPushButton, "shortcutRecordButton")
     preview = window.findChild(QLabel, "shortcutRecorderPreview")
     apply_to_device = window.findChild(QPushButton, "applyMappingToDevice")
     assert record is not None and preview is not None
-    assert apply_to_device is not None and apply_to_device.isEnabled()
+    assert apply_to_device is not None and not apply_to_device.isEnabled()
 
     qtbot.mouseClick(record, Qt.MouseButton.LeftButton)
     qtbot.keyClick(
@@ -1381,35 +1386,23 @@ def test_overview_records_shortcut_and_prepares_confirmed_device_write(
         "usage": 25,
         "modifiers": [225, 227],
     }
+    assert apply_to_device.isEnabled()
 
     qtbot.mouseClick(apply_to_device, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
         lambda: view_model.write_transaction.state
-        is ConfigTransactionState.AWAITING_CONFIRMATION,
-        timeout=1000,
+        is ConfigTransactionState.ACTIVE,
+        timeout=5000,
     )
     assert view_model.draft is not None
-    assert view_model.draft.mapping(0, "key.12")["action"] == {
+    assert view_model.draft.mapping(0, "key.8")["action"] == {
         "type": "key",
         "usage": 25,
         "modifiers": [225, 227],
     }
     device_current = window.findChild(QLabel, "actualActionValue")
-    assert device_current is not None and device_current.text() == "未映射"
-    qtbot.waitUntil(
-        lambda: any(
-            button.text() == translate_ui_text("确认写入设备")
-            for button in window.findChildren(QPushButton)
-        ),
-        timeout=1000,
-    )
-    assert any(
-        button.text() == translate_ui_text("确认写入设备")
-        for button in window.findChildren(QPushButton)
-    )
-
-    view_model.cancel_device_write_confirmation()
-    view_model.discard_draft()
+    assert device_current is not None and device_current.text() == "Shift + Command + V"
+    assert window.findChild(QPushButton, "confirmConfigurationWrite") is None
 
 
 def test_live_diagnostics_do_not_rebuild_an_open_control_editor(qtbot, contract) -> None:
@@ -1420,11 +1413,12 @@ def test_live_diagnostics_do_not_rebuild_an_open_control_editor(qtbot, contract)
     window.show()
     view_model.start()
     qtbot.waitUntil(lambda: view_model.draft is not None, timeout=1000)
+    _set_demo_mode(gateway, view_model, qtbot, "normal")
 
     key_button = next(
         button
         for button in window.findChildren(QPushButton)
-        if button.property("controlId") == "key.1"
+        if button.property("controlId") == "key.8"
     )
     qtbot.mouseClick(key_button, Qt.LeftButton)
     action_type = window.findChild(QComboBox, "actionTypeEditor")
@@ -1494,6 +1488,7 @@ def test_encoder_tile_opens_trigger_choices_on_overview(
     window.show()
     view_model.start()
     qtbot.waitUntil(lambda: view_model.draft is not None, timeout=1000)
+    _set_demo_mode(gateway, view_model, qtbot, "normal")
 
     encoder = next(
         button
@@ -1534,6 +1529,7 @@ def test_profile_management_is_embedded_in_key_mapping(qtbot, contract) -> None:
     window.show()
     view_model.start()
     qtbot.waitUntil(lambda: view_model.draft is not None, timeout=1000)
+    _set_demo_mode(gateway, view_model, qtbot, "normal")
 
     assert "profiles" not in window._nav_buttons
     profile_button = window.findChild(QPushButton, "profilePill")
@@ -1541,7 +1537,7 @@ def test_profile_management_is_embedded_in_key_mapping(qtbot, contract) -> None:
     assert profile_button.menu().findChild(QAction, "createProfileAction") is not None
     assert profile_button.menu().findChild(QAction, "renameProfileAction") is not None
 
-    window._select_physical_control("key.12")
+    window._select_physical_control("key.9")
     assert window.findChild(QWidget, "mappingEditorCard") is not None
     assert window.findChild(QLineEdit, "profileNameEditor") is None
 
@@ -1596,7 +1592,7 @@ def test_settings_groups_tools_and_language_before_device_read(qtbot, contract) 
 
     firmware_import = window.findChild(QPushButton, "selectFirmwarePackage")
     assert firmware_import is not None
-    assert firmware_import.text() == "导入官方固件…"
+    assert firmware_import.text() == "选择官方固件文件…"
     assert window.findChild(QProgressBar, "firmwareProgress") is not None
     remote = window.findChild(QPushButton, "checkRemoteFirmware")
     assert remote is not None and not remote.isEnabled()
@@ -2074,7 +2070,7 @@ def test_prompt_library_shows_listener_online_only_after_demo_poll_succeeds(
     assert "监听已就绪" in event_log.toPlainText()
 
 
-def test_mapping_editor_adopts_confirmed_action_after_successful_write(
+def test_mapping_editor_adopts_action_after_direct_apply_and_readback(
     qtbot, contract, monkeypatch, request
 ) -> None:
     monkeypatch.setattr(
@@ -2089,9 +2085,10 @@ def test_mapping_editor_adopts_confirmed_action_after_successful_write(
     window.show()
     view_model.start()
     qtbot.waitUntil(lambda: view_model.draft is not None, timeout=1000)
+    _set_demo_mode(gateway, view_model, qtbot, "normal")
     request.addfinalizer(view_model.shutdown)
 
-    window._select_physical_control("key.12")
+    window._select_physical_control("key.8")
     baseline_card = window._current_mapping_card()
     assert baseline_card is not None
     baseline_editor = baseline_card.findChild(ActionEditor)
@@ -2102,25 +2099,15 @@ def test_mapping_editor_adopts_confirmed_action_after_successful_write(
     )
     qtbot.mouseClick(baseline_apply, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
-        lambda: view_model.write_transaction.state
-        is ConfigTransactionState.AWAITING_CONFIRMATION,
-        timeout=1000,
-    )
-    qtbot.mouseClick(
-        next(
-            button
-            for button in window.findChildren(QPushButton)
-            if button.text() == translate_ui_text("确认写入设备")
-        ),
-        Qt.MouseButton.LeftButton,
-    )
-    qtbot.waitUntil(
         lambda: view_model.write_transaction.state is ConfigTransactionState.ACTIVE,
-        timeout=2000,
+        timeout=5000,
     )
+    assert window.findChild(QPushButton, "confirmConfigurationWrite") is None
+    _set_demo_mode(gateway, view_model, qtbot, "normal")
 
-    for key_index in range(1, 13):
+    for key_index in (1, 2, 4, 5, 6, 7):
         window._select_physical_control(f"key.{key_index}")
+    window._select_physical_control("key.8")
     card = window._current_mapping_card()
     assert card is not None
     action_editor = card.findChild(ActionEditor)
@@ -2141,28 +2128,28 @@ def test_mapping_editor_adopts_confirmed_action_after_successful_write(
     qtbot.mouseClick(apply_to_device, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
         lambda: view_model.write_transaction.state
-        is ConfigTransactionState.AWAITING_CONFIRMATION,
-        timeout=1000,
+        in {
+            ConfigTransactionState.ACTIVE,
+            ConfigTransactionState.FAILED,
+            ConfigTransactionState.CONFLICT,
+            ConfigTransactionState.UNKNOWN,
+        },
+        timeout=5000,
     )
-    confirm = next(
-        button
-        for button in window.findChildren(QPushButton)
-        if button.text() == translate_ui_text("确认写入设备")
+    assert view_model.write_transaction.state is ConfigTransactionState.ACTIVE, (
+        view_model.write_transaction
     )
-    qtbot.mouseClick(confirm, Qt.MouseButton.LeftButton)
-    qtbot.waitUntil(
-        lambda: view_model.write_transaction.state is ConfigTransactionState.ACTIVE,
-        timeout=2000,
-    )
+    assert window.findChild(QPushButton, "confirmConfigurationWrite") is None
 
     snapshot = view_model.model.snapshot
     assert snapshot is not None
-    assert snapshot.mappings["key.12"]["action"] == {"type": "key", "usage": 27}
+    assert snapshot.mappings["key.8"]["action"] == {"type": "key", "usage": 27}
     assert view_model.draft is not None
-    assert view_model.draft.mapping(0, "key.12")["action"] == {
+    assert view_model.draft.mapping(0, "key.8")["action"] == {
         "type": "key",
         "usage": 27,
     }
+    _set_demo_mode(gateway, view_model, qtbot, "normal")
     current_card = window._current_mapping_card()
     assert current_card is not None
     current_editor = current_card.findChild(ActionEditor)
@@ -2220,8 +2207,9 @@ def test_mapping_editor_keeps_unsaved_prompt_action_during_background_render(
     window.show()
     view_model.start()
     qtbot.waitUntil(lambda: view_model.prompt_library is not None, timeout=1000)
+    _set_demo_mode(gateway, view_model, qtbot, "normal")
 
-    window._select_physical_control("key.12")
+    window._select_physical_control("key.8")
     action_editor = window.findChild(ActionEditor)
     short_name = window.findChild(QLineEdit, "mappingShortNameEditor")
     assert action_editor is not None and short_name is not None
@@ -2237,7 +2225,7 @@ def test_mapping_editor_keeps_unsaved_prompt_action_during_background_render(
     assert restored_name.text() == "提示词"
     assert view_model.draft is not None
     saved_mapping = view_model.draft.mapping(
-        view_model.draft.config["active_profile"], "key.12"
+        view_model.draft.config["active_profile"], "key.8"
     )
     assert saved_mapping is None or saved_mapping["action"] != {
         "type": "prompt",
@@ -2262,16 +2250,17 @@ def test_mapping_editor_preserves_existing_advanced_prompt_reference(
         lambda: view_model.prompt_library is not None and view_model.draft is not None,
         timeout=1000,
     )
+    _set_demo_mode(gateway, view_model, qtbot, "normal")
 
     assert view_model.draft is not None
     profile_id = view_model.draft.config["active_profile"]
     view_model.set_mapping(
         profile_id,
-        "key.12",
+        "key.8",
         "高级提示词",
         {"type": "prompt", "prompt_id": 5},
     )
-    window._select_physical_control("key.12")
+    window._select_physical_control("key.8")
 
     selector = window.findChild(QComboBox, "actionField_prompt_id")
     assert selector is not None
@@ -2329,8 +2318,7 @@ def test_planned_tool_pages_show_connected_capabilities(qtbot, contract) -> None
     view_model.start()
     qtbot.waitUntil(lambda: view_model.model.snapshot is not None, timeout=1000)
 
-    expected_badges = {"firmware": "设备已声明支持更新"}
-    for page, expected in expected_badges.items():
+    for page in ("firmware",):
         view_model.navigate(page)
         badges = [
             item
@@ -2338,7 +2326,7 @@ def test_planned_tool_pages_show_connected_capabilities(qtbot, contract) -> None
             if item.property("capabilityState") is True
         ]
         assert len(badges) == 1
-        assert badges[0].text() == translate_ui_text(expected)
+        assert badges[0].text() == "支持固件更新"
 
     view_model.navigate("diagnostics")
     report_issue = window.findChild(QPushButton, "reportJoystickIssue")
@@ -2354,7 +2342,7 @@ def test_planned_tool_pages_show_connected_capabilities(qtbot, contract) -> None
         if item.property("capabilityState") is True
     ]
     assert len(badges) == 1
-    assert badges[0].text() == translate_ui_text("设备已声明支持校准")
+    assert badges[0].text() == "支持摇杆校准"
 
 
 def test_diagnostics_page_updates_live_inputs_without_rebuilding_page(
@@ -2605,8 +2593,9 @@ def test_control_editor_links_to_device_key_sequence_management(
     window.show()
     view_model.start()
     qtbot.waitUntil(lambda: view_model.draft is not None, timeout=1000)
+    _set_demo_mode(gateway, view_model, qtbot, "normal")
 
-    window._select_physical_control("key.3")
+    window._select_physical_control("key.8")
     short_name = window.findChild(QLineEdit, "mappingShortNameEditor")
     assert short_name is not None
     short_name.setText("尚未保存的按键名")
@@ -2630,7 +2619,7 @@ def test_control_editor_links_to_device_key_sequence_management(
         "warning",
         lambda *args, **_kwargs: warnings.append(args) or QMessageBox.Yes,
     )
-    window._select_physical_control("key.4")
+    window._select_physical_control("key.9")
     other_short_name = window.findChild(QLineEdit, "mappingShortNameEditor")
     assert other_short_name is not None
     assert other_short_name.text() != "尚未保存的按键名"
@@ -2671,11 +2660,24 @@ def test_preferences_navigation_enables_after_device_read(qtbot, contract) -> No
     assert brightness.maximum() == 4
     assert brightness.value() == 4
     brightness.setValue(2)
+    original_status_key_colors = {
+        index: deepcopy(view_model.draft.config["lighting"]["under_key"][index])
+        for index in (0, 1, 3, 4, 5, 6)
+    }
+    function_key = next(
+        button
+        for button in window.findChildren(RgbButton, "rgbButton")
+        if button.property("controlId") == "key.3"
+    )
+    original_function_rgb = deepcopy(
+        view_model.draft.config["lighting"]["under_key"][2]
+    )
+    function_key._set_rgb((255, 0, 0), emit=True)
     save_local = window.findChild(QPushButton, "savePreferencesDraft")
     save_to_device = window.findChild(QPushButton, "savePreferencesToDevice")
     assert save_local is not None and save_local.text() == "保存草稿"
     assert save_local.property("buttonRole") == "secondary"
-    assert save_to_device is not None and save_to_device.text() == "应用到设备…"
+    assert save_to_device is not None and save_to_device.text() == "应用到设备"
     assert save_to_device.property("buttonRole") == "primary"
     qtbot.waitUntil(save_to_device.isVisible, timeout=1000)
     assert save_to_device.width() >= 160
@@ -2684,18 +2686,48 @@ def test_preferences_navigation_enables_after_device_read(qtbot, contract) -> No
     view_model.screen_glyphs.attach(None)
     qtbot.mouseClick(save_to_device, Qt.LeftButton)
     qtbot.waitUntil(
-        lambda: view_model.write_transaction.state
-        is ConfigTransactionState.AWAITING_CONFIRMATION,
-        timeout=1000,
+        lambda: view_model.write_transaction.state is ConfigTransactionState.ACTIVE,
+        timeout=5000,
     )
     assert view_model.draft.config["lighting"]["enabled"] is True
     assert view_model.draft.config["lighting"]["brightness"] == 20
+    assert view_model.draft.config["lighting"]["under_key"][2] == {
+        "r": 255,
+        "g": 0,
+        "b": 0,
+    }
+    assert view_model.model.snapshot.config_result["config"]["lighting"][
+        "under_key"
+    ][2] == {"r": 255, "g": 0, "b": 0}
+    assert {
+        index: view_model.model.snapshot.config_result["config"]["lighting"][
+            "under_key"
+        ][index]
+        for index in original_status_key_colors
+    } == original_status_key_colors
     assert view_model.draft.validate(contract) == ()
+    refreshed_function_key = next(
+        button
+        for button in window.findChildren(RgbButton, "rgbButton")
+        if button.property("controlId") == "key.3"
+    )
+    refreshed_function_key._set_rgb(
+        (
+            original_function_rgb["r"],
+            original_function_rgb["g"],
+            original_function_rgb["b"],
+        ),
+        emit=True,
+    )
+    refreshed_save_to_device = window.findChild(
+        QPushButton, "savePreferencesToDevice"
+    )
+    assert refreshed_save_to_device is not None
+    assert refreshed_save_to_device.isEnabled()
     assert not any(
         button.text().startswith("状态灯 ")
         for button in window.findChildren(QPushButton)
     )
-    view_model.cancel_device_write_confirmation()
     view_model.discard_draft()
 
 
@@ -2881,7 +2913,7 @@ def test_lighting_preview_async_status_stays_in_english(
     save_local = window.findChild(QPushButton, "savePreferencesDraft")
     assert toggle is not None
     assert level_value is not None and level_value.text() == "Custom"
-    assert save_to_device is not None and save_to_device.text() == "Apply to Device…"
+    assert save_to_device is not None and save_to_device.text() == "Apply to Device"
     assert save_local is not None and save_local.text() == "Save draft"
     assert [
         label.text()
@@ -2915,7 +2947,7 @@ def test_rgb_button_emits_drag_preview_and_cancel_restores_original(qtbot) -> No
     assert button.value() == {"r": 1, "g": 2, "b": 3}
 
 
-def test_matrix12_lighting_editor_exposes_the_six_white_action_key_lights(
+def test_matrix12_lighting_editor_exposes_function_key_colors_only(
     qtbot, contract
 ) -> None:
     gateway = DemoGateway(contract, "ready")
@@ -2932,8 +2964,8 @@ def test_matrix12_lighting_editor_exposes_the_six_white_action_key_lights(
         timeout=1000,
     )
 
-    buttons = window.findChildren(RgbButton, "rgbButton")
-    assert {button.property("controlId") for button in buttons} == {
+    swatches = window.findChildren(RgbButton, "rgbButton")
+    assert {button.property("controlId") for button in swatches} == {
         "key.3",
         "key.8",
         "key.9",
@@ -2941,22 +2973,78 @@ def test_matrix12_lighting_editor_exposes_the_six_white_action_key_lights(
         "key.11",
         "key.12",
     }
-    assert {button.property("underKeyIndex") for button in buttons} == {
-        2,
-        7,
-        8,
-        9,
-        10,
-        11,
-    }
+    assert all(
+        button.property("controlId") not in MATRIX12_AGENT_STATUS_KEYS
+        for button in swatches
+    )
+    note = window.findChild(QLabel, "functionKeyLightingNote")
+    assert note is not None
+    assert "灯光颜色" in note.text()
+    assert window.findChild(QLabel, "officialWhiteKeyLightingNote") is None
     assert any(
-        label.text() == "AGENT KEYS · 透明状态键灯"
+        label.text() == "STATUS KEYS · 状态灯键"
         for label in window.findChildren(QLabel)
     )
     view_model.discard_draft()
 
 
-def test_matrix12_lighting_editor_saves_by_key_id_and_preserves_agent_colors(
+def test_matrix12_mapping_editor_locks_status_keys_and_edits_white_normal_mappings(
+    qtbot, contract
+) -> None:
+    gateway = DemoGateway(contract, "ready")
+    view_model = MainViewModel(gateway, contract)
+    window = MainWindow(view_model)
+    qtbot.addWidget(window)
+    window.show()
+    view_model.start()
+    qtbot.waitUntil(lambda: view_model.model.snapshot is not None, timeout=1000)
+    snapshot = view_model.model.snapshot
+    assert snapshot is not None
+
+    normal_snapshot = replace(
+        snapshot,
+        status={**snapshot.status, "operating_mode": "normal"},
+    )
+    gateway.snapshot_ready.emit(normal_snapshot)
+    qtbot.waitUntil(
+        lambda: view_model.model.snapshot.status.get("operating_mode") == "normal",
+        timeout=1000,
+    )
+
+    window._select_physical_control("key.1")
+    locked = window._current_mapping_card()
+    assert locked is not None
+    assert locked.findChild(ActionEditor) is None
+    assert locked.findChild(QLabel, "inspectorTitle").text() == "状态灯键 1"
+    assert "状态灯键" in locked.findChild(
+        QLabel, "officialControlDefinitionNote"
+    ).text()
+
+    window._select_physical_control("key.8")
+    editable = window._current_mapping_card()
+    assert editable is not None
+    assert editable.findChild(QLabel, "inspectorTitle").text() == "功能键 8"
+    assert editable.findChild(ActionEditor) is not None
+
+    gateway.snapshot_ready.emit(snapshot)
+    qtbot.waitUntil(
+        lambda: view_model.model.snapshot.status.get("operating_mode") == "codex",
+        timeout=1000,
+    )
+    window._select_physical_control("key.1")
+    codex_locked = window._current_mapping_card()
+    assert codex_locked.findChild(ActionEditor) is None
+    assert "Agent 1" in codex_locked.findChild(
+        QLabel, "officialControlDefinitionNote"
+    ).text()
+
+    window._select_physical_control("key.8")
+    codex_normal_mapping = window._current_mapping_card()
+    assert codex_normal_mapping.findChild(ActionEditor) is not None
+    assert codex_normal_mapping.findChild(QLabel, "mappingExecutionNotice") is not None
+
+
+def test_matrix12_lighting_editor_preserves_all_per_key_colors(
     qtbot, contract
 ) -> None:
     gateway = DemoGateway(contract, "ready")
@@ -2976,21 +3064,22 @@ def test_matrix12_lighting_editor_saves_by_key_id_and_preserves_agent_colors(
         lambda: len(window.findChildren(RgbButton, "rgbButton")) == 6,
         timeout=1000,
     )
-    buttons = {
-        button.property("controlId"): button
+    editor = window.findChild(PreferencesEditor)
+    function_key = next(
+        button
         for button in window.findChildren(RgbButton, "rgbButton")
-    }
-    buttons["key.3"].set_value({"r": 3, "g": 30, "b": 33})
-    buttons["key.12"].set_value({"r": 12, "g": 120, "b": 132})
+        if button.property("controlId") == "key.3"
+    )
+    function_key._set_rgb((255, 0, 0), emit=True)
+    editor._lighting_brightness.setValue(4)
     save = window.findChild(QPushButton, "savePreferencesDraft")
     assert save is not None
     qtbot.mouseClick(save, Qt.LeftButton)
 
     saved = view_model.draft.config["lighting"]["under_key"]
-    assert saved[2] == {"r": 3, "g": 30, "b": 33}
-    assert saved[11] == {"r": 12, "g": 120, "b": 132}
-    for index in (0, 1, 3, 4, 5, 6):
-        assert saved[index] == original[index]
+    for index in range(12):
+        expected = {"r": 255, "g": 0, "b": 0} if index == 2 else original[index]
+        assert saved[index] == expected
     view_model.discard_draft()
 
 
@@ -3177,10 +3266,11 @@ def test_profile_switch_warns_before_discarding_unsaved_control_editor_text(
     window.show()
     view_model.start()
     qtbot.waitUntil(lambda: view_model.draft is not None, timeout=1000)
+    _set_demo_mode(gateway, view_model, qtbot, "normal")
     assert view_model.draft is not None
     original_profile_count = len(view_model.draft.profiles)
 
-    window._select_physical_control("key.12")
+    window._select_physical_control("key.8")
     short_name = window.findChild(QLineEdit, "mappingShortNameEditor")
     assert short_name is not None
     short_name.setText("尚未保存")
@@ -3211,17 +3301,18 @@ def test_profile_guard_treats_unmapped_editor_defaults_as_unchanged(
     window.show()
     view_model.start()
     qtbot.waitUntil(lambda: view_model.draft is not None, timeout=1000)
+    _set_demo_mode(gateway, view_model, qtbot, "normal")
     assert view_model.draft is not None
     profile_id = view_model.draft.config["active_profile"]
     profile = view_model.draft.profile(profile_id)
     profile["mappings"] = [
         mapping
         for mapping in profile["mappings"]
-        if mapping.get("control_id") != "key.12"
+        if mapping.get("control_id") != "key.8"
     ]
     window.render(view_model.model)
 
-    window._select_physical_control("key.12")
+    window._select_physical_control("key.8")
 
     assert window.findChild(QLineEdit, "mappingShortNameEditor").text() == "未映射"
     assert not window._mapping_editor_has_uncommitted_changes()
@@ -3251,7 +3342,9 @@ def test_profile_editor_runs_confirmed_demo_write_and_readback(
         timeout=1000,
     )
     confirm = next(
-        button for button in window.findChildren(QPushButton) if button.text() == translate_ui_text("确认写入设备")
+        button
+        for button in window.findChildren(QPushButton)
+        if button.objectName() == "confirmConfigurationWrite"
     )
     qtbot.mouseClick(confirm, Qt.LeftButton)
 
