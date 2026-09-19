@@ -96,12 +96,6 @@
  * encoder is pressed; PWR_LOAD_EN and SYS_RAW remain stable on a short press.
  */
 #define MATRIX12_ENCODER_KEY_FUNCTION_ENABLED true
-/*
- * The current sample is visibly dim at the persisted 60 percent setting.
- * Preserve zero as a real backlight-off request during panel initialization,
- * but drive every enabled level at full duty while the hardware is evaluated.
- */
-#define MATRIX12_DISPLAY_CONFIGURABLE_BRIGHTNESS_ENABLED false
 #define EVENT_QUEUE_CAPACITY 48
 #define ENCODER_EDGE_QUEUE_CAPACITY 64
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
@@ -2934,11 +2928,8 @@ esp_err_t board_set_display_config(uint8_t brightness_percent, uint16_t rotation
     s_display_width = geometry.width;
     s_display_height = geometry.height;
     s_status_page_active = false;
-    const uint8_t effective_brightness =
-        !MATRIX12_DISPLAY_CONFIGURABLE_BRIGHTNESS_ENABLED && brightness_percent > 0
-            ? 100
-            : brightness_percent;
-    s_display_base_brightness = effective_brightness;
+    /* Power V2 ships at 60%; preserve the persisted 0..100% setting. */
+    s_display_base_brightness = brightness_percent;
     return board_set_display_idle_scale(s_display_idle_scale);
 }
 

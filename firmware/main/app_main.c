@@ -8,6 +8,7 @@
 #include "device_identity.h"
 #include "esp_log.h"
 #include "esp_mac.h"
+#include "esp_pm.h"
 #include "firmware_update.h"
 #include "prompt_store.h"
 #include "screen_icon_store.h"
@@ -20,6 +21,20 @@
 #include "usb_service.h"
 
 static const char *TAG = "wired_macro_pad";
+
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+static void configure_power_management(void)
+{
+    const esp_pm_config_t pm_config = {
+        .max_freq_mhz = 160,
+        .min_freq_mhz = 80,
+        /* DFS only. USB/BLE and input wake behavior are unchanged. */
+        .light_sleep_enable = false,
+    };
+    ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
+    ESP_LOGI(TAG, "dynamic CPU frequency enabled: 80-160 MHz");
+}
+#endif
 
 static bool ble_standard_connected(void *context)
 {
@@ -68,6 +83,10 @@ void app_main(void)
     firmware_update_boot_stage(FIRMWARE_BOOT_STAGE_APP_ENTRY);
     char serial[18];
     make_serial(serial);
+
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    configure_power_management();
+#endif
 
     ESP_ERROR_CHECK(board_init());
     firmware_update_boot_stage(FIRMWARE_BOOT_STAGE_BOARD_READY);
@@ -155,6 +174,7 @@ void app_main(void)
     firmware_update_boot_stage(FIRMWARE_BOOT_STAGE_MAIN_LOOP);
 
     for (;;) {
+        TickType_t loop_delay_ticks = 1;
         fuel_gauge_poll();
         fuel_gauge_sample_t battery;
         if (fuel_gauge_latest(&battery)) {
@@ -190,9 +210,13 @@ void app_main(void)
             action_diagnostics.idle_standby_active,
             action_diagnostics.usb_standby_active,
             action_diagnostics.lighting_preview_busy);
+        if (action_diagnostics.idle_standby_active) {
+            loop_delay_ticks = pdMS_TO_TICKS(20);
+            if (loop_delay_ticks == 0) loop_delay_ticks = 1;
+        }
         usb_service_poll();
         firmware_update_poll();
-        /* One scheduler tick is the minimum non-zero delay at any tick rate. */
-        vTaskDelay(1);
+        /* Match the 20 ms input debounce while halving standby wakeups. */
+        vTaskDelay(loop_delay_ticks);
     }
 }

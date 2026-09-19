@@ -30,6 +30,7 @@
 #define CONFIG_KEY_PENDING_PLATFORM "nextos"
 #define CONFIG_KEY_POMODORO_MINUTES "pomo_min"
 #define CONFIG_KEY_STANDBY_MINUTES "idle_min"
+#define DEFAULT_STANDBY_MINUTES 15
 #define CONFIG_KEY_USER_POWERED_ON "user_on"
 #define CONFIG_KEY_BLE_NAME "ble_name"
 #define CONFIG_CONTROL_COUNT BOARD_CONTROL_COUNT
@@ -1607,7 +1608,8 @@ bool config_store_poll(bool inputs_neutral)
         error = nvs_set_u8(s_nvs, CONFIG_KEY_POMODORO_MINUTES, 25);
     }
     if (error == ESP_OK && s_pending_factory_reset) {
-        error = nvs_set_u8(s_nvs, CONFIG_KEY_STANDBY_MINUTES, 0);
+        error = nvs_set_u8(s_nvs, CONFIG_KEY_STANDBY_MINUTES,
+                           DEFAULT_STANDBY_MINUTES);
     }
     if (error == ESP_OK && !s_pending_factory_reset &&
         s_pending_platform != CONFIG_PLATFORM_UNSELECTED) {
@@ -1949,7 +1951,9 @@ uint8_t config_store_get_standby_minutes(void)
     const esp_err_t error =
         nvs_get_u8(s_nvs, CONFIG_KEY_STANDBY_MINUTES, &minutes);
     xSemaphoreGive(s_lock);
-    return error == ESP_OK && valid_standby_minutes(minutes) ? minutes : 0;
+    return error == ESP_OK && valid_standby_minutes(minutes)
+               ? minutes
+               : DEFAULT_STANDBY_MINUTES;
 }
 
 esp_err_t config_store_set_standby_minutes(uint8_t minutes)

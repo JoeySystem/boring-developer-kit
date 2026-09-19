@@ -12,6 +12,9 @@ CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_SPIRAM_USE_MALLOC=y
 # Full-frame icon snapshots must not consume the internal heap needed by BLE.
 CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
+# Enable DFS support for the product target. app_main configures the exact
+# 80-160 MHz range; automatic light sleep remains disabled.
+CONFIG_PM_ENABLE=y
 CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
 CONFIG_ESP_COREDUMP_CHECK_BOOT=y
 CONFIG_ESP_COREDUMP_MAX_TASKS_NUM=8

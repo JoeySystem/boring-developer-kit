@@ -42,6 +42,11 @@
 #define CODEX_JOYSTICK_RELEASE_GRACE_US 30000
 #define CODEX_MICRO_SOFT_RESTART_MODE_MAGIC 0x4D4F4445u
 #define CODEX_MICRO_BLE_NVS_NAMESPACE "codex_ble"
+#define BLE_FAST_ADVERTISING_DURATION_MS 30000U
+#define BLE_FAST_ADVERTISING_MIN 0x0020
+#define BLE_FAST_ADVERTISING_MAX 0x0030
+#define BLE_SLOW_ADVERTISING_MIN 0x0140
+#define BLE_SLOW_ADVERTISING_MAX 0x0190
 
 typedef struct {
     uint8_t valid;
@@ -168,6 +173,9 @@ static atomic_bool s_scan_response_configured;
 static atomic_bool s_advertising_active;
 static atomic_bool s_advertising_starting;
 static atomic_bool s_advertising_retry_running;
+static atomic_bool s_slow_advertising;
+static atomic_bool s_advertising_interval_restart_pending;
+static atomic_uint_least32_t s_fast_advertising_until_ms;
 static atomic_bool s_peer_filter_ready;
 static atomic_int s_peer_filter_state;
 static atomic_uchar s_active_peer_slot;
@@ -233,6 +241,8 @@ static const char *const BLE_PEER_NVS_KEYS[CODEX_MICRO_BLE_SLOT_COUNT] = {
 
 static esp_err_t start_advertising(void);
 static void ensure_advertising(void);
+static void reset_advertising_speed(void);
+static void poll_advertising_speed(void);
 static void release_active_controls(void);
 static void poll_radial_joystick(void);
 static void restore_soft_restart_mode_if_ready(void);
@@ -347,6 +357,7 @@ static esp_err_t clear_peer_whitelist(void)
 
 static esp_err_t refresh_peer_filter(void)
 {
+    reset_advertising_speed();
     atomic_store(&s_peer_filter_ready, false);
     if (atomic_load(&s_advertising_starting)) {
         atomic_store(&s_peer_filter_state, BLE_PEER_FILTER_STOPPING);
@@ -883,6 +894,7 @@ static void hid_event(void *handler_args, esp_event_base_t base, int32_t id,
     case ESP_HIDD_CONNECT_EVENT:
         atomic_store(&s_advertising_active, false);
         atomic_store(&s_advertising_starting, false);
+        atomic_store(&s_advertising_interval_restart_pending, false);
         atomic_store(&s_connected, false);
         clear_transport_runtime_state(CODEX_TRANSPORT_BLE);
         ESP_LOGI(TAG, "BLE host connected; awaiting encrypted bond");
@@ -904,6 +916,7 @@ static void hid_event(void *handler_args, esp_event_base_t base, int32_t id,
         atomic_store(&s_advertising_starting, false);
         clear_transport_runtime_state(CODEX_TRANSPORT_BLE);
         ESP_LOGI(TAG, "BLE host disconnected");
+        reset_advertising_speed();
         ensure_advertising();
         break;
     default:
@@ -971,8 +984,8 @@ static esp_ble_adv_data_t s_scan_response_data = {
 };
 
 static esp_ble_adv_params_t s_adv_params = {
-    .adv_int_min = 0x20,
-    .adv_int_max = 0x30,
+    .adv_int_min = BLE_FAST_ADVERTISING_MIN,
+    .adv_int_max = BLE_FAST_ADVERTISING_MAX,
     .adv_type = ADV_TYPE_IND,
     .own_addr_type = BLE_ADDR_TYPE_PUBLIC,
     .channel_map = ADV_CHNL_ALL,
@@ -1022,7 +1035,13 @@ static void gap_event(esp_gap_ble_cb_event_t event,
         atomic_store(&s_advertising_starting, false);
         if (atomic_load(&s_peer_filter_state) ==
             BLE_PEER_FILTER_STOPPING) {
+            atomic_store(&s_advertising_interval_restart_pending, false);
             (void)clear_peer_whitelist();
+        } else if (atomic_exchange(
+                       &s_advertising_interval_restart_pending, false) &&
+                   !atomic_load(&s_ble_suspended) &&
+                   !atomic_load(&s_connected)) {
+            ensure_advertising();
         }
         break;
     case ESP_GAP_BLE_UPDATE_WHITELIST_COMPLETE_EVT: {
@@ -1148,11 +1167,56 @@ static esp_err_t start_advertising(void)
                                         true)) {
         return ESP_OK;
     }
+    const bool slow = atomic_load(&s_slow_advertising);
+    s_adv_params.adv_int_min = slow ? BLE_SLOW_ADVERTISING_MIN
+                                    : BLE_FAST_ADVERTISING_MIN;
+    s_adv_params.adv_int_max = slow ? BLE_SLOW_ADVERTISING_MAX
+                                    : BLE_FAST_ADVERTISING_MAX;
     const esp_err_t result = esp_ble_gap_start_advertising(&s_adv_params);
     if (result != ESP_OK) {
         atomic_store(&s_advertising_starting, false);
     }
     return result;
+}
+
+static uint32_t advertising_now_ms(void)
+{
+    return (uint32_t)((uint64_t)esp_timer_get_time() / 1000U);
+}
+
+static void reset_advertising_speed(void)
+{
+    atomic_store(&s_slow_advertising, false);
+    atomic_store(&s_advertising_interval_restart_pending, false);
+    atomic_store(&s_fast_advertising_until_ms,
+                 advertising_now_ms() + BLE_FAST_ADVERTISING_DURATION_MS);
+}
+
+static void poll_advertising_speed(void)
+{
+    if (atomic_load(&s_ble_suspended) || atomic_load(&s_connected) ||
+        !atomic_load(&s_advertising_active) ||
+        atomic_load(&s_slow_advertising)) {
+        return;
+    }
+    const uint32_t now_ms = advertising_now_ms();
+    if ((int32_t)(now_ms - atomic_load(&s_fast_advertising_until_ms)) < 0) {
+        return;
+    }
+    bool expected = false;
+    if (!atomic_compare_exchange_strong(&s_slow_advertising, &expected,
+                                        true)) {
+        return;
+    }
+    atomic_store(&s_advertising_interval_restart_pending, true);
+    const esp_err_t result = esp_ble_gap_stop_advertising();
+    if (result != ESP_OK) {
+        atomic_store(&s_advertising_interval_restart_pending, false);
+        atomic_store(&s_slow_advertising, false);
+        atomic_store(&s_fast_advertising_until_ms, now_ms + 1000U);
+        ESP_LOGW(TAG, "BLE advertising interval transition failed: %s",
+                 esp_err_to_name(result));
+    }
 }
 
 static void advertising_retry_task(void *parameter)
@@ -1457,6 +1521,7 @@ esp_err_t codex_micro_init(const char *serial)
     portEXIT_CRITICAL(&s_state_lock);
     clear_runtime_state();
     load_soft_restart_mode();
+    reset_advertising_speed();
     s_tx_mutex = xSemaphoreCreateMutex();
 #if CONFIG_CODEX_MICRO_USB_ENABLED
     s_rx_mutex = xSemaphoreCreateMutex();
@@ -1660,6 +1725,7 @@ void codex_micro_poll(void)
                  connected ? "connected" : "disconnected");
     }
 #endif
+    poll_advertising_speed();
     restore_soft_restart_mode_if_ready();
     float neutral_angle = 0.0f;
     if (atomic_load(&s_transport_wait_neutral) &&
@@ -1709,6 +1775,7 @@ void codex_micro_set_ble_suspended(bool suspended)
         }
         return;
     }
+    reset_advertising_speed();
     ensure_advertising();
 }
 

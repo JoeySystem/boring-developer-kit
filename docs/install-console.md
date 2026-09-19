@@ -6,7 +6,8 @@
 |---|---|
 | 安装控制台、连接设备，或尝试扩展 | [BORING 控制台 0.1.13 · M 系列 Mac 测试版](https://github.com/JoeySystem/boring-developer-kit/releases/download/console-v0.1.13/BORING-Console-0.1.13-macOS-arm64.zip) |
 | 查看本次安装包的更新和限制 | [0.1.13 发布页](https://github.com/JoeySystem/boring-developer-kit/releases/tag/console-v0.1.13) |
-| 修改控制台源码、开发 SDK 或查看协议 | [源码开发包 v0.1.0-preview.4](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.4) |
+| 修改控制台或固件源码、开发 SDK 或查看协议 | [源码开发包 v0.1.0-preview.9](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.9) |
+| 获取当前官方固件维护 ZIP | [固件 20260916.01 使用说明](official-firmware-20260916.01.md)；此旧控制台安装包不保证具备导入入口 |
 
 安装交付包 `BORING-Console-0.1.13-macOS-arm64.zip` 内含同版本 **DMG、安装说明和第三方许可资料**。安装控制台不需要先安装 Python，也不需要编译源码。该包不含固件镜像，不能导入“固件维护”。
 
