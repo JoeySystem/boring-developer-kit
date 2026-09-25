@@ -7,7 +7,7 @@
 **控制台公开源码已更新至 0.2.1，SDK 1.1.0 / API 1.1。**
 
 - **下载源码开发包：**[v0.1.0-preview.10](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.10)，含控制台、SDK、四个扩展示例和协议资料。
-- **直接安装官方软件：**[macOS Apple Silicon 0.2.1](https://updates.boringconcept.com/console/macos/arm64/trial/BORING-Console-0.2.1-macOS-arm64.dmg) · [Windows x86_64 0.2.1](https://updates.boringconcept.com/console/windows/x86_64/trial/BORING-Console-0.2.1-Windows-x86_64-Setup.exe) · [安装说明](docs/install-console.md)。
+- **从 GitHub 下载安装包：**[macOS Apple Silicon 0.2.1](https://github.com/JoeySystem/boring-developer-kit/releases/download/v0.1.0-preview.10/BORING-Console-0.2.1-macOS-arm64.dmg) · [Windows x86_64 0.2.1](https://github.com/JoeySystem/boring-developer-kit/releases/download/v0.1.0-preview.10/BORING-Console-0.2.1-Windows-x86_64-Setup.exe) · [安装说明](docs/install-console.md)。
 - **固件：**保留 preview.9 的源码参考与[20260916.01 维护包说明](docs/official-firmware-20260916.01.md)，本次没有更新固件。
 
 社区构建使用独立设置、系统字体和简化设备示意，不附内部品牌模型或演示动画，也不订阅官方自动更新。原创内容采用 **PolyForm Noncommercial 1.0.0**，商业复用需另行授权。
@@ -45,7 +45,7 @@ SDK/API 1.1 增加电脑端任务事件，兼容 1.0 提示词槽位、绑定动
 
 ## 下载与维护
 
-本次 Release 提供源码开发包、四个扩展 ZIP 和 SDK wheel。官方控制台安装包通过上方链接下载；历史固件维护包保留在此前 Release。GitHub 的 **Code → Download ZIP** 是仓库源码快照，不可直接当固件维护包导入。
+本次 GitHub Release 提供 Windows、macOS 0.2.1 安装包、源码开发包、四个扩展 ZIP 和 SDK wheel。安装软件请使用上方对应系统的下载链接；历史固件维护包保留在此前 Release。GitHub 的 **Code → Download ZIP** 是仓库源码快照，不可直接当固件维护包导入。
 
 包括本轮控制台代码在内的原创内容采用 **PolyForm Noncommercial 1.0.0**，商业复用另行书面授权。保留 NOTICE 与第三方许可，具体范围见 [LICENSING](LICENSING.md)。
 
