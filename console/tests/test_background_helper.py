@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import plistlib
 import sys
 from uuid import uuid4
@@ -39,7 +40,7 @@ def test_mac_launch_agent_contains_only_background_configurator_command(tmp_path
 
     value = plistlib.loads(launch_agent.path.read_bytes())
     assert value == {
-        "Label": "com.boring.controller-config.community.prompt-helper",
+        "Label": "com.boring.controller-config.prompt-helper",
         "ProgramArguments": [
             "/Applications/BORING.app/Contents/MacOS/BORING",
             "--background",
@@ -50,6 +51,172 @@ def test_mac_launch_agent_contains_only_background_configurator_command(tmp_path
 
     launch_agent.set_enabled(False)
     assert not launch_agent.path.exists()
+
+
+def test_diy_launch_agent_does_not_remove_official_login_item(tmp_path) -> None:
+    official = MacLaunchAgent(
+        ("/Applications/BORING Console.app/Contents/MacOS/BORING", "--background"),
+        directory=tmp_path,
+        label="com.boring.controller-config.prompt-helper",
+        other_labels=("com.boring.controller-config.diy.prompt-helper",),
+    )
+    diy = MacLaunchAgent(
+        ("/Applications/BORING Console DIY.app/Contents/MacOS/BORING", "--background"),
+        directory=tmp_path,
+        label="com.boring.controller-config.diy.prompt-helper",
+        other_labels=("com.boring.controller-config.prompt-helper",),
+    )
+
+    official.set_enabled(True)
+    with pytest.raises(ValueError, match="另一版本"):
+        diy.set_enabled(True)
+    assert official.path.exists()
+    assert not diy.path.exists()
+
+    diy.set_enabled(False)
+    assert official.path.exists()
+
+
+def test_diy_background_menu_and_status_item_keep_diy_identity(
+    qapp, tmp_path, monkeypatch
+) -> None:
+    class FakeStatusItem:
+        def __init__(self, _on_click) -> None:
+            self.title = ""
+            self.tooltip = ""
+
+        def set_title(self, value) -> None:
+            self.title = value
+
+        def set_tooltip(self, value) -> None:
+            self.tooltip = value
+
+        def hide(self) -> None:
+            pass
+
+    monkeypatch.setattr(
+        background_helper.QSystemTrayIcon,
+        "isSystemTrayAvailable",
+        staticmethod(lambda: True),
+    )
+    monkeypatch.setattr(background_helper, "_MacTextStatusItem", FakeStatusItem)
+    controller = PromptBackgroundController(
+        qapp,
+        shutdown=lambda: None,
+        settings=QSettings(
+            str(tmp_path / "diy-background.ini"), QSettings.Format.IniFormat
+        ),
+        build_origin="custom",
+        platform="darwin",
+    )
+
+    assert controller._native_status_item.title.endswith(" · DIY")
+    assert "DIY" in controller._native_status_item.tooltip
+    assert controller._tray_show_console.text() == "打开 BORING 控制台 DIY"
+    assert controller._tray_quit_helper.text() == "退出 BORING DIY 主机自动化助手"
+
+
+def test_cross_origin_instance_request_reports_existing_host_without_activation() -> None:
+    coordinator = ApplicationInstanceCoordinator("unused", origin="official")
+    activations = []
+    coordinator.activate_requested.connect(lambda: activations.append(True))
+
+    response, activate = coordinator.handle_request(
+        b'{"action":"show","origin":"custom"}'
+    )
+
+    assert not activate
+    assert b'"status":"occupied"' in response
+    assert b'"origin":"official"' in response
+    assert activations == []
+
+
+def test_same_origin_and_legacy_instance_requests_activate_existing_host() -> None:
+    coordinator = ApplicationInstanceCoordinator("unused", origin="custom")
+    activations = []
+    coordinator.activate_requested.connect(lambda: activations.append(True))
+
+    response, activate = coordinator.handle_request(
+        b'{"action":"show","origin":"custom"}'
+    )
+    legacy_response, legacy_activate = coordinator.handle_request(b"show")
+
+    assert activate
+    assert b'"status":"activated"' in response
+    assert legacy_activate
+    assert legacy_response == b""
+    assert activations == [True, True]
+
+
+def test_instance_without_identity_response_is_treated_as_other_console(
+    tmp_path, monkeypatch
+) -> None:
+    name = f"bct-{uuid4().hex[:8]}"
+    primary = ApplicationInstanceCoordinator(name)
+    try:
+        try:
+            assert primary.acquire(activate_existing=False)
+        except RuntimeError as exc:
+            pytest.skip(f"当前测试沙箱不允许创建本地 IPC socket：{exc}")
+
+        class LegacySocket:
+            def __init__(self, _parent) -> None:
+                self.written = b""
+
+            def connectToServer(self, _name) -> None:
+                pass
+
+            def waitForConnected(self, _timeout) -> bool:
+                return True
+
+            def write(self, payload) -> None:
+                self.written = bytes(payload)
+
+            def waitForBytesWritten(self, _timeout) -> bool:
+                return True
+
+            def waitForReadyRead(self, _timeout) -> bool:
+                return False
+
+            def disconnectFromServer(self) -> None:
+                pass
+
+        monkeypatch.setattr(background_helper, "QLocalSocket", LegacySocket)
+        secondary = ApplicationInstanceCoordinator(name, origin="custom")
+        assert not secondary.acquire(activate_existing=True)
+        assert "另一份 BORING 控制台" in secondary.conflict_message
+    finally:
+        primary.close()
+
+
+def test_primary_instance_replies_without_blocking_gui_thread(qapp) -> None:
+    coordinator = ApplicationInstanceCoordinator(
+        f"bct-{uuid4().hex[:8]}", origin="official"
+    )
+
+    class Socket:
+        def __init__(self) -> None:
+            self.written = b""
+            self.disconnected = False
+
+        @staticmethod
+        def readAll():
+            return b'{"action":"background","origin":"custom"}'
+
+        def write(self, payload) -> None:
+            self.written = bytes(payload)
+
+        def disconnectFromServer(self) -> None:
+            self.disconnected = True
+
+    socket = Socket()
+    coordinator._consume(socket)
+
+    assert json.loads(socket.written) == {
+        "status": "occupied",
+        "origin": "official",
+    }
+    assert socket.disconnected
 
 
 def test_background_program_arguments_use_python_module_for_source(monkeypatch) -> None:
@@ -185,8 +352,6 @@ def test_macos_native_reopen_restores_hidden_console(qapp, qtbot, tmp_path, monk
 
 @pytest.mark.parametrize("popup_kind", ["menu", "combo"])
 def test_macos_app_deactivation_dismisses_popups(qapp, qtbot, tmp_path, monkeypatch, popup_kind):
-    if qapp.platformName() != "cocoa":
-        pytest.skip("Requires native Cocoa activation events; emitting a Qt signal does not deactivate the app")
     from PySide6.QtWidgets import QComboBox
     monkeypatch.setattr(background_helper.QSystemTrayIcon, "isSystemTrayAvailable", lambda: False)
     controller = PromptBackgroundController(
@@ -322,8 +487,8 @@ def test_menu_bar_quota_progress_keeps_text_external_and_uses_remaining_quota(
     assert primary.progress.value() == 88
     assert secondary.progress.value() == 66
     assert not primary.progress.isTextVisible()
-    assert "#54b9d1" in primary.progress.styleSheet()
-    assert "#e85b42" in secondary.progress.styleSheet()
+    assert "#FF6A00" in primary.progress.styleSheet()
+    assert "#FF6A00" in secondary.progress.styleSheet()
 
     primary.set_window(None)
     assert primary.isHidden()

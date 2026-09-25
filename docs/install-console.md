@@ -1,3 +1,14 @@
+# 官方 Console 0.2.1 下载
+
+- [macOS Apple Silicon DMG](https://updates.boringconcept.com/console/macos/arm64/trial/BORING-Console-0.2.1-macOS-arm64.dmg)
+- [Windows x86_64 Setup EXE](https://updates.boringconcept.com/console/windows/x86_64/trial/BORING-Console-0.2.1-Windows-x86_64-Setup.exe)
+
+这是官方安装版，与本仓库社区构建分别交付。当前包尚无正式平台签名，系统可能提示未知开发者或发布者。macOS 更新后如快捷键无反应，请在“系统设置 → 隐私与安全性 → 辅助功能”中移除旧 BORING 条目，重新添加应用，再退出并重开控制台。Windows 0.2.1 已验证公开下载与更新签名，本轮未进行 Windows 实机安装测试。
+
+下面保留 0.1.13 的历史安装记录，仅供查阅。
+
+---
+
 # 下载和安装 BORING 控制台
 
 ## 选择下载内容

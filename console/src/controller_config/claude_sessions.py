@@ -12,10 +12,8 @@ import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 
-from controller_config.official_controls import MATRIX12_AGENT_STATUS_KEY_ORDER
 
-
-CLAUDE_STATUS_KEYS = MATRIX12_AGENT_STATUS_KEY_ORDER
+CLAUDE_STATUS_KEYS = ("key.1", "key.2", "key.4", "key.5", "key.6", "key.7")
 STALE_AFTER_SECONDS = 120.0
 OwnerStarted = str | float | int
 OwnerAlive = Callable[[int, OwnerStarted], bool | None]

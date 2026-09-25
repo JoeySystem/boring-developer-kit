@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import subprocess
-
 import pytest
 
 from controller_config.prompt_helper import (
@@ -27,32 +25,30 @@ def test_mac_helper_pastes_exact_utf8_without_enter() -> None:
     clipboard = FakeClipboard()
     calls = []
 
-    def runner(command, **kwargs):
-        calls.append((command, kwargs))
-        return subprocess.CompletedProcess(command, 0, "", "")
+    def send_paste_shortcut():
+        calls.append("Command+V")
 
-    paster = MacClipboardPaster(clipboard, platform="darwin", runner=runner)
+    paster = MacClipboardPaster(
+        clipboard, platform="darwin", send_paste_shortcut=send_paste_shortcut
+    )
     text = "请解释这段代码。\n先给结论，不要自动提交。"
 
     body_bytes = paster.paste(text)
 
     assert clipboard.value == text
     assert body_bytes == len(text.encode("utf-8"))
-    command, options = calls[0]
-    assert command[:2] == ["/usr/bin/osascript", "-e"]
-    assert 'keystroke "v"' in command[2]
-    assert "return" not in command[2].lower()
-    assert "enter" not in command[2].lower()
-    assert options["timeout"] == 3
+    assert calls == ["Command+V"]
 
 
 def test_mac_helper_reports_accessibility_failure_but_keeps_clipboard_text() -> None:
     clipboard = FakeClipboard()
 
-    def runner(command, **_kwargs):
-        return subprocess.CompletedProcess(command, 1, "", "not authorized")
+    def send_paste_shortcut():
+        raise PromptPasteError("当前控制台没有辅助功能权限")
 
-    paster = MacClipboardPaster(clipboard, platform="darwin", runner=runner)
+    paster = MacClipboardPaster(
+        clipboard, platform="darwin", send_paste_shortcut=send_paste_shortcut
+    )
 
     with pytest.raises(PromptPasteError, match="辅助功能"):
         paster.paste("中文提示词")
@@ -75,7 +71,7 @@ def test_runtime_uses_device_confirmed_prompt_not_unsent_draft() -> None:
     paster = MacClipboardPaster(
         clipboard,
         platform="darwin",
-        runner=lambda command, **kwargs: subprocess.CompletedProcess(command, 0, "", ""),
+        send_paste_shortcut=lambda: None,
     )
 
     result = PromptHelperRuntime(paster).handle_trigger(library, 1)

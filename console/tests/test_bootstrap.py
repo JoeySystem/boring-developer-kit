@@ -637,7 +637,7 @@ def test_known_unsafe_ble_builds_stop_at_hello_but_usb_and_fixed_build_continue(
             assert sent[-1][0].name == 'CAPABILITIES'
 
 
-def test_ble_auth_timeout_records_stage_and_stops_without_retry(contract, load_fixture):
+def test_ble_auth_timeout_records_stage_for_fresh_connection_retry(contract, load_fixture):
     sent, failures = [], []
     session = BootstrapSession(contract=contract, port_name='ble:test',
         send=lambda command, request_id: sent.append((command, request_id)),
@@ -659,4 +659,4 @@ def test_ble_auth_timeout_records_stage_and_stops_without_retry(contract, load_f
     assert failures[0].kind is BootstrapKind.AUTHENTICATION_INTERRUPTED
     assert 'AUTH_GET_CERTIFICATE' in failures[0].technical
     assert '20260910.05' in failures[0].technical
-    assert '暂停自动重连' in str(failures[0])
+    assert '重新连接' in str(failures[0])

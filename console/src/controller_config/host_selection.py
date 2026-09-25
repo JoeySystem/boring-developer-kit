@@ -75,12 +75,7 @@ class SystemHostServices:
 
     def capture_selection(self) -> str:
         before = self._sequence()
-        if self.platform == "darwin":
-            self._run_macos_script(self._MAC_COPY_SCRIPT, "复制当前选中文字")
-        elif self.platform == "win32":
-            self._send_windows_copy_shortcut()
-        else:
-            raise HostActionError("当前系统尚不支持获取前台选中文字")
+        self.send_copy_shortcut()
         if before is None:
             self._wait(0.12)
         else:
@@ -95,6 +90,19 @@ class SystemHostServices:
                     "未检测到新的选中文字。请确认目标应用中已有文字选区，并允许 BORING 控制台使用辅助功能。"
                 )
         return self.read_clipboard()
+
+    def selection_sequence(self) -> int | None:
+        """Read on the GUI thread, alongside Qt's clipboard."""
+        return self._sequence()
+
+    def send_copy_shortcut(self) -> None:
+        """May wait for the OS; the asynchronous executor runs this off-thread."""
+        if self.platform == "darwin":
+            self._run_macos_script(self._MAC_COPY_SCRIPT, "复制当前选中文字")
+        elif self.platform == "win32":
+            self._send_windows_copy_shortcut()
+        else:
+            raise HostActionError("当前系统尚不支持获取前台选中文字")
 
     def read_clipboard(self) -> str:
         text = self.clipboard.text()
@@ -120,6 +128,10 @@ class SystemHostServices:
             raise HostActionError(f"无法追加到文件：{exc}") from exc
 
     def open_target(self, target: str) -> None:
+        self.open_prepared_target(self.prepare_open_target(target), target)
+
+    def prepare_open_target(self, target: str) -> QUrl:
+        """Resolve local paths off-thread before asking Qt to open them."""
         value = target.strip()
         if value.startswith(("http://", "https://")):
             url = QUrl(value)
@@ -128,8 +140,11 @@ class SystemHostServices:
             if not path.exists():
                 raise HostActionError(f"要打开的目标不存在：{path}")
             url = QUrl.fromLocalFile(str(path.resolve()))
+        return url
+
+    def open_prepared_target(self, url: QUrl, target: str) -> None:
         if not self._opener(url):
-            raise HostActionError(f"系统无法打开目标：{value}")
+            raise HostActionError(f"系统无法打开目标：{target}")
 
     def show_notification(self, message: str) -> None:
         if self.platform == "darwin":

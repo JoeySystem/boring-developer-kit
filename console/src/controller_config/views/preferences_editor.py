@@ -3,9 +3,10 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QResizeEvent, QShowEvent
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
     QColorDialog,
     QComboBox,
@@ -54,6 +55,7 @@ class BleNameEditor(QWidget):
         self.identity = QLabel(objectName="bleNameSerial")
         self.identity.setTextFormat(Qt.PlainText)
         self.identity.setProperty(SKIP_TRANSLATION_PROPERTY, True)
+        self.identity.hide()
         layout.addWidget(self.identity)
         self.name_input = QLineEdit(objectName="bleNameInput")
         # The protocol limit is UTF-8 bytes. Never truncate QLineEdit to 24 characters.
@@ -62,25 +64,15 @@ class BleNameEditor(QWidget):
         layout.addWidget(self.name_input)
         self.counter = QLabel(objectName="bleNameByteCount")
         self.counter.setProperty(SKIP_TRANSLATION_PROPERTY, True)
-        help_toggle = QPushButton(objectName="bleNameHelpToggle")
-        set_translatable_text(help_toggle, "名称长度说明")
-        help_toggle.setCheckable(True)
-        layout.addWidget(help_toggle)
         self.counter.hide()
-        help_toggle.toggled.connect(self.counter.setVisible)
         layout.addWidget(self.counter)
-        rules = QLabel(objectName="muted")
-        set_translatable_text(rules, "按 UTF-8 字节计数；中文通常占 3 字节。名称不能为空，不能有首尾空白、换行或控制字符。")
-        rules.setWordWrap(True)
-        rules.hide()
-        help_toggle.toggled.connect(rules.setVisible)
-        layout.addWidget(rules)
         self.validation = QLabel(objectName="bleNameValidation")
         self.validation.setWordWrap(True)
         layout.addWidget(self.validation)
         form = QFormLayout()
         self.saved = QLabel(objectName="bleNameSaved")
         self.active = QLabel(objectName="bleNameActive")
+        self._name_value_rows: list[tuple[QLabel, QLabel]] = []
         for source, value in (("已保存名称", self.saved), ("本次运行名称", self.active)):
             caption = QLabel()
             set_translatable_text(caption, source)
@@ -88,27 +80,35 @@ class BleNameEditor(QWidget):
             value.setTextFormat(Qt.PlainText)
             value.setProperty(SKIP_TRANSLATION_PROPERTY, True)
             form.addRow(caption, value)
+            self._name_value_rows.append((caption, value))
         layout.addLayout(form)
         self.restart = QLabel(objectName="bleNameRestart")
         self.restart.setWordWrap(True)
         layout.addWidget(self.restart)
-        explanation = QLabel(objectName="muted")
-        set_translatable_text(explanation, "保存不会重启或断开设备；新名称在下次正常重启后生效。仅断连重连不保证生效，系统蓝牙列表也可能暂时缓存旧名称。")
-        explanation.setWordWrap(True)
-        layout.addWidget(explanation)
         self.reason = QLabel(objectName="bleNameBlockReason")
         self.reason.setWordWrap(True)
         layout.addWidget(self.reason)
         self.message = QLabel(objectName="bleNameMessage")
         self.message.setWordWrap(True)
         layout.addWidget(self.message)
+        self.name_help_toggle = QPushButton(objectName="bleNameHelpToggle")
+        self.name_help_toggle.setProperty("buttonRole", "secondary")
+        self.name_help_toggle.setCheckable(True)
+        set_translatable_text(self.name_help_toggle, "电脑仍显示旧名称？")
+        layout.addWidget(self.name_help_toggle)
+        self.name_help = QLabel(objectName="bleNameHelp")
+        self.name_help.setWordWrap(True)
+        set_translatable_text(self.name_help, "先确认新名称已生效，再重新打开电脑的蓝牙设置。Mac 请退出并重新打开“系统设置”。旧条目不代表设备仍在线，无需为改名删除配对。")
+        self.name_help.hide()
+        self.name_help_toggle.toggled.connect(self.name_help.setVisible)
+        layout.addWidget(self.name_help)
         self.technical = QLabel(objectName="bleNameTechnical")
         self.technical.setProperty(SKIP_TRANSLATION_PROPERTY, True)
         self.technical.setTextFormat(Qt.PlainText)
         self.technical.setWordWrap(True)
         self.technical.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.technical_toggle = QPushButton(objectName="bleNameDetailsToggle")
-        set_translatable_text(self.technical_toggle, "技术详情")
+        set_translatable_text(self.technical_toggle, "更多信息")
         self.technical_toggle.setCheckable(True)
         self.technical_toggle.toggled.connect(self.technical.setVisible)
         layout.addWidget(self.technical_toggle)
@@ -116,15 +116,14 @@ class BleNameEditor(QWidget):
         actions = QHBoxLayout()
         self.save_button = QPushButton(objectName="saveBleName")
         self.default_button = QPushButton(objectName="restoreBleName")
-        self.read_button = QPushButton(objectName="readBleName")
-        for button, source, operation in (
-            (self.save_button, "保存名称", "save"),
-            (self.default_button, "恢复默认名称", "restore_default"),
-            (self.read_button, "重新读取名称", "read"),
-        ):
-            set_translatable_text(button, source)
-            button.clicked.connect(lambda _checked=False, method=operation: self._invoke(method))
-            actions.addWidget(button)
+        self.save_button.setProperty("buttonRole", "primary")
+        self.default_button.setProperty("buttonRole", "secondary")
+        self.save_button.clicked.connect(self._primary_action)
+        self.default_button.clicked.connect(
+            lambda _checked=False: self._invoke("restore_default")
+        )
+        actions.addWidget(self.save_button, 1)
+        actions.addWidget(self.default_button)
         layout.addLayout(actions)
         self.name_input.textEdited.connect(self._edit)
         self._session.changed.connect(self._session_changed)
@@ -147,6 +146,9 @@ class BleNameEditor(QWidget):
             self._local_error = str(exc)
         self.refresh()
 
+    def _primary_action(self) -> None:
+        self._invoke("read" if self._session.result is None else "save")
+
     def refresh(self, *_args) -> None:
         session = self._session
         if self.name_input.text() != session.draft:
@@ -166,27 +168,48 @@ class BleNameEditor(QWidget):
         result = session.result or {}
         self.saved.setText(str(result.get("saved_name", "—")))
         self.active.setText(str(result.get("active_name", "—")))
+        restart_required = bool(result.get("restart_required"))
+        for caption, value in self._name_value_rows:
+            caption.setVisible(restart_required)
+            value.setVisible(restart_required)
         set_translatable_text(self.restart, (
-            "已保存，下次正常重启生效" if result.get("restart_required")
-            else "已保存名称与本次运行名称一致" if result else "尚未读取蓝牙名称"
+            "请将设备关机再开机；重新连接后，控制台会自动确认新名称是否生效。"
+            if restart_required
+            else ""
         ))
+        self.restart.setVisible(bool(self.restart.text()))
         reason = self._vm.ble_name_write_block_reason()
         set_translatable_text(self.reason, reason)
         self.reason.setVisible(bool(reason))
-        set_translatable_text(self.message, self._local_error or session.message)
+        message = self._local_error or session.message
+        if message == reason:
+            message = ""
+        set_translatable_text(self.message, message)
         self.message.setVisible(bool(self.message.text()))
+        self.name_help_toggle.setVisible(bool(result) and session.supported)
+        self.name_help.setVisible(
+            bool(result) and session.supported and self.name_help_toggle.isChecked()
+        )
         self.technical.setText(session.technical)
         self.technical_toggle.setVisible(bool(session.technical))
         self.technical.setVisible(bool(session.technical) and self.technical_toggle.isChecked())
         self.name_input.setEnabled(bool(session.serial) and session.supported and not session.busy)
         can_write = not reason and not session.busy and session.connected and session.supported
-        self.save_button.setEnabled(can_write and session.dirty and not error)
-        self.default_button.setEnabled(can_write and bool(result) and (
-            result.get("saved_name") != result.get("default_name")
-            or session.draft != result.get("default_name")
-        ))
         can_read = not reason or reason == "设备当前只读，不能保存蓝牙名称"
-        self.read_button.setEnabled(session.connected and session.supported and not session.busy and can_read)
+        if result:
+            set_translatable_text(self.save_button, "保存名称")
+            self.save_button.setEnabled(can_write and session.dirty and not error)
+        else:
+            set_translatable_text(self.save_button, "重新读取名称")
+            self.save_button.setEnabled(
+                session.connected and session.supported and not session.busy and can_read
+            )
+        default_relevant = bool(result) and (
+            result.get("saved_name") != result.get("default_name")
+        )
+        set_translatable_text(self.default_button, "恢复默认名称")
+        self.default_button.setVisible(default_relevant)
+        self.default_button.setEnabled(can_write and default_relevant)
 
 
 class RgbButton(QPushButton):
@@ -365,6 +388,7 @@ class LightingLevelScale(QWidget):
 
 class PreferencesEditor(QWidget):
     lighting_changed = Signal(object)
+    screen_icon_editor_created = Signal(object)
 
     def __init__(
         self,
@@ -378,7 +402,6 @@ class PreferencesEditor(QWidget):
         rules: ConfigEditorRules,
         lighting_levels: tuple[int, ...] | None = None,
         haptic_levels: tuple[int, ...] | None = None,
-        display_brightness_configurable: bool = True,
         screen_icon_draft: ScreenIconDraft | None = None,
         parent: QWidget | None = None,
     ) -> None:
@@ -393,7 +416,6 @@ class PreferencesEditor(QWidget):
         self._rules = rules
         self._haptic_levels = haptic_levels
         self._haptic_level_strength = _integer(self._haptic.get("strength"), 0)
-        self._display_brightness_configurable = display_brightness_configurable
         lighting_range = rules.lighting_brightness
         if lighting_levels is not None:
             if (
@@ -471,8 +493,14 @@ class PreferencesEditor(QWidget):
             level_row.addLayout(segments, 1)
             level_control.layout().insertLayout(0, level_row)
             def refresh(lighting):
-                gauge.set_usage(seven_day=lighting.get("brightness", 0) if lighting.get("enabled") else 0,
-                                five_hour=None)
+                selected_level = self._lighting_brightness.value()
+                maximum_level = len(self._lighting_levels) - 1
+                user_percentage = (
+                    round(selected_level / maximum_level * 100)
+                    if lighting.get("enabled") and maximum_level > 0
+                    else 0
+                )
+                gauge.set_usage(seven_day=user_percentage, five_hour=None)
                 for index, button in enumerate(buttons):
                     button.setChecked(index == self._lighting_brightness.value() and
                                       (self._lighting_level_touched or self._lighting_level_is_standard))
@@ -556,9 +584,7 @@ class PreferencesEditor(QWidget):
     def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802
         super().resizeEvent(event)
         if self._workspace_columns is not None:
-            # Wait for the parent layout to finish assigning this widget's size
-            # before moving children and changing their minimum heights.
-            QTimer.singleShot(0, self._layout_workspace)
+            self._layout_workspace()
             return
         compact = self.width() < 820
         if compact == self._compact_cards:
@@ -602,14 +628,12 @@ class PreferencesEditor(QWidget):
 
         display = copy.deepcopy(self._display)
         if self._features.get("display") is True:
+            rotation_button = self._display_rotation_group.checkedButton()
             display.update(
-                rotation=int(self._display_rotation.currentData()),
+                brightness=self._display_brightness.value(),
+                rotation=int(rotation_button.property("rotationValue")),
                 show_control_hints=self._display_hints.isChecked(),
             )
-            if self._display_brightness_configurable:
-                display["brightness"] = self._display_brightness.value()
-            elif self._display_brightness.currentIndex() != self._initial_display_index:
-                display["brightness"] = self._display_brightness.currentData()
         return lighting, haptic, display
 
     def lighting_value(self) -> dict[str, Any]:
@@ -760,14 +784,6 @@ class PreferencesEditor(QWidget):
 
         under_key_values = self._lighting.get("under_key")
         if under_key_count > 0 and isinstance(under_key_values, list):
-            layout.addWidget(QLabel("FUNCTION KEYS · 功能键灯光", objectName="eyebrow"))
-            note = QLabel(
-                "每颗功能键灯可以单独设置 RGB；设为 0, 0, 0 可关闭该键灯。",
-                objectName="functionKeyLightingNote",
-            )
-            note.setWordWrap(True)
-            layout.addWidget(note)
-            colors = QGridLayout()
             for index, value in enumerate(under_key_values[:under_key_count]):
                 control_id = f"key.{index + 1}"
                 if (
@@ -775,28 +791,25 @@ class PreferencesEditor(QWidget):
                     or control_id in self._agent_status_control_ids
                 ):
                     continue
-                button = RgbButton(f"功能键 {index + 1}", value, control_id=control_id)
+                # The device model is the visible selector. Keep the existing
+                # RGB button as the dialog/value controller so the write and
+                # readback paths remain unchanged, but do not render a second
+                # row of six competing swatches in the side panel.
+                button = RgbButton(
+                    f"功能键 {index + 1}",
+                    value,
+                    group,
+                    control_id=control_id,
+                )
                 button.setProperty("underKeyIndex", index)
                 button.value_changed.connect(self._emit_lighting_changed)
                 self._under_key_colors.append((index, button))
-                visible_index = len(self._under_key_colors) - 1
-                button.setProperty("compactSwatch", True)
-                button.setFixedSize(34, 34)
-                button._refresh()
-                swatch = QWidget()
-                swatch_layout = QVBoxLayout(swatch)
-                swatch_layout.setContentsMargins(0, 0, 0, 0)
-                swatch_layout.setSpacing(4)
-                swatch_layout.addWidget(button, 0, Qt.AlignHCenter)
-                number = QLabel(control_id.split(".")[-1], objectName="muted")
-                number.setAlignment(Qt.AlignCenter)
-                swatch_layout.addWidget(number)
-                colors.addWidget(swatch, visible_index // 6, visible_index % 6)
-            layout.addLayout(colors)
+                button.hide()
             if self._agent_status_control_ids:
-                layout.addWidget(QLabel("STATUS KEYS · 状态灯键", objectName="eyebrow"))
+                layout.addWidget(QLabel("状态灯", objectName="eyebrow"))
                 agent_note = QLabel(
-                    "状态灯键由 Agent 状态语义接管，不在这里作为普通 RGB 灯编辑；现有配置值保持不变。"
+                    "状态灯由 Codex 自动控制。",
+                    objectName="statusKeyLightingNote",
                 )
                 agent_note.setWordWrap(True)
                 layout.addWidget(agent_note)
@@ -922,48 +935,82 @@ class PreferencesEditor(QWidget):
         group = V4Card(role="widget")
         group.setObjectName("screenWidgetCard")
         layout = QVBoxLayout(group)
-        layout.setContentsMargins(18, 16, 18, 16)
-        layout.addWidget(Boring5RLabel("SCREEN", color="#A5A195", scale=0.9))
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(12)
         layout.addWidget(QLabel("屏幕", objectName="displayModuleTitle"))
         form = QFormLayout()
-        form.setVerticalSpacing(8)
+        form.setVerticalSpacing(10)
         layout.addLayout(form)
-        if self._display_brightness_configurable:
-            self._display_brightness = QSpinBox(objectName="displayBrightness")
-            brightness_range = self._rules.display_brightness
-            self._display_brightness.setRange(brightness_range.minimum, brightness_range.maximum)
-            self._display_brightness.setSuffix(" %")
-            self._display_brightness.setValue(_integer(self._display.get("brightness"), 0))
-            form.addRow("亮度", self._display_brightness)
-        else:
-            self._display_brightness = QComboBox(objectName="displayBrightness")
-            self._display_brightness.addItem("关闭背光", 0)
-            self._display_brightness.addItem("开启背光（固定亮度）", 100)
-            self._initial_display_index = int(_integer(self._display.get("brightness"), 0) > 0)
-            self._display_brightness.setCurrentIndex(self._initial_display_index)
-            form.addRow("屏幕背光", self._display_brightness)
-            note = QLabel("当前固件的屏幕背光为固定亮度，不支持百分比调节。", objectName="muted")
-            note.setWordWrap(True)
-            form.addRow(note)
-        self._display_rotation = QComboBox(objectName="displayRotation")
-        for value in self._rules.display_rotations:
-            self._display_rotation.addItem(f"{value}°", value)
-        self._display_rotation.setCurrentIndex(
-            max(0, self._display_rotation.findData(self._display.get("rotation")))
+        self._display_brightness = QSlider(
+            Qt.Orientation.Horizontal,
+            objectName="displayBrightness",
         )
-        form.addRow("画面旋转", self._display_rotation)
+        brightness_range = self._rules.display_brightness
+        self._display_brightness.setRange(brightness_range.minimum, brightness_range.maximum)
+        self._display_brightness.setSingleStep(1)
+        self._display_brightness.setPageStep(10)
+        self._display_brightness.setValue(_integer(self._display.get("brightness"), 0))
+        set_translatable_accessible_name(self._display_brightness, "屏幕亮度")
+        self._display_brightness_value = QLabel(objectName="displayBrightnessValue")
+        self._display_brightness_value.setProperty(SKIP_TRANSLATION_PROPERTY, True)
+        self._display_brightness_value.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._display_brightness_value.setText(f"{self._display_brightness.value()}%")
+        self._display_brightness.valueChanged.connect(
+            lambda value: self._display_brightness_value.setText(f"{value}%")
+        )
+        brightness_control = QWidget()
+        brightness_control.setObjectName("displayBrightnessControl")
+        brightness_layout = QHBoxLayout(brightness_control)
+        brightness_layout.setContentsMargins(0, 0, 0, 0)
+        brightness_layout.setSpacing(12)
+        brightness_layout.addWidget(self._display_brightness, 1)
+        brightness_layout.addWidget(self._display_brightness_value)
+        form.addRow("亮度", brightness_control)
+        rotation_control = QWidget(objectName="displayRotationControl")
+        rotation_layout = QHBoxLayout(rotation_control)
+        rotation_layout.setContentsMargins(4, 4, 4, 4)
+        rotation_layout.setSpacing(2)
+        self._display_rotation_group = QButtonGroup(self)
+        self._display_rotation_group.setObjectName("displayRotation")
+        self._display_rotation_group.setExclusive(True)
+        initial_rotation = _integer(
+            self._display.get("rotation"),
+            self._rules.display_rotations[0],
+        )
+        for value in self._rules.display_rotations:
+            button = QPushButton(f"{value}°", objectName="displayRotationOption")
+            button.setCheckable(True)
+            button.setProperty("rotationValue", value)
+            button.setProperty(SKIP_TRANSLATION_PROPERTY, True)
+            button.setChecked(value == initial_rotation)
+            self._display_rotation_group.addButton(button)
+            rotation_layout.addWidget(button, 1)
+        if self._display_rotation_group.checkedButton() is None:
+            self._display_rotation_group.buttons()[0].setChecked(True)
+        form.addRow("画面旋转", rotation_control)
         self._display_hints = QCheckBox("显示控件提示", objectName="displayHints")
         self._display_hints.setChecked(self._display.get("show_control_hints") is True)
         form.addRow("提示", self._display_hints)
         icon_options = QWidget(objectName="screenIconOptions")
         icon_layout = QVBoxLayout(icon_options)
         icon_layout.setContentsMargins(0, 8, 0, 0)
-        icon_layout.addWidget(ScreenIconEditor(
-            self._screen_icon_draft,
-            device_supported=self._features.get("custom_home_icon") is True,
-        ))
-        expand_icons = QPushButton("自定义屏幕图标", objectName="expandScreenIcons")
+        def ensure_icon_editor(expanded: bool) -> None:
+            if expanded and icon_options.findChild(ScreenIconEditor) is None:
+                icon_editor = ScreenIconEditor(
+                    self._screen_icon_draft,
+                    device_supported=self._features.get("custom_home_icon") is True,
+                )
+                icon_layout.addWidget(icon_editor)
+                self.screen_icon_editor_created.emit(icon_editor)
+        expand_icons = QPushButton(objectName="expandScreenIcons")
         expand_icons.setCheckable(True)
+        expand_icons.setProperty("buttonRole", "secondary")
+        set_translatable_text(expand_icons, "自定义屏幕图标 ›")
+        expand_icons.toggled.connect(lambda expanded: set_translatable_text(
+            expand_icons,
+            "自定义屏幕图标 ⌄" if expanded else "自定义屏幕图标 ›",
+        ))
+        expand_icons.toggled.connect(ensure_icon_editor)
         expand_icons.toggled.connect(icon_options.setVisible)
         layout.addWidget(expand_icons)
         layout.addWidget(icon_options)

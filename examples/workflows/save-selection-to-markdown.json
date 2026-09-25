@@ -1,0 +1,31 @@
+{
+  "kind": "boring-workflow",
+  "version": 1,
+  "workflow": {
+    "workflow_id": "reference-save-selection-to-markdown",
+    "name": "保存选中文字到 Markdown",
+    "trigger_prompt_id": 1,
+    "steps": [
+      {
+        "action_id": "capture_selection",
+        "parameters": {}
+      },
+      {
+        "action_id": "append_text_file",
+        "parameters": {
+          "path": "/请选择本机目标/notes.md",
+          "separator": "\n\n"
+        }
+      },
+      {
+        "action_id": "show_notification",
+        "parameters": {
+          "message": "内容已保存"
+        }
+      }
+    ],
+    "enabled": false,
+    "tested": false,
+    "review_required": true
+  }
+}

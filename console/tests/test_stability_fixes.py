@@ -72,7 +72,7 @@ def test_all_device_preferences_are_guarded_before_navigation(session, monkeypat
     editor = window._content.findChild(PreferencesEditor)
     editor._lighting_brightness.setValue(2)
     editor._haptic_strength.setCurrentIndex(editor._haptic_strength.findData(40))
-    editor._display_brightness.setCurrentIndex(editor._display_brightness.findData(0))
+    editor._display_brightness.setValue(0)
     expected = editor.values()
     monkeypatch.setattr(QMessageBox, "warning", lambda *_args: choice)
     window._nav_buttons["settings"].click()

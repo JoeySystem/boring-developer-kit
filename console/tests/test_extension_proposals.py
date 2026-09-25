@@ -112,7 +112,7 @@ def test_proposal_is_blocked_by_existing_dirty_draft(qtbot, contract) -> None:
     profile_id = int(draft.config["active_profile"])
     view_model.set_mapping(
         profile_id,
-        "key.8",
+        "key.2",
         "Local change",
         {"type": "key", "usage": 41, "modifiers": []},
     )

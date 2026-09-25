@@ -10,16 +10,65 @@ from collections.abc import Callable
 import base64
 from pathlib import Path
 import platform
+import plistlib
 from urllib.parse import urlparse
+from xml.parsers.expat import ExpatError
 
 from PySide6.QtCore import QObject, Signal
 
-from .desktop_update import UpdateStatus
+from .desktop_update import DESKTOP_UPDATE_CHECK_INTERVAL_SECONDS, UpdateStatus
 
 _SKIP, _INSTALL, _DISMISS = 0, 1, 2
 _INSTALLING_STAGE = 2
 _driver_class = None
 _no_update_reason_key = None
+
+
+def _validate_update_installation(
+    running_app: Path,
+    bundle_identifier: str,
+    *,
+    application_roots: tuple[Path, ...] | None = None,
+) -> None:
+    roots = application_roots or (
+        Path("/Applications"),
+        Path.home() / "Applications",
+    )
+    running_app = running_app.resolve()
+    expected_paths = {
+        (root / "BORING Console.app").resolve()
+        for root in roots
+    }
+    if running_app not in expected_paths:
+        raise RuntimeError(
+            "请从“应用程序”中的 BORING Console 启动后再检查更新。"
+        )
+
+    installed_copies = []
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for candidate in root.glob("*.app"):
+            try:
+                info = plistlib.loads(
+                    (candidate / "Contents/Info.plist").read_bytes()
+                )
+            except (OSError, plistlib.InvalidFileException, ExpatError):
+                continue
+            if info.get("CFBundleIdentifier") == bundle_identifier:
+                installed_copies.append(candidate.resolve())
+    if len(set(installed_copies)) > 1:
+        raise RuntimeError(
+            "检测到多个 BORING Console。请只保留“应用程序”中的最新版，再检查更新。"
+        )
+
+
+def _configure_automatic_checks(updater, config: dict) -> None:
+    updater.setAutomaticallyDownloadsUpdates_(False)
+    updater.setAutomaticallyChecksForUpdates_(True)
+    updater.setUpdateCheckInterval_(
+        int(config.get("check_interval_seconds", DESKTOP_UPDATE_CHECK_INTERVAL_SECONDS))
+    )
 
 
 def _load_driver_class(framework: Path):
@@ -110,7 +159,7 @@ def _load_driver_class(framework: Path):
 
         @objc.typedSelector(b"v@:@@?")
         def showUpdaterError_acknowledgement_(self, error, acknowledgement):
-            self.owner._publish("failed", message=str(error.localizedDescription()))
+            self.owner._fail(str(error.localizedDescription()))
             acknowledgement()
 
         @objc.typedSelector(b"v@:@?")
@@ -178,7 +227,7 @@ def _load_driver_class(framework: Path):
             if int(error.code()) == 1001:  # SUNoUpdateError
                 self.owner._not_found(error)
             else:
-                self.owner._publish("failed", message=str(error.localizedDescription()))
+                self.owner._fail(str(error.localizedDescription()))
 
     _driver_class = BORINGSparkleUserDriver
     return _driver_class
@@ -202,16 +251,24 @@ class MacDesktopUpdater(QObject):
         self._download_reply = self._install_reply = None
         self._cancel_reply = self._retry_termination = None
 
-    def _publish(self, state, *, message=""):
+    def _publish(self, state, *, message="", retry_action=""):
         self.status = UpdateStatus(state=state, version=self._version,
-                                   received=self._received, total=self._total, message=message)
+                                   received=self._received, total=self._total, message=message, retry_action=retry_action)
         self.changed.emit(self.status)
+
+    def _fail(self, message):
+        # Sparkle error callbacks end the current session. Its old reply blocks
+        # must never be reused to retry a download or installation.
+        self._clear_replies()
+        self._publish("failed", message=message, retry_action="check")
 
     def _not_found(self, error):
         reason = int((error.userInfo() or {}).get(_no_update_reason_key, 0))
         # Unknown or host/OS-incompatible updates are not proof of being current.
+        self._clear_replies()
         self._publish("current" if reason in {1, 2} else "failed",
-                      message=str(error.localizedDescription()))
+                      message=str(error.localizedDescription()),
+                      retry_action="" if reason in {1, 2} else "check")
 
     def start(self):
         if self._updater is not None:
@@ -232,6 +289,10 @@ class MacDesktopUpdater(QObject):
             if root.suffix != ".app":
                 self._publish("unconfigured", message="软件更新仅在已安装的 macOS 应用中可用。")
                 return
+            _validate_update_installation(
+                root,
+                str(host.objectForInfoDictionaryKey_("CFBundleIdentifier") or ""),
+            )
             if str(host.objectForInfoDictionaryKey_("SUPublicEDKey") or "") != self._config["public_key"]:
                 raise RuntimeError("更新公钥与应用签名配置不一致，请重新安装完整的软件包。")
             driver_class = _load_driver_class(root / "Contents/Frameworks/Sparkle.framework")
@@ -239,28 +300,40 @@ class MacDesktopUpdater(QObject):
             self._driver.owner = self
             self._updater = objc.lookUpClass("SPUUpdater").alloc().initWithHostBundle_applicationBundle_userDriver_delegate_(
                 host, host, self._driver, self._driver)
-            self._updater.setAutomaticallyDownloadsUpdates_(False)
-            self._updater.setAutomaticallyChecksForUpdates_(True)
+            _configure_automatic_checks(self._updater, self._config)
             success, error = self._updater.startUpdater_(None)
             if not success:
                 self._updater = None
                 raise RuntimeError(str(error.localizedDescription()))
             self._publish("idle")
         except Exception as error:
-            self._publish("failed", message=str(error))
+            self._updater = None
+            self._fail(str(error))
 
     def check(self):
         if self._updater is None:
             self.start()
         if self._updater is not None and self._updater.canCheckForUpdates():
-            self._updater.checkForUpdates()
+            try:
+                self._updater.checkForUpdates()
+            except Exception as error:
+                self._fail(str(error))
 
     def download(self):
         if self.status.state != "available" or self._download_reply is None:
             return
         reply, self._download_reply = self._download_reply, None
         self._publish("downloading")
-        reply(_INSTALL)
+        try:
+            reply(_INSTALL)
+        except Exception as error:
+            self._fail(str(error))
+
+    def retry(self):
+        if self.status.retry_action == "install":
+            self.install()
+        elif self.status.retry_action == "check":
+            self.check()
 
     def cancel(self):
         if self._cancel_reply is not None:
@@ -285,14 +358,20 @@ class MacDesktopUpdater(QObject):
         try:
             if not self._prepare_restart():
                 return
-            self._install_reply = None
-            self._publish("installing")
+        except Exception as error:
+            # Restart preparation has not invoked a native callback yet. The
+            # staged package and original reply remain available for retry.
+            self._publish("ready", message=str(error), retry_action="install")
+            return
+        self._install_reply = self._retry_termination = None
+        self._publish("installing")
+        try:
             if reply is not None:
                 reply(_INSTALL)
             else:
                 retry()
         except Exception as error:
-            self._publish("failed", message=str(error))
+            self._fail(str(error))
 
     def shutdown(self):
         if self._updater is not None:

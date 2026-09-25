@@ -4,10 +4,9 @@ from __future__ import annotations
 MATRIX12_HARDWARE_IDS = frozenset(
     {"WMP-S3-MATRIX12-V1", "WMP-S3-MATRIX12-POWER-V2"}
 )
-MATRIX12_AGENT_STATUS_KEY_ORDER = (
-    "key.1", "key.2", "key.4", "key.5", "key.6", "key.7"
+MATRIX12_AGENT_STATUS_KEYS = frozenset(
+    {"key.1", "key.2", "key.4", "key.5", "key.6", "key.7"}
 )
-MATRIX12_AGENT_STATUS_KEYS = frozenset(MATRIX12_AGENT_STATUS_KEY_ORDER)
 MATRIX12_CODEX_KEY_NAMES = {
     "key.1": "Agent 1",
     "key.2": "Agent 2",
@@ -21,6 +20,14 @@ MATRIX12_CODEX_KEY_NAMES = {
     "key.10": "Reject",
     "key.11": "Send",
     "key.12": "Stop",
+}
+MATRIX12_CLAUDE_CODE_KEY_NAMES = {
+    "key.1": "Submit",
+    "key.2": "Interrupt",
+    "key.4": "Permission",
+    "key.5": "Transcript",
+    "key.6": "History",
+    "key.7": "Redraw",
 }
 
 

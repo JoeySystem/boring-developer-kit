@@ -78,6 +78,11 @@ def available(instance, release):
     assert instance.status.state == "available"
 
 
+def test_background_update_checks_run_hourly(update):
+    instance, _, _ = update
+    assert instance._periodic.interval() == 60 * 60 * 1000
+
+
 def ready(qtbot, instance, release, payload):
     available(instance, release)
     instance.download()
@@ -213,15 +218,15 @@ def test_helper_preserves_installed_path_and_does_not_kill_processes(tmp_path, m
     monkeypatch.setattr(updater.subprocess, "CREATE_NEW_PROCESS_GROUP", 512, raising=False)
     calls = []
     monkeypatch.setattr(updater.subprocess, "Popen", lambda args, **kwargs: calls.append((args, kwargs)))
-    updater._launch_installer(installer, Path("C:/Users/Example's Account/BORING Console"))
+    updater._launch_installer(installer, Path("C:/Users/Tester's Account/BORING Console"))
     script = (tmp_path / "apply-update.ps1").read_text(encoding="utf-8-sig")
-    assert "Example''s Account/BORING Console" in script
+    assert "Tester''s Account/BORING Console" in script
     assert '/DIR="C:/Users/' in script
     assert "Get-Process -Id $OriginalProcess" in script
     assert "Stop-Process" not in script
     assert "/NORESTART" in script and "/NOCLOSEAPPLICATIONS" in script
     assert calls[0][1]["cwd"] == str(tmp_path)
-    assert "-WorkingDirectory 'C:/Users/Example''s Account/BORING Console'" in script
+    assert "-WorkingDirectory 'C:/Users/Tester''s Account/BORING Console'" in script
     assert "Set-Location -LiteralPath $env:TEMP" in script
     # Failed installation exits before cleanup, retaining installer/logs for repair.
     assert script.index("exit 1") < script.index("Remove-Item -LiteralPath")
@@ -258,3 +263,50 @@ def test_disk_flush_failure_is_reported_without_verification(update):
     assert instance.status.state == "failed"
     assert "disk full" in instance.status.message
     assert instance._verification is None
+
+
+def test_download_retry_requests_same_release_and_verifies_again(qtbot, update):
+    instance, release, payload = update
+    available(instance, release)
+    instance.download()
+    previous = instance._directory
+    instance._network.reply.network_error = QNetworkReply.NetworkError.TimeoutError
+    instance._network.reply.deliver(payload[:4])
+    assert instance.status.retry_action == "download"
+    assert not previous.exists()
+    instance.retry()
+    assert instance._network.request.url().toString() == release["url"]
+    instance._network.reply.deliver(payload)
+    qtbot.waitUntil(lambda: instance.status.state != "verifying")
+    assert instance.status.state == "ready"
+    assert instance.status.retry_action == ""
+
+
+def test_failed_feed_retry_checks_feed_not_installer(update):
+    instance, _, _ = update
+    instance.check()
+    instance._network.reply.code = 503
+    instance._network.reply.deliver(b"")
+    assert instance.status.retry_action == "check"
+    instance.retry()
+    assert instance.status.state == "checking"
+    assert instance._network.request.url().toString() == instance.config["feed_url"]
+
+
+def test_install_retry_keeps_verified_package_and_checks_restart_again(qtbot, update, monkeypatch):
+    instance, release, payload = update
+    ready(qtbot, instance, release, payload)
+    installer = instance._installer
+    events = []
+    instance.prepare_restart = lambda: events.append("prepare") or True
+    def fail(*_):
+        raise OSError("PowerShell unavailable")
+    monkeypatch.setattr(updater, "_launch_installer", fail)
+    instance.install()
+    assert instance.status.retry_action == "install"
+    assert installer.read_bytes() == payload
+    monkeypatch.setattr(updater, "_launch_installer", lambda path, _: events.append(path))
+    instance.retry()
+    assert events == ["prepare", "prepare", installer]
+    assert instance.status.state == "installing"
+    instance._cleanup()

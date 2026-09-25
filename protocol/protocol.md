@@ -140,6 +140,7 @@ Requests use flags `0x00`. Every valid request produces either `ACK` with flags
 | `0x1B` | `GET_PROMPT_EVENT` | Poll for the next physical prompt-trigger event |
 | `0x1C` | `BLE_NAME_GET` | Read saved, active and default Bluetooth names |
 | `0x1D` | `BLE_NAME_SET` | Persist a Bluetooth name for the next normal reboot |
+| `0x1E` | `GET_HOST_ACTION_EVENT` | USB-only poll for the next physical computer-task trigger |
 | `0x20` | `CALIBRATION_START` | Axis/session parameters |
 | `0x21` | `CALIBRATION_SAMPLE` | Request current bounded sample window |
 | `0x22` | `CALIBRATION_CONFIRM` | Candidate calibration for normal config transaction |
@@ -150,6 +151,8 @@ Requests use flags `0x00`. Every valid request produces either `ACK` with flags
 | `0x27` | `CLEAR_LIGHTING_PREVIEW` | Clear volatile preview and restore active configuration lighting |
 | `0x28` | `SET_AGENT_STATUS` | Replace six Claude Code status slots in RAM and renew a 5-second lease |
 | `0x29` | `CLEAR_AGENT_STATUS` | Clear the Claude Code status source, idempotently |
+| `0x2A` | `NORMAL_AGENT_BEHAVIOR_GET` | Read the device-wide NORMAL Agent-key choice |
+| `0x2B` | `NORMAL_AGENT_BEHAVIOR_SET` | Persist and apply the device-wide NORMAL Agent-key choice |
 | `0x30` | `FACTORY_DEFAULT` | Current `base_generation` and confirmation token |
 | `0x40` | `FW_BEGIN` | Declare image identity, version, size and SHA-256 |
 | `0x41` | `FW_DATA` | Sequential base64 image chunk and byte offset |
@@ -293,6 +296,53 @@ must not receive the new status commands.
 `GET_STATUS.result.operating_mode` reports `normal`, `codex`, `eda`, or
 `claude_code` on every build, including targets compiled without Codex
 transport.
+
+### NORMAL Agent-key behavior (Matrix12 Power V2)
+
+`CAPABILITIES.result.features.normal_agent_key_behavior=true` enables
+`NORMAL_AGENT_BEHAVIOR_GET` (0x2A) and `NORMAL_AGENT_BEHAVIOR_SET` (0x2B) on
+targets with all six official Agent status keys. Missing/false means the client
+must not send either command; `features.codex_agent_focus` alone does not imply
+this preference is available. Both commands use the existing authenticated
+configuration connection, ownership rules, ACK/NACK envelope and request-ID
+replay behavior. They do not change the protocol or configuration schema version.
+
+GET takes `{}` and returns `{"behavior":null}` when no choice has ever been
+saved, or one of the two saved choices. SET takes exactly one field:
+
+```json
+{"behavior":"open_conversation"}
+```
+
+Only `open_conversation` and `status_only` are writable. A successful SET
+returns `{"behavior":"open_conversation"}` or `{"behavior":"status_only"}`
+after the independent device-level NVS preference is durably saved and the
+runtime behavior has changed. SET does not require reboot. Invalid values,
+including `null`, wrong types, missing or extra fields, return
+`VALIDATION_FAILED` (9). Held controls or conflicting maintenance return
+`BUSY` (11), leaving the previous behavior unchanged. A read/write failure
+returns `STORAGE_FAILURE` (12), not an apparent unset choice or success; a
+failed write retains the previous valid behavior. If an ACK is lost, GET
+reveals whether SET persisted before the client decides to retry.
+
+The preference is shared by physical Key1, Key2, Key4, Key5, Key6 and Key7
+(Agent indexes 0–5), independent of profiles and ordinary `SET_CONFIG` or
+configuration import. Factory Default restores the unset state. Unset preserves
+the prior NORMAL Agent Vendor-event output but does **not** emit a foreground
+notification. With explicit `open_conversation`, a fresh physical down edge
+sends the official Agent event to that slot's currently displayed, connected
+status source; release uses the same transport. No valid source means no
+fallback to another host and no successful-press notification. Explicit
+`status_only` consumes those keys without Vendor, keyboard, Consumer, Mouse,
+macro, prompt or historical mapping output. Both choices leave status-light
+updates intact. Existing local-menu, diagnostic and power-combination input
+ownership takes precedence; CODEX and Claude Code mode behavior is unchanged.
+
+The independent preference is not included in the portable full-config export.
+Clients should confirm SET with GET and should not present an unset choice as
+either of the two user-selectable behaviors. An official event sent to a host
+does not prove the client selected a conversation.
+
 ### Codex Agent press foreground notification
 
 `features.codex_agent_focus=true` advertises a fresh physical Agent-press
@@ -304,23 +354,30 @@ Claude Code status and adds no WMP command or persistent configuration field.
 ```
 
 `sequence` is a RAM-only uint32 counter, initially zero. Each accepted physical
-Agent down edge in Codex mode advances it (skip zero on wrap), only after the
+Agent down edge in CODEX mode, or in NORMAL mode with an explicit
+`open_conversation` choice, advances it (skip zero on wrap), only after the
 original `v.oai.hid` send succeeds. `agent` is zero-based 0–5, corresponding to
 physical Key1, Key2, Key4, Key5, Key6, Key7. `transport` is `usb` or `ble`, the
 transport used for the original Vendor event. Original task selection is unchanged.
-Release/repeat events, Normal/Claude Code modes, diagnostic capture and local
-input ownership never create foreground notifications.
+Release/repeat events, NORMAL mode with an unset or `status_only` choice,
+Claude Code mode, diagnostic capture and local input ownership never create
+foreground notifications.
 
 The latest notification replaces the previous one: all six ask the helper to
 foreground the same desktop application, not to select a task itself. It expires
 after 2000 ms; suppression, mode exit and disconnect invalidate it. An expired,
 invalidated or other-transport notification returns `agent:null,transport:null`
 while retaining its sequence. Before any press all fields are zero/null.
-Status reads are non-destructive and cannot increment the counter.
+Status reads are non-destructive and cannot increment the counter. GET_STATUS
+exposes an active Agent/transport only to the configuration connection on the
+same transport as the original Vendor event. Changing the NORMAL behavior,
+mode exit, input capture, output disconnect and shutdown invalidate any old
+notification; reconnect cannot replay it.
 
 The Console must use an authenticated connection, baseline the counter from
 bootstrap/readback without activation, and act at most once per new sequence.
-It must match the transport and current Codex mode, and discard notifications
+It must match the transport and either current CODEX mode or NORMAL mode with
+explicit `open_conversation`, and discard notifications
 during maintenance or input capture. Reconnection creates a new baseline, never
 replays an old press. Missing capability/field means this convenience is unavailable,
 not that existing Agent controls are disabled. The macOS helper foregrounds
@@ -448,8 +505,14 @@ retains the existing `INVALID_JSON` behavior.
 
 SET ACK means persistence succeeded; it does not reboot, disconnect BLE or
 change the active advertisement. The saved name takes effect at the next
-normal reboot. Reconnecting alone does not guarantee activation; host name
-caches may lag even after activation. Storage failure returns
+normal reboot. With USB continuously supplying a powered-off Power V2, a
+qualified user power-on also performs one normal software restart when the
+saved and boot-loaded names differ. An unchanged name uses the usual fast
+wake. An in-progress configuration or firmware transaction defers that
+restart; GET continues to report `restart_required=true` until a later
+restart applies the name. Reconnecting alone does not guarantee activation;
+host name caches may lag even after activation. `active_name` is the name
+loaded by BLE initialization, not proof of an on-air advertisement. Storage failure returns
 `STORAGE_FAILURE` (12), or `INTERNAL` (15) for an internal failure, never a
 success ACK. Mutually exclusive writes, including upgrade/factory reset,
 use `BUSY` (11). Writes run on the existing serialized main-loop/storage
@@ -630,6 +693,99 @@ The client polls `GET_STATUS` every 250 ms and never sends a second SET. After
 10 seconds without a confirmed result the client enters Unknown. A disconnect
 or lost ACK is resolved by comparing generation and digest after reconnect; no
 automatic write retry is allowed.
+
+### NORMAL single/double keyboard gesture
+
+Firmware that advertises `key_gesture` in `CAPABILITIES.result.actions` accepts
+this additive schema-v1 action; the wire and schema versions remain unchanged.
+Clients must use the live action list before offering or applying it. Older
+firmware and existing capability fixtures do not imply gesture support.
+
+```json
+{"type":"key_gesture","usage":104,"modifiers":[],"double_usage":40,"double_modifiers":[]}
+```
+
+`usage` and `double_usage` are required keyboard usages in `4..231`. Their
+optional modifier arrays contain at most eight distinct usages in `224..231`;
+omitted arrays mean no modifiers. The action is supported only on MATRIX12
+ordinary keys `key.8` through `key.12`, in NORMAL mode. CODEX/CC official
+controls retain their mode-specific behavior unless the explicit CODEX voice override below is present.
+
+The first click waits for the firmware double-click window to expire before
+emitting its keyboard chord. A double click emits only the `double_usage`
+chord, without a preceding single-click chord. Both gestures produce an
+ordinary HID key press and release over the active keyboard transport; they
+do not hold a modifier across clicks. Existing ordinary `key` actions retain
+their normal press/release behavior.
+
+The example uses F13 for a separately associated voice tool and Enter for
+the focused application's send action. It does not configure Typeless or
+prove that the application accepts either shortcut. Firmware does not track
+recording or transcription state, wait for transcription, or focus Codex.
+The user starts speech with one click, ends it with another, waits until the
+text is visible in the intended Codex input, and then double-clicks to send.
+Double-clicking while speech is active is not an end-and-send operation.
+
+### CODEX voice key choice (Matrix12)
+
+Firmware advertising `CAPABILITIES.result.features.codex_voice=true` accepts an
+optional `codex_voice` action on each profile. It must be a `key_gesture`; for
+example `"codex_voice":{"type":"key_gesture","usage":228,"double_usage":40}`.
+Omitting this field selects the existing official Codex dictation action (ACT10).
+There is no change to normal `mappings`, other official controls, or CC mode.
+Rev A and assembly-alignment firmware do not support this field.
+
+Only CODEX key 8 uses this override. It uses the existing single/double keyboard
+pulse routing and USB/BLE transport, without requiring the official Codex agent
+link. Mode changes, transport loss, pending config activation, and device-local
+input ownership cancel pending gestures through the existing reset paths.
+Switching back to official dictation removes `codex_voice` from that profile.
+
+Clients must check the live capability before adding the field, then use the
+normal validate/write/readback transaction. Old firmware is not upgraded by a
+Console update. Before rolling firmware back to a version that rejects this
+field, apply an official-voice configuration without the field and retain a
+configuration backup. The existing schema/wire versions remain 1.
+
+## Computer-task trigger flow
+
+Firmware advertising `features.host_action_usb=true`, `limits.host_actions=255`
+and `host_action` in `actions` accepts `{"type":"host_action","action_id":1,"task_token":"0123456789abcdef0123456789abcdef"}`.
+The reference is an integer from 1 through the advertised limit. `task_token` is
+an independent task UUID encoded as exactly 32 lowercase hexadecimal characters.
+The slot number is not task identity: the host matches device serial, action_id
+and task_token before execution. Creating a new task generates a fresh token;
+editing an existing task preserves it. Reusing a cleared slot on another computer
+therefore cannot trigger a stale task remembered by the first computer.
+These fields are not prompt IDs and store no prompt text.
+The host resolves the device serial from the current HELLO session.
+
+Initial placement is Matrix12 `key.8` through `key.12`, intersected with the
+advertised `controls`. REV-A and assembly-alignment firmware do not support this
+action. Only NORMAL mode executes it, once on press; release does nothing.
+CODEX/CC official keys, rotary controls, joystick and gesture bindings stay under
+their existing owners. GET_CONFIG returns the mapping unchanged through the usual
+configuration transaction; unsupported firmware must not be given this action.
+
+Over USB, poll `GET_HOST_ACTION_EVENT` (`0x1E`) with `{}`:
+
+```json
+{"command":"GET_HOST_ACTION_EVENT","result":{"poll_after_ms":100,"event":{"event_id":1,"action_id":1,"task_token":"0123456789abcdef0123456789abcdef"}}}
+```
+
+An empty queue returns `event:null`. BLE requests return `READ_ONLY` and never
+mark the listener alive or consume events. The RAM queue has eight entries;
+triggers require polling within 1500 ms, and overflow rejects the new trigger.
+Events are FIFO, with nonzero boot-scoped event IDs. On USB session reset,
+diagnostic capture, mode change or configuration activation, pending events are
+discarded. A poll after listener expiry also discards old events before renewing
+the listener, so background restarts cannot replay delayed side effects.
+The existing request-ID replay behavior applies to retransmitted requests.
+
+The host deduplicates within the connected device session, binds each event to
+the applied local task snapshot and reports missing/offline/failed tasks. There
+is no prompt storage dependency, Unicode insertion, or fallback prompt paste.
+Existing prompt commands and their consumers retain their previous semantics.
 
 ## Prompt storage and trigger flow
 
@@ -829,10 +985,9 @@ engine, USB stack and Codex services. A crash before that confirmation returns
 to the previous application slot. Removing power during transfer leaves the
 previous slot selected; the next update starts the inactive slot again.
 
-The partition layout is not part of supported user customization. Do not
-change partitions, identity storage, startup confirmation or rollback logic.
-Use the Console application-update path only while USB and authentication
-remain functional; otherwise stop and contact official support.
+Changing the legacy single-app partition table to this A/B layout is a
+one-time factory migration and therefore still requires ROM download mode
+(BOOT/RESET or an equivalent fixture). Later application updates do not.
 
 ## Custom NORMAL home icon (screen icon v1)
 

@@ -1,3 +1,5 @@
+> 最新源码开发包：**preview.10 / Console 0.2.1 / SDK 1.1.0**，见 [本轮验证](verification-console-0.2.1.md)。以下保留历次记录。
+
 # 发布验证记录
 
 ## v0.1.0-preview.9 · 固件 20260916.01

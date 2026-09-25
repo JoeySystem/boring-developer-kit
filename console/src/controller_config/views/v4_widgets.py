@@ -8,7 +8,7 @@ from __future__ import annotations
 import math
 
 from PySide6.QtCore import QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import QFrame, QWidget
 
 from controller_config.appearance import V4_RADIUS, V4_TOKENS
@@ -19,6 +19,8 @@ class V4Card(QFrame):
         super().__init__(parent)
         self._role = "secondary"
         self._dots = dots
+        self._dot_layer = None
+        self._dot_layer_size = None
         self.set_role(role)
 
     def set_role(self, role: str) -> None:
@@ -48,19 +50,31 @@ class V4Card(QFrame):
         clip.addRoundedRect(body.adjusted(1, 1, -1, -1), V4_RADIUS - 1, V4_RADIUS - 1)
         painter.setClipPath(clip)
         if self._dots:
-            fade_height = min(body.height(), 240.0)
-            painter.setPen(Qt.PenStyle.NoPen)
-            y = body.top() + 6
-            while y < body.top() + fade_height * .78:
-                alpha = max(0, 1 - (y - body.top()) / (fade_height * .78))
-                dot = QColor(V4_TOKENS["information"])
-                dot.setAlpha(round(26 * alpha))
-                painter.setBrush(dot)
-                x = body.left() + 6
-                while x < body.right():
-                    painter.drawEllipse(QRectF(x - 1.55, y - 1.55, 3.1, 3.1))
-                    x += 9
-                y += 9
+            layer_size = (self.width(), self.height(), self.devicePixelRatioF())
+            if self._dot_layer_size != layer_size:
+                ratio = layer_size[2]
+                layer = QPixmap(math.ceil(self.width() * ratio), math.ceil(min(self.height(), 240) * ratio))
+                layer.setDevicePixelRatio(ratio)
+                layer.fill(Qt.GlobalColor.transparent)
+                dots = QPainter(layer)
+                dots.setRenderHint(QPainter.RenderHint.Antialiasing)
+                fade_height = min(body.height(), 240.0)
+                dots.setPen(Qt.PenStyle.NoPen)
+                y = body.top() + 6
+                while y < body.top() + fade_height * .78:
+                    alpha = max(0, 1 - (y - body.top()) / (fade_height * .78))
+                    dot = QColor(V4_TOKENS["information"])
+                    dot.setAlpha(round(26 * alpha))
+                    dots.setBrush(dot)
+                    x = body.left() + 6
+                    while x < body.right():
+                        dots.drawEllipse(QRectF(x - 1.55, y - 1.55, 3.1, 3.1))
+                        x += 9
+                    y += 9
+                dots.end()
+                self._dot_layer = layer
+                self._dot_layer_size = layer_size
+            painter.drawPixmap(0, 0, self._dot_layer)
         painter.setPen(QPen(QColor(255, 255, 255, 46 if focus else 31), 1))
         painter.drawLine(body.left() + V4_RADIUS, body.top() + 1, body.right() - V4_RADIUS, body.top() + 1)
 
@@ -72,7 +86,10 @@ class UsageRings(QWidget):
         self.seven_day: float | None = None
         self.five_hour: float | None = None
         self._labels = ("7D", "5H")
-        self.setFixedSize(104, 104)
+        # The surrounding card may compress vertically in a short window.
+        # Keep the dial's layout box square so the quota meter never appears
+        # stretched or clipped during responsive relayouts.
+        self.setFixedSize(self.sizeHint())
         self.set_usage(seven_day=None, five_hour=None)
 
     def sizeHint(self) -> QSize:

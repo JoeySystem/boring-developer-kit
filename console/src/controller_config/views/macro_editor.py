@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QComboBox,
+    QFrame,
+    QMessageBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -15,7 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from controller_config.drafts import macro_steps_encoded_size
-from controller_config.i18n import set_translatable_text
+from controller_config.i18n import set_translatable_text, translate_ui_text
 from controller_config.protocol.contract import ConfigEditorRules
 
 
@@ -23,8 +26,8 @@ STEP_LABELS = {
     "tap": "敲击按键",
     "press": "按下按键",
     "release": "释放按键",
-    "text": "ASCII 文本",
-    "delay": "延时",
+    "text": "英文与符号",
+    "delay": "等待",
 }
 
 
@@ -88,7 +91,7 @@ class MacroStepRow(QWidget):
         elif op == "text":
             widget = QLineEdit(str(step.get("text", "")), objectName="macroStepText")
             widget.setMaxLength(self._rules.macro_text_max_length)
-            widget.setPlaceholderText("可打印 ASCII 文本")
+            widget.setPlaceholderText("英文、数字和符号（ASCII）")
             widget.textChanged.connect(self.changed)
         else:
             widget = QSpinBox(objectName="macroStepDelay")
@@ -125,13 +128,40 @@ class MacroEditor(QWidget):
         self._rows_layout = QVBoxLayout()
         layout.addLayout(self._rows_layout)
         add_buttons = QHBoxLayout()
-        for op in ("tap", "text", "delay", "press", "release"):
+        record = QPushButton("+ 快捷键", objectName="macroAddShortcut")
+        record.clicked.connect(self._record_shortcut)
+        self._add_buttons.append(record)
+        add_buttons.addWidget(record)
+        for op in ("text", "delay"):
             button = QPushButton(f"+ {STEP_LABELS[op]}", objectName="secondary")
             button.clicked.connect(lambda _checked=False, value=op: self._add_step(value))
             self._add_buttons.append(button)
             add_buttons.addWidget(button)
         add_buttons.addStretch(1)
         layout.addLayout(add_buttons)
+        self._recorder = None
+        self._recorder_layout = QVBoxLayout()
+        layout.addLayout(self._recorder_layout)
+        advanced_toggle = QPushButton("高级按键编辑", objectName="macroAdvancedToggle")
+        advanced_toggle.setCheckable(True)
+        advanced = QWidget(objectName="macroAdvancedControls")
+        advanced_layout = QHBoxLayout(advanced)
+        advanced_layout.setContentsMargins(0, 0, 0, 0)
+        for op in ("tap", "press", "release"):
+            button = QPushButton(f"+ {STEP_LABELS[op]}", objectName="secondary")
+            button.clicked.connect(lambda _checked=False, value=op: self._add_step(value))
+            self._add_buttons.append(button)
+            advanced_layout.addWidget(button)
+        advanced.hide()
+        advanced_toggle.toggled.connect(advanced.setVisible)
+        layout.addWidget(advanced_toggle)
+        layout.addWidget(advanced)
+        guidance = QLabel(
+            "按键宏由设备发送到当前窗口；再次按下会从头开始。应用后，请在目标输入框试一次。",
+            objectName="muted",
+        )
+        guidance.setWordWrap(True)
+        layout.addWidget(guidance)
         self._summary = QLabel(objectName="macroCapacitySummary")
         layout.addWidget(self._summary)
         initial_steps = steps or [{"op": "tap", "usage": 4}]
@@ -141,6 +171,31 @@ class MacroEditor(QWidget):
 
     def steps(self) -> list[dict[str, Any]]:
         return [row.step() for row in self._rows]
+
+    def _record_shortcut(self) -> None:
+        if self._recorder is None:
+            from controller_config.views.action_editor import ShortcutRecorder
+
+            self._recorder = ShortcutRecorder({}, platform="macos" if sys.platform == "darwin" else "windows")
+            self._recorder.shortcut_recorded.connect(self._append_shortcut)
+            self._recorder_layout.addWidget(self._recorder)
+        self._recorder.show()
+        self._recorder.start_recording()
+
+    def _append_shortcut(self, action: dict[str, Any]) -> None:
+        modifiers = action.get("modifiers", [])
+        steps = [*( {"op": "press", "usage": value} for value in modifiers),
+                 {"op": "tap", "usage": action["usage"]},
+                 *( {"op": "release", "usage": value} for value in reversed(modifiers))]
+        if len(self._rows) + len(steps) > self._rules.macro_steps_max_items:
+            QMessageBox.warning(self, translate_ui_text("无法添加快捷键"),
+                                translate_ui_text("剩余步骤不足，请先移除一些步骤。"))
+            return
+        for step in steps:
+            self._append_row(step)
+        self._rebuild_rows()
+        if self._recorder is not None:
+            self._recorder.hide()
 
     def _append_row(self, step: dict[str, Any]) -> None:
         row = MacroStepRow(step, self._key_choices, self._rules)
@@ -186,9 +241,9 @@ class MacroEditor(QWidget):
                 widget.setParent(None)
                 old_wrappers.append(widget)
         for index, row in enumerate(self._rows):
-            wrapper = QWidget()
+            wrapper = QFrame(objectName="macroStepCard")
             layout = QHBoxLayout(wrapper)
-            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setContentsMargins(8, 8, 8, 8)
             layout.addWidget(QLabel(str(index + 1)))
             layout.addWidget(row, 1)
             up = QPushButton("↑", objectName="secondary")

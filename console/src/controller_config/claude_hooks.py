@@ -8,13 +8,14 @@ import json
 import os
 from pathlib import Path
 import platform
+import plistlib
 import re
 import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
-from typing import Any
+from typing import Any, Callable
 
 
 BASE_EVENTS = (
@@ -27,6 +28,11 @@ BASE_EVENTS = (
 MINIMUM_VERSION = (2, 1, 63)
 STOP_FAILURE_VERSION = (2, 1, 78)
 EXEC_ARGS_VERSION = (2, 1, 139)
+OWNER_AWARE_CONSOLE_VERSION = (0, 1, 52)
+
+_DEFAULT_OWNER_ID = "com.boring.controller-config"
+_DEFAULT_ORIGIN = "official"
+_DEFAULT_ENDPOINT_PATH: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -41,7 +47,31 @@ class ClaudeHookInspection:
 
 
 def default_endpoint_path() -> Path:
-    return Path.home() / ".boring" / "community" / "claude-status" / "endpoint.json"
+    if _DEFAULT_ENDPOINT_PATH is not None:
+        return _DEFAULT_ENDPOINT_PATH
+    return Path.home() / ".boring" / "claude-status" / "endpoint.json"
+
+
+def configure_default_identity(
+    *, owner_id: str, origin: str, endpoint_path: Path | str
+) -> None:
+    """Configure the Hooks owner before the view model creates its bridge."""
+
+    if not owner_id or origin not in {"official", "custom"}:
+        raise ValueError("BORING Hooks 构建身份无效")
+    global _DEFAULT_OWNER_ID, _DEFAULT_ORIGIN, _DEFAULT_ENDPOINT_PATH
+    _DEFAULT_OWNER_ID = owner_id
+    _DEFAULT_ORIGIN = origin
+    _DEFAULT_ENDPOINT_PATH = Path(endpoint_path).expanduser().absolute()
+
+
+def reset_default_identity() -> None:
+    """Restore source-compatible defaults. Intended for isolated tests."""
+
+    global _DEFAULT_OWNER_ID, _DEFAULT_ORIGIN, _DEFAULT_ENDPOINT_PATH
+    _DEFAULT_OWNER_ID = "com.boring.controller-config"
+    _DEFAULT_ORIGIN = "official"
+    _DEFAULT_ENDPOINT_PATH = None
 
 
 def _host_platform() -> str:
@@ -80,6 +110,79 @@ def _detect_claude() -> tuple[str | None, str | None, str]:
 
 def _version_tuple(version: str) -> tuple[int, ...]:
     return tuple(int(part) for part in version.split("."))
+
+
+def _installed_official_builds() -> tuple[tuple[str | None, str | None], ...]:
+    """Return installed official identities relevant to Hooks ownership."""
+
+    if sys.platform == "darwin":
+        results: list[tuple[str | None, str | None]] = []
+        for bundle in (
+            Path("/Applications/BORING Console.app"),
+            Path.home() / "Applications/BORING Console.app",
+        ):
+            plist_path = bundle / "Contents/Info.plist"
+            if not plist_path.is_file():
+                continue
+            try:
+                info = plistlib.loads(plist_path.read_bytes())
+                version = info.get("CFBundleVersion")
+            except (OSError, ValueError, TypeError):
+                version = None
+            marker_path = (
+                bundle
+                / "Contents/MacOS/controller_config/assets/app-build.json"
+            )
+            try:
+                marker = json.loads(marker_path.read_text(encoding="utf-8"))
+                origin = marker.get("origin") if isinstance(marker, dict) else None
+            except (OSError, UnicodeError, ValueError, TypeError):
+                origin = None
+            results.append((str(version) if version else None, origin))
+        return tuple(results)
+    if sys.platform != "win32":
+        return ()
+
+    try:
+        import winreg
+    except ImportError:
+        return ()
+    subkey = (
+        "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\"
+        "{7D499724-C0AE-438B-93C1-59E2D01785D7}_is1"
+    )
+    results = []
+    for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+        for access in (
+            winreg.KEY_READ,
+            winreg.KEY_READ | getattr(winreg, "KEY_WOW64_64KEY", 0),
+            winreg.KEY_READ | getattr(winreg, "KEY_WOW64_32KEY", 0),
+        ):
+            try:
+                with winreg.OpenKey(root, subkey, 0, access) as key:
+                    version = winreg.QueryValueEx(key, "DisplayVersion")[0]
+            except OSError:
+                continue
+            item = (str(version) if version else None, "official")
+            if item not in results:
+                results.append(item)
+    return tuple(results)
+
+
+def _requires_owner_aware_official_upgrade(
+    builds: tuple[tuple[str | None, str | None], ...],
+) -> bool:
+    for version, origin in builds:
+        try:
+            compatible_version = (
+                version is not None
+                and _version_tuple(version) >= OWNER_AWARE_CONSOLE_VERSION
+            )
+        except (AttributeError, ValueError):
+            compatible_version = False
+        if origin != "official" or not compatible_version:
+            return True
+    return False
 
 
 def _read_object(path: Path) -> dict[str, Any]:
@@ -166,20 +269,111 @@ def _remove_recorded(settings: dict[str, Any], recorded: dict[str, Any]) -> None
         settings.pop("hooks", None)
 
 
+def _recorded_handlers(recorded: dict[str, Any]) -> list[dict[str, Any]]:
+    handlers: list[dict[str, Any]] = []
+    for groups in recorded.values():
+        if not isinstance(groups, list):
+            continue
+        for group in groups:
+            if not isinstance(group, dict) or not isinstance(group.get("hooks"), list):
+                continue
+            handlers.extend(
+                handler for handler in group["hooks"] if isinstance(handler, dict)
+            )
+    return handlers
+
+
+def _is_boring_handler(handler: dict[str, Any]) -> bool:
+    command = str(handler.get("command", ""))
+    args = handler.get("args", [])
+    if not isinstance(args, list):
+        args = []
+    rendered = " ".join([command, *(str(item) for item in args)])
+    return "--claude-status-hook" in rendered or (
+        "claude_hook.py" in rendered and "--endpoint" in rendered
+    )
+
+
+def _foreign_boring_handlers(
+    settings: dict[str, Any], recorded: dict[str, Any]
+) -> bool:
+    owned = _recorded_handlers(recorded)
+    for groups in _hook_groups(settings).values():
+        if not isinstance(groups, list):
+            continue
+        for group in groups:
+            if not isinstance(group, dict) or not isinstance(group.get("hooks"), list):
+                continue
+            for handler in group["hooks"]:
+                if (
+                    isinstance(handler, dict)
+                    and _is_boring_handler(handler)
+                    and handler not in owned
+                ):
+                    return True
+    return False
+
+
 class ClaudeHookInstallation:
     """No writes during construction or inspection; install/uninstall are explicit."""
 
     def __init__(self, settings_path: Path | str | None = None,
-                 endpoint_path: Path | str | None = None) -> None:
+                 endpoint_path: Path | str | None = None, *,
+                 owner_id: str | None = None,
+                 origin: str | None = None,
+                 official_build_probe: Callable[
+                     [], tuple[tuple[str | None, str | None], ...]
+                 ] | None = None) -> None:
         config_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR", str(Path.home() / ".claude")))
         self.settings_path = (Path(settings_path) if settings_path is not None else config_dir / "settings.json").expanduser().absolute()
         self.endpoint_path = (Path(endpoint_path) if endpoint_path is not None else default_endpoint_path()).expanduser().absolute()
         self.record_path = self.endpoint_path.parent / "installation.json"
 
+        self.owner_id = owner_id or _DEFAULT_OWNER_ID
+        self.origin = origin or _DEFAULT_ORIGIN
+        self._official_build_probe = (
+            official_build_probe or _installed_official_builds
+        )
+        if self.origin not in {"official", "custom"}:
+            raise ValueError("BORING Hooks 构建来源无效")
+
+    def _record_payload(self, hooks: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "settings_path": str(self.settings_path),
+            "owner": self.owner_id,
+            "origin": self.origin,
+            "endpoint_path": str(self.endpoint_path),
+            "hooks": hooks,
+        }
+
     def _recorded(self) -> dict[str, Any]:
         record = _read_object(self.record_path)
+        accepted_legacy_official = False
         if record and record.get("settings_path") != str(self.settings_path):
             raise ValueError("BORING Hooks 的安装记录属于另一份 Claude 配置；请先从原环境卸载。")
+        if record and not record.get("owner"):
+            legacy_official_endpoint = (
+                Path.home() / ".boring" / "claude-status" / "endpoint.json"
+            ).absolute()
+            is_legacy_official_owner = (
+                self.origin == "official"
+                and self.owner_id == "com.boring.controller-config"
+                and self.endpoint_path == legacy_official_endpoint
+            )
+            if not is_legacy_official_owner:
+                raise ValueError(
+                    "发现旧版 BORING Hooks。请先使用安装它的原版控制台卸载，"
+                    "并将原版升级后再切换。"
+                )
+            accepted_legacy_official = True
+        if record and not accepted_legacy_official and (
+            record.get("owner") != self.owner_id
+            or record.get("origin") != self.origin
+            or record.get("endpoint_path") != str(self.endpoint_path)
+        ):
+            raise ValueError(
+                "BORING Hooks 属于另一版本的控制台；请先在原版中卸载。"
+            )
         hooks = record.get("hooks", {})
         if not isinstance(hooks, dict):
             raise ValueError("BORING Hooks 安装记录无法读取；未修改 Claude 设置。")
@@ -198,6 +392,21 @@ class ClaudeHookInstallation:
             settings = _read_object(self.settings_path)
             hooks = _hook_groups(settings)
             recorded = self._recorded()
+            if (
+                self.origin == "custom"
+                and _requires_owner_aware_official_upgrade(
+                    self._official_build_probe()
+                )
+            ):
+                raise ValueError(
+                    "检测到不支持 Hooks 归属切换的旧官方版。请先升级官方版，"
+                    "再在 DIY 版中启用 Claude Hooks。"
+                )
+            if _foreign_boring_handlers(settings, recorded):
+                raise ValueError(
+                    "另一版本或旧版 BORING 控制台已安装 Claude Hooks；"
+                    "请先在原版中卸载。"
+                )
             installed = bool(recorded) and all(
                 any(isinstance(group, dict) and all(handler in group.get("hooks", [])
                     for handler in item.get("hooks", [])) for group in hooks.get(event, []))
@@ -244,9 +453,9 @@ class ClaudeHookInstallation:
             for group in groups:
                 if group not in owned.setdefault(event, []):
                     owned[event].append(group)
-        _write_object(self.record_path, {"settings_path": str(self.settings_path), "hooks": owned})
+        _write_object(self.record_path, self._record_payload(owned))
         _write_object(self.settings_path, settings)
-        _write_object(self.record_path, {"settings_path": str(self.settings_path), "hooks": recorded})
+        _write_object(self.record_path, self._record_payload(recorded))
         return self.inspect()
 
     def uninstall(self) -> ClaudeHookInspection:
@@ -255,5 +464,5 @@ class ClaudeHookInstallation:
             settings = _read_object(self.settings_path)
             _remove_recorded(settings, recorded)
             _write_object(self.settings_path, settings)
-            _write_object(self.record_path, {"settings_path": str(self.settings_path), "hooks": {}})
+            _write_object(self.record_path, self._record_payload({}))
         return self.inspect()

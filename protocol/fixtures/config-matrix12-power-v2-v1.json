@@ -9,206 +9,29 @@
       "id": 0,
       "name": "Default",
       "mappings": [
-        {
-          "control_id": "key.1",
-          "short_name": "A",
-          "action": {
-            "type": "key",
-            "usage": 4,
-            "modifiers": []
-          }
-        },
-        {
-          "control_id": "encoder.ccw",
-          "short_name": "Vol-",
-          "action": {
-            "type": "consumer",
-            "usage": 234
-          }
-        },
-        {
-          "control_id": "encoder.cw",
-          "short_name": "Vol+",
-          "action": {
-            "type": "consumer",
-            "usage": 233
-          }
-        },
-        {
-          "control_id": "encoder.press",
-          "short_name": "Mute",
-          "action": {
-            "type": "consumer",
-            "usage": 226
-          }
-        },
-        {
-          "control_id": "joystick.press",
-          "short_name": "Cancel",
-          "action": {
-            "type": "device",
-            "name": "macro_cancel"
-          }
-        }
+        {"control_id": "key.1", "short_name": "A", "action": {"type": "key", "usage": 4, "modifiers": []}},
+        {"control_id": "encoder.ccw", "short_name": "Vol-", "action": {"type": "consumer", "usage": 234}},
+        {"control_id": "encoder.cw", "short_name": "Vol+", "action": {"type": "consumer", "usage": 233}},
+        {"control_id": "encoder.press", "short_name": "Mute", "action": {"type": "consumer", "usage": 226}},
+        {"control_id": "joystick.press", "short_name": "Cancel", "action": {"type": "device", "name": "macro_cancel"}}
       ]
     }
   ],
   "macros": [
-    {
-      "id": 0,
-      "name": "Hello",
-      "steps": [
-        {
-          "op": "text",
-          "text": "Hello"
-        },
-        {
-          "op": "delay",
-          "duration_ms": 50
-        },
-        {
-          "op": "tap",
-          "usage": 40
-        }
-      ]
-    }
+    {"id": 0, "name": "Hello", "steps": [{"op": "text", "text": "Hello"}, {"op": "delay", "duration_ms": 50}, {"op": "tap", "usage": 40}]}
   ],
   "lighting": {
     "enabled": true,
     "brightness": 15,
-    "status": [
-      {
-        "r": 0,
-        "g": 16,
-        "b": 64
-      },
-      {
-        "r": 0,
-        "g": 16,
-        "b": 64
-      },
-      {
-        "r": 0,
-        "g": 16,
-        "b": 64
-      },
-      {
-        "r": 0,
-        "g": 16,
-        "b": 64
-      },
-      {
-        "r": 0,
-        "g": 16,
-        "b": 64
-      },
-      {
-        "r": 0,
-        "g": 16,
-        "b": 64
-      },
-      {
-        "r": 0,
-        "g": 16,
-        "b": 64
-      },
-      {
-        "r": 0,
-        "g": 16,
-        "b": 64
-      }
-    ],
-    "under_key": [
-      {
-        "r": 8,
-        "g": 0,
-        "b": 24
-      },
-      {
-        "r": 8,
-        "g": 0,
-        "b": 24
-      },
-      {
-        "r": 8,
-        "g": 0,
-        "b": 24
-      },
-      {
-        "r": 8,
-        "g": 0,
-        "b": 24
-      },
-      {
-        "r": 8,
-        "g": 0,
-        "b": 24
-      },
-      {
-        "r": 8,
-        "g": 0,
-        "b": 24
-      },
-      {
-        "r": 8,
-        "g": 0,
-        "b": 24
-      },
-      {
-        "r": 8,
-        "g": 0,
-        "b": 24
-      },
-      {
-        "r": 8,
-        "g": 0,
-        "b": 24
-      },
-      {
-        "r": 8,
-        "g": 0,
-        "b": 24
-      },
-      {
-        "r": 8,
-        "g": 0,
-        "b": 24
-      },
-      {
-        "r": 8,
-        "g": 0,
-        "b": 24
-      }
-    ]
+    "status": [{"r": 0, "g": 16, "b": 64}, {"r": 0, "g": 16, "b": 64}, {"r": 0, "g": 16, "b": 64}, {"r": 0, "g": 16, "b": 64}, {"r": 0, "g": 16, "b": 64}, {"r": 0, "g": 16, "b": 64}, {"r": 0, "g": 16, "b": 64}, {"r": 0, "g": 16, "b": 64}],
+    "under_key": [{"r": 8, "g": 0, "b": 24}, {"r": 8, "g": 0, "b": 24}, {"r": 8, "g": 0, "b": 24}, {"r": 8, "g": 0, "b": 24}, {"r": 8, "g": 0, "b": 24}, {"r": 8, "g": 0, "b": 24}, {"r": 8, "g": 0, "b": 24}, {"r": 8, "g": 0, "b": 24}, {"r": 8, "g": 0, "b": 24}, {"r": 8, "g": 0, "b": 24}, {"r": 8, "g": 0, "b": 24}, {"r": 8, "g": 0, "b": 24}]
   },
-  "haptic": {
-    "enabled": true,
-    "strength": 30,
-    "duration_ms": 40,
-    "on_press": true,
-    "on_profile": true
-  },
-  "display": {
-    "brightness": 60,
-    "rotation": 0,
-    "show_control_hints": true
-  },
+  "haptic": {"enabled": true, "strength": 30, "duration_ms": 40, "on_press": true, "on_profile": true},
+  "display": {"brightness": 60, "rotation": 0, "show_control_hints": true},
   "joystick": {
     "calibrated": false,
     "filter": 25,
-    "x": {
-      "minimum": 200,
-      "center": 2048,
-      "maximum": 3895,
-      "deadzone": 180,
-      "invert": false
-    },
-    "y": {
-      "minimum": 200,
-      "center": 2048,
-      "maximum": 3895,
-      "deadzone": 180,
-      "invert": false
-    }
+    "x": {"minimum": 200, "center": 2048, "maximum": 3895, "deadzone": 180, "invert": false},
+    "y": {"minimum": 200, "center": 2048, "maximum": 3895, "deadzone": 180, "invert": false}
   }
 }

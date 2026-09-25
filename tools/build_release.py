@@ -9,8 +9,8 @@ import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "v0.1.0-preview.9"
-EXAMPLES = ("observe_prompt", "claim_prompt", "propose_mapping")
+VERSION = "v0.1.0-preview.10"
+EXAMPLES = ("observe_prompt", "claim_prompt", "propose_mapping", "save_host_task")
 ROOT_FILES = (
     "README.md", "START-HERE.md", "LICENSE", "NOTICE", "LICENSING.md",
     "THIRD-PARTY-NOTICES.md", "SUPPORT.md", "CONTRIBUTING.md", "CHANGELOG.md",

@@ -8,8 +8,12 @@ PYTHON="$PROJECT_DIR/.venv/bin/python"
 BUILD_DIR="$PROJECT_DIR/build/macos"
 DIST_DIR="$PROJECT_DIR/dist/macos"
 STAGE_ROOT=""
+DMG_MOUNT=""
+APP_NAME="BORING Console Community"
+ARTIFACT_BASENAME="BORING-Console-Community-macOS-unsigned"
 
 cleanup_stage() {
+  if [ -n "$DMG_MOUNT" ]; then hdiutil detach "$DMG_MOUNT" >/dev/null 2>&1 || true; fi
   if [ -n "$STAGE_ROOT" ]; then
     case "$STAGE_ROOT" in
       "${TMPDIR:-/tmp}"/boring-console-build.*) rm -rf -- "${STAGE_ROOT:?}" ;;
@@ -27,8 +31,8 @@ if [ ! -x "$PYTHON" ]; then
   echo "Missing project Python: $PYTHON" >&2
   exit 2
 fi
-if ! "$PYTHON" -c 'import nuitka' >/dev/null 2>&1; then
-  echo "Nuitka is not installed in .venv; install the packaging dependency first" >&2
+if ! "$PYTHON" -c 'from importlib.metadata import version; assert version("Nuitka") == "4.2.1"' >/dev/null 2>&1; then
+  echo "Install Nuitka 4.2.1 in .venv before building" >&2
   exit 2
 fi
 case "$BUILD_DIR" in
@@ -57,6 +61,7 @@ cp -cR "$PROJECT_DIR/deploy" "$STAGE_PROJECT/deploy"
 cp -cR "$PROJECT_DIR/tools" "$STAGE_PROJECT/tools"
 xattr -cr "$STAGE_PROJECT"
 STAGE_PYTHON="$STAGE_PROJECT/.venv/bin/python"
+PYTHONPATH="$STAGE_PROJECT/src" "$STAGE_PYTHON" "$STAGE_PROJECT/tools/stage_app_build.py" --assets "$STAGE_PROJECT/src/controller_config/assets" --origin custom
 "$STAGE_PYTHON" "$STAGE_PROJECT/tools/stage_macos_updater.py"   --assets "$STAGE_PROJECT/src/controller_config/assets"
 APP_VERSION=$(PYTHONPATH="$STAGE_PROJECT/src" "$STAGE_PYTHON" -c \
   'from controller_config import __version__; print(__version__)')
@@ -144,18 +149,82 @@ else
 fi
 /usr/bin/codesign --verify --deep --strict "$APP_TARGET"
 
+# Build a conventional drag-to-install image. The Applications item is a
+# shortcut, not a second app copy; Finder stores the window and icon positions
+# in .DS_Store inside this disposable image.
+DMG_ROOT="$STAGE_ROOT/dmg-root"
+RW_DMG="$STAGE_ROOT/$ARTIFACT_BASENAME-rw.dmg"
+mkdir -p "$DMG_ROOT"
+mv -- "$APP_TARGET" "$DMG_ROOT/$APP_NAME.app"
+ln -s /Applications "$DMG_ROOT/Applications"
 hdiutil create \
-  -volname "BORING Console Community" \
-  -srcfolder "$APP_TARGET" \
-  -ov -format UDZO \
-  "$STAGE_DIST/BORING-Console-Community-macOS-unsigned.dmg"
+  -volname "$APP_NAME" \
+  -srcfolder "$DMG_ROOT" \
+  -ov -format UDRW \
+  "$RW_DMG"
+ATTACH_OUTPUT=$(hdiutil attach -readwrite -noverify -noautoopen "$RW_DMG")
+DMG_MOUNT=$(printf '%s\n' "$ATTACH_OUTPUT" | awk -F '\t' '/\/Volumes\// {print $NF; exit}')
+if [ -z "$DMG_MOUNT" ] || [ ! -d "$DMG_MOUNT" ]; then
+  echo "Could not mount writable DMG for Finder layout" >&2
+  exit 2
+fi
+/usr/bin/osascript - "$APP_NAME" <<'APPLESCRIPT'
+on run argv
+  set volumeName to item 1 of argv
+  set appName to volumeName & ".app"
+  tell application "Finder"
+    tell disk volumeName
+      open
+      set current view of container window to icon view
+      set toolbar visible of container window to false
+      set statusbar visible of container window to false
+      set pathbar visible of container window to false
+      set bounds of container window to {120, 120, 760, 500}
+      set viewOptions to icon view options of container window
+      set arrangement of viewOptions to not arranged
+      set icon size of viewOptions to 128
+      set text size of viewOptions to 14
+      set position of item appName to {175, 190}
+      set position of item "Applications" to {465, 190}
+      update without registering applications
+      delay 2
+      close
+    end tell
+  end tell
+end run
+APPLESCRIPT
+sync
+hdiutil detach "$DMG_MOUNT" >/dev/null
+DMG_MOUNT=""
+hdiutil convert "$RW_DMG" \
+  -format UDZO -imagekey zlib-level=9 \
+  -o "$STAGE_DIST/$ARTIFACT_BASENAME.dmg"
+
+# A layout regression should fail the build rather than reach users as another
+# single-icon image.
+VERIFY_MOUNT="$STAGE_ROOT/verify-mount"
+mkdir -p "$VERIFY_MOUNT"
+hdiutil attach -readonly -nobrowse -mountpoint "$VERIFY_MOUNT" \
+  "$STAGE_DIST/$ARTIFACT_BASENAME.dmg" >/dev/null
+DMG_MOUNT="$VERIFY_MOUNT"
+APP_COUNT=$(find "$VERIFY_MOUNT" -maxdepth 1 -type d -name '*.app' | wc -l | tr -d ' ')
+if [ "$APP_COUNT" -ne 1 ] || \
+   [ ! -L "$VERIFY_MOUNT/Applications" ] || \
+   [ "$(readlink "$VERIFY_MOUNT/Applications")" != "/Applications" ] || \
+   [ ! -s "$VERIFY_MOUNT/.DS_Store" ]; then
+  echo "DMG must contain one app, an Applications shortcut and Finder layout" >&2
+  exit 2
+fi
+hdiutil detach "$DMG_MOUNT" >/dev/null
+DMG_MOUNT=""
 
 if [ -n "${BORING_NOTARY_PROFILE:-}" ]; then
-  xcrun notarytool submit "$STAGE_DIST/BORING-Console-Community-macOS-unsigned.dmg"     --keychain-profile "$BORING_NOTARY_PROFILE" --wait
-  xcrun stapler staple "$STAGE_DIST/BORING-Console-Community-macOS-unsigned.dmg"
+  xcrun notarytool submit "$STAGE_DIST/$ARTIFACT_BASENAME.dmg"     --keychain-profile "$BORING_NOTARY_PROFILE" --wait
+  xcrun stapler staple "$STAGE_DIST/$ARTIFACT_BASENAME.dmg"
 fi
 
-cp -- "$STAGE_DIST/BORING-Console-Community-macOS-unsigned.dmg" \
-  "$DIST_DIR/BORING-Console-Community-macOS-unsigned.dmg"
+mkdir -p "$DIST_DIR"
+cp -- "$STAGE_DIST/$ARTIFACT_BASENAME.dmg" \
+  "$DIST_DIR/$ARTIFACT_BASENAME.dmg"
 
 echo "Built macOS artifacts in $DIST_DIR"

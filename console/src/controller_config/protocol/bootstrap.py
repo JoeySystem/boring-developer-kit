@@ -25,6 +25,7 @@ NACK = 0x7F
 
 
 class BootstrapKind(str, Enum):
+    DISCOVERY_INTERRUPTED = "discovery_interrupted"
     AUTHENTICATION_INTERRUPTED = "authentication_interrupted"
     FIRMWARE_UPDATE_REQUIRED = "firmware_update_required"
     INCOMPATIBLE = "incompatible"
@@ -217,8 +218,8 @@ class BootstrapSession:
         build = hello.get("versions", {}).get("build_id", "未知")
         self._finish_error(BootstrapError(
             BootstrapKind.AUTHENTICATION_INTERRUPTED,
-            "蓝牙认证中断，已暂停自动重连",
-            "请连接 USB 数据线后重新扫描，认证成功后进入「设置 → 固件维护」检查更新。"
+            "蓝牙认证中断，正在重新连接",
+            "控制台将重新建立蓝牙连接，并从头验证设备身份。"
             f"\n连接：蓝牙；固件：{build}；失败步骤：{command.name if command else 'UNKNOWN'}；{detail}",
             error_name="ble_auth_interrupted",
         ))

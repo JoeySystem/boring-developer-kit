@@ -14,7 +14,7 @@ def test_desktop_priority_hides_dot_but_preserves_firmware_access(update_session
     button = window._nav_buttons['settings']
     updater.publish(state, version='0.2.0')
     fw.refresh()  # Device polls must not bring the dot back over a desktop update.
-    assert button.text() == '更新'
+    assert button.accessibleName() == '固件与系统'
     assert button.property('firmwareUpdateAvailable') is True
     assert not button.firmware_notice_visible()
     assert '设备固件有更新' not in button.toolTip()
@@ -29,13 +29,14 @@ def test_failure_and_snooze_release_priority(update_session, tmp_path):
     button = window._nav_buttons['settings']
     updater.publish('available', version='0.2.0')
     button.click()
+    ui.action.click()
     updater.publish('failed', version='0.2.0', message='network unavailable')
-    assert button.text() == '设置'
+    assert button.text() == '固件与系统'
     assert button.firmware_notice_visible()
     assert not ui.row.isHidden()  # Software retry remains accessible.
     updater.publish('available', version='0.2.0')
     ui.snooze_update()
-    assert button.text() == '设置'
+    assert button.text() == '固件与系统'
     assert button.firmware_notice_visible()
     updater.publish('available', version='0.3.0')
     assert not button.firmware_notice_visible()
@@ -48,7 +49,7 @@ def test_disconnect_while_suppressed_cannot_restore_stale_dot(update_session):
     updater.publish('available', version='0.2.0')
     gateway.disconnected.emit('test disconnect')
     updater.publish('current')
-    assert button.text() == '设置'
+    assert button.text() == '固件与系统'
     assert not button.firmware_notice_visible()
 
 
@@ -59,7 +60,7 @@ def test_reopened_window_waits_for_fresh_firmware_offer(update_session, contract
     reopened, new_vm, new_gateway, new_ui = _restart_destination(
         update_session, contract, qtbot, monkeypatch, snapshot=snap)
     button = reopened._nav_buttons['settings']
-    assert button.text() == '设置'
+    assert button.text() == '固件与系统'
     assert not button.firmware_notice_visible()
     offer((reopened, new_vm, new_gateway, snap, store))
     assert button.firmware_notice_visible()

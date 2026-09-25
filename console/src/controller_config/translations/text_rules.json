@@ -1,6 +1,157 @@
 {
   "rules": [
     {
+      "message": "shortcut.pending_description",
+      "match": "准备修改为 (.+)",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "action.side_modifier_combination",
+      "match": "((?:[⌃⇧⌥⌘]+)|(?:(?:Control|Ctrl|Shift|Option|Alt|Command|Win|GUI)(?: \\+ |\\+))+)([左右] (?:Control|Ctrl|Shift|Option|Alt|Command|Win|GUI))",
+      "translate": [
+        2
+      ]
+    },
+    {
+      "match": "无法读取部分已连接 BORING 设备的信息：(.*)",
+      "message": "device.connected_unavailable"
+    },
+    {
+      "message": "update.http_failure",
+      "match": "更新服务返回 HTTP (.*)"
+    },
+    {
+      "message": "update.check_failed",
+      "match": "检查更新失败：(.*)",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "action.gesture_summary",
+      "match": "单击 (.*?) / 双击 (.*)",
+      "translate": [
+        1,
+        2
+      ]
+    },
+    {
+      "message": "firmware.new_version",
+      "match": "新版本：(.*)"
+    },
+    {
+      "message": "firmware.official_version",
+      "match": "官方版本：(.*)"
+    },
+    {
+      "message": "host_tasks.running",
+      "match": "正在运行：(.*)"
+    },
+    {
+      "message": "host_tasks.completed",
+      "match": "已完成：(.*)"
+    },
+    {
+      "message": "host_tasks.failed",
+      "match": "未完成：(.*?) · (.*)",
+      "translate": [
+        2
+      ]
+    },
+    {
+      "message": "host_tasks.timed_out",
+      "match": "任务超时：(.*?)，已完成的操作不会撤销"
+    },
+    {
+      "message": "host_tasks.stopped",
+      "match": "已停止：(.*?)，已完成的操作不会撤销"
+    },
+    {
+      "message": "host_tasks.script_exited",
+      "match": "脚本已正常退出：(.*?)，请检查输出结果"
+    },
+    {
+      "message": "host_tasks.first_test",
+      "match": "请按一下(.*?)，完成首次试用",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "host_tasks.local_save_pending",
+      "match": "设备已读回，本机任务仍待保存：(.*)"
+    },
+    {
+      "message": "host_tasks.local_read_failed",
+      "match": "无法读取本机任务：(.*)"
+    },
+    {
+      "message": "host_tasks.invalid_event",
+      "match": "电脑任务事件无效：(.*)"
+    },
+    {
+      "message": "host_tasks.listener_interrupted",
+      "match": "电脑任务监听中断：(.*)"
+    },
+    {
+      "message": "host_tasks.trial_save_failed",
+      "match": "试用完成，但启用保存失败：(.*)"
+    },
+    {
+      "message": "host_tasks.cannot_run",
+      "match": "无法运行 (.*?)：(.*)",
+      "translate": [
+        2
+      ]
+    },
+    {
+      "message": "host_tasks.cannot_stop",
+      "match": "无法停止扩展，请重试：(.*)"
+    },
+    {
+      "message": "host_tasks.binding_save_failed",
+      "match": "无法保存本机任务绑定：(.*)"
+    },
+    {
+      "message": "host_tasks.extension_running",
+      "match": "正在运行扩展动作：(.*)"
+    },
+    {
+      "message": "host_tasks.extension_completed",
+      "match": "扩展动作已完成：(.*)",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "host_tasks.extension_failed",
+      "match": "扩展动作未完成：(.*)",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "host_tasks.key_binding",
+      "match": "(功能键 \\d+) · 保存在这台电脑",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "workflow_runtime.open_requested",
+      "match": "已请求打开 (\\d+) 项"
+    },
+    {
+      "message": "workflow_runtime.task_completed",
+      "match": "任务已完成：(.*)"
+    },
+    {
+      "message": "workflow_runtime.task_started",
+      "match": "已开始运行：(.*)"
+    },
+    {
       "message": "control.rotary_tooltip",
       "match": "点击设置旋钮\\n逆时针 · (.*?)（(.*?)）\\n顺时针 · (.*?)（(.*?)）\\n按 · (.*?)（(.*?)）",
       "translate": [
@@ -767,10 +918,6 @@
     {
       "message": "extensions.contracts.line_778",
       "match": "(.*?)\\ 不得使用非有限数值"
-    },
-    {
-      "message": "extensions.development_prompt.line_11",
-      "match": "请为\\ BORING\\ 控制台开发一个本地\\ Python\\ 扩展。\\\n\\\n先用普通用户能理解的语言问我最多\\ 3\\ 个问题，只确认：\\\n1\\.\\ 我希望实体操作最终完成什么；\\\n2\\.\\ 希望由哪个提示词槽位或实体动作触发；\\\n3\\.\\ 完成后需要什么可见反馈。\\\n不要询问串口、HID\\ Usage、线程、IPC\\ 或打包细节；这些由你按下面的合同决定。\\\n\\\n当前设备上下文：\\\n\\-\\ device_serial:\\ (.*?)\\\n\\-\\ hardware_id:\\ (.*?)\\\n\\-\\ BORING\\ Extension\\ API:\\ 1\\.0\\\n\\\n交付要求：\\\n\\-\\ 交付一个目录或\\ ZIP，根目录必须包含\\ boring\\-extension\\.json\\ 与\\ manifest\\ 指定的\\ \\.py\\ 入口；\\\n\\-\\ manifest_version=1，声明唯一反向域名\\ id、name、version、api_version、entrypoint、observer_events\\ 和\\ actions；\\\n\\-\\ V1\\ 只使用\\ Python\\ 标准库与\\ boring_console_sdk；\\\n\\-\\ 可使用\\ get_context\\(\\)\\ 读取只读上下文；\\\n\\-\\ observer\\ 可订阅\\ prompt\\.triggered，但不能阻止默认动作；\\\n\\-\\ 需要承接实体动作时，在\\ manifest\\ 声明\\ action，并用\\ next_action\\(\\)/respond_action\\(\\)\\ 返回\\ accepted、rejected、completed\\ 或\\ failed；\\\n\\-\\ 需要修改按键映射时，只提交\\ set_mapping\\ proposal，由用户在控制台审阅并走现有写入确认；\\\n\\-\\ 禁止打开设备串口、发送原始协议命令、调用固件维护、绕过用户确认写设备；\\\n\\-\\ 不依赖用户电脑预装\\ Python，也不要调用\\ sys\\.executable；扩展由\\ BORING\\ 私有\\ Runner\\ 启动；\\\n\\-\\ 给出\\ README，说明功能、所需实体绑定、测试步骤和失败时的回退行为。\\\n\\\n完成提问并理解需求后，直接生成完整扩展包文件内容，不要求我决定技术实现细节。\\\n"
     },
     {
       "message": "extensions.manager.line_75",

@@ -16,6 +16,7 @@ from controller_config.prompt_device import (
 from controller_config.automation import EventDispatchResult
 from controller_config.prompt_library import PromptEntry, PromptLibrary, PromptLibraryStore
 from controller_config.prompt_helper import PromptPasteError
+from controller_config.protocol.bootstrap import BootstrapError, BootstrapKind
 from controller_config.transport.demo import _power_v2_snapshot
 
 
@@ -135,6 +136,87 @@ def test_write_requires_exact_get_prompt_readback(qtbot, contract, tmp_path) -> 
     assert session.status.state is PromptDeviceState.IDLE
     assert library.confirmed_entry(4) == draft
     assert library.dirty_prompt_ids == ()
+
+
+def test_write_waits_for_in_flight_event_poll_before_starting(
+    qtbot, contract, tmp_path
+) -> None:
+    commands = []
+    library = PromptLibrary("CP01-AABBCCDDEEFF")
+    draft = library.set_draft(4, "审查", "先给结论")
+    session = PromptDeviceSession(
+        commands.append,
+        PromptLibraryStore(tmp_path),
+        event_dispatcher=lambda _event: EventDispatchResult(False, False, ""),
+        auto_refresh=False,
+        auto_poll=True,
+    )
+    session.bind(library, _prompt_snapshot(contract))
+    session._event_timer.stop()
+    session._poll_event()
+    assert commands.pop(0).name == "GET_PROMPT_EVENT"
+
+    session.write_draft(4)
+    assert commands == []
+    session.handle_completed(
+        "GET_PROMPT_EVENT",
+        {
+            "command": "GET_PROMPT_EVENT",
+            "result": {"poll_after_ms": 100, "event": None},
+        },
+    )
+
+    sent = commands.pop(0)
+    assert (sent.name, sent.payload) == ("SET_PROMPT", draft.as_mapping())
+    session.handle_completed(
+        "SET_PROMPT",
+        {
+            "command": "SET_PROMPT",
+            "result": {
+                "prompt_id": 4,
+                "name": draft.name,
+                "body_bytes": draft.body_bytes,
+            },
+        },
+    )
+    assert commands.pop(0).name == "GET_PROMPT"
+    session.handle_completed("GET_PROMPT", _entry_payload(draft))
+
+    assert session.status.state is PromptDeviceState.IDLE
+    assert library.confirmed_entry(4) == draft
+
+
+def test_write_starts_after_in_flight_event_poll_failure(
+    qtbot, contract, tmp_path
+) -> None:
+    commands = []
+    library = PromptLibrary("CP01-AABBCCDDEEFF")
+    draft = library.set_draft(4, "审查", "先给结论")
+    session = PromptDeviceSession(
+        commands.append,
+        PromptLibraryStore(tmp_path),
+        event_dispatcher=lambda _event: EventDispatchResult(False, False, ""),
+        auto_refresh=False,
+        auto_poll=True,
+    )
+    session.bind(library, _prompt_snapshot(contract))
+    session._event_timer.stop()
+    session._poll_event()
+    assert commands.pop(0).name == "GET_PROMPT_EVENT"
+
+    session.write_draft(4)
+    assert commands == []
+    session.handle_failed(
+        "GET_PROMPT_EVENT",
+        BootstrapError(
+            BootstrapKind.READ_FAILED,
+            "设备事件读取失败",
+            "poll failed",
+        ),
+    )
+
+    sent = commands.pop(0)
+    assert (sent.name, sent.payload) == ("SET_PROMPT", draft.as_mapping())
 
 
 def test_delete_is_confirmed_by_absence_from_readback_list(

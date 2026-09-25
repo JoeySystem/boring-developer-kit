@@ -291,3 +291,49 @@ with BoringConsoleClient.from_environment() as client:
             process.kill()
             process.waitForFinished(1_000)
         server.close()
+
+
+def test_sdk_host_event_and_cancel_arriving_during_accept_request(qtbot, contract):
+    server = _server(contract, [])
+    event = SemanticEvent.from_mapping({
+        'schema_version': 1, 'kind': 'host_action.triggered', 'source': 'usb.host_action',
+        'device_serial': SERIAL, 'event_id': 8, 'payload': {'action_id': 255, 'task_token': '0123456789abcdef0123456789abcdef'},
+    })
+    invocation = ActionInvocation('cancel-sdk', EXTENSION_ID, 'run', SERIAL, 4, event)
+    results = []
+    server.action_result_received.connect(lambda ext, result: results.append(result.status))
+    process = _sdk_process('''
+import json
+from boring_console_sdk import BoringConsoleClient
+with BoringConsoleClient.from_environment() as client:
+    print('ready', flush=True)
+    invocation = client.next_action(timeout_ms=3000)
+    client.respond_action(invocation['invocation_id'], 'accepted')
+    cancellation = client.next_cancellation(timeout_ms=3000)
+    assert cancellation['invocation_id'] == invocation['invocation_id']
+    client.respond_action(invocation['invocation_id'], 'failed', '已停止')
+    print(json.dumps(invocation['event']), flush=True)
+''', server_name=server.server_name, extension_id=EXTENSION_ID)
+    try:
+        qtbot.waitUntil(process.canReadLine, timeout=3000)
+        assert bytes(process.readLine()).strip() == b'ready'
+        assert server.invoke_action(invocation, lambda result: server.request_cancel_invocation(result.invocation_id))
+        qtbot.waitUntil(lambda: process.state() == QProcess.ProcessState.NotRunning, timeout=5000)
+        assert process.exitCode() == 0, bytes(process.readAllStandardError()).decode()
+        assert json.loads(bytes(process.readLine())) == event.as_mapping()
+        assert results == ['accepted', 'failed']
+        assert server.active_action_count == 0
+    finally:
+        if process.state() != QProcess.ProcessState.NotRunning:
+            process.kill()
+            process.waitForFinished(1000)
+        server.close()
+
+
+def test_sdk_host_event_rejects_prompt_payload_and_wrong_reference():
+    event = {'schema_version': 1, 'kind': 'host_action.triggered', 'source': 'usb.host_action',
+             'device_serial': SERIAL, 'event_id': 1, 'payload': {'action_id': 1, 'task_token': '0123456789abcdef0123456789abcdef'}}
+    assert BoringConsoleClient._event_value({'event': event}) == event
+    for payload in ({'prompt_id': 1}, {'action_id': True}, {'action_id': 256}, {'action_id': 1, 'prompt_body': ''}):
+        with pytest.raises(RequestError, match='host_action'):
+            BoringConsoleClient._event_value({'event': {**event, 'payload': payload}})

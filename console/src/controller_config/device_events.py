@@ -9,6 +9,8 @@ from controller_config.prompt_library import PROMPT_SLOT_COUNT
 
 
 DEVICE_EVENT_SCHEMA_VERSION = 1
+HOST_ACTION_EVENT = "host_action.triggered"
+HOST_ACTION_SOURCE = "usb.host_action"
 PROMPT_TRIGGERED_EVENT = "prompt.triggered"
 PROMPT_TRIGGERED_SOURCE = "usb.prompt"
 AUTOMATION_MANUAL_TEST_EVENT = "automation.manual_test"
@@ -51,7 +53,16 @@ class DeviceEvent:
         if not isinstance(self.payload, Mapping):
             raise DeviceEventContractError("event payload 必须是 object")
 
-        if self.kind == PROMPT_TRIGGERED_EVENT:
+        if self.kind == HOST_ACTION_EVENT:
+            if self.source != HOST_ACTION_SOURCE or not _is_integer(self.event_id) or self.event_id < 0:
+                raise DeviceEventContractError("电脑任务事件来源或序号无效")
+            payload = _exact_payload(self.payload, {"action_id", "task_token"}, HOST_ACTION_EVENT)
+            if not _is_integer(payload["action_id"]) or not 1 <= payload["action_id"] <= 255:
+                raise DeviceEventContractError("action_id 必须位于 1..255")
+            token = payload["task_token"]
+            if not isinstance(token, str) or len(token) != 32 or any(c not in "0123456789abcdef" for c in token):
+                raise DeviceEventContractError("电脑任务身份无效")
+        elif self.kind == PROMPT_TRIGGERED_EVENT:
             payload = self._validate_prompt_triggered()
         elif self.kind == AUTOMATION_MANUAL_TEST_EVENT:
             payload = self._validate_manual_test()
@@ -168,8 +179,8 @@ class DeviceEvent:
         )
         prompt_id = payload["prompt_id"]
         if (
-            not _is_integer(prompt_id)
-            or not 1 <= prompt_id <= PROMPT_SLOT_COUNT
+            prompt_id is not None and (not _is_integer(prompt_id)
+            or not 1 <= prompt_id <= PROMPT_SLOT_COUNT)
         ):
             raise DeviceEventContractError(
                 f"prompt_id 必须位于 1..{PROMPT_SLOT_COUNT}"
@@ -200,7 +211,7 @@ def prompt_triggered_event(
 
 
 def automation_manual_test_event(
-    *, device_serial: str, prompt_id: int
+    *, device_serial: str, prompt_id: int | None
 ) -> DeviceEvent:
     return DeviceEvent(
         kind=AUTOMATION_MANUAL_TEST_EVENT,

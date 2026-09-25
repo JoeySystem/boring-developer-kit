@@ -102,7 +102,7 @@ def test_import_export_profiles_and_mapping_keep_explicit_false(contract, tmp_pa
     expected = copy.deepcopy(draft.config["haptic"])
     profile_id = draft.copy_profile(snapshot.active_profile_id)
     draft.set_active_profile(profile_id)
-    draft.set_mapping(profile_id, "key.8", "Enter", {"type": "key", "usage": 40, "modifiers": []})
+    draft.set_mapping(profile_id, "key.1", "Enter", {"type": "key", "usage": 40, "modifiers": []})
     path = tmp_path / "channels.boring-config.json"
     export_config_package(path, config=draft.config, hardware_ids=(draft.hardware_id,),
                           kind="draft", base_generation=draft.base_generation, base_digest=draft.base_digest)

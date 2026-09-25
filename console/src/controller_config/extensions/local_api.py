@@ -37,7 +37,7 @@ ActionCompleted: TypeAlias = Callable[[ActionInvocationResult], None]
 
 _MAX_LINE_BYTES = 256 * 1024
 _MAX_ACCEPTED_ACTIONS = 256
-_SUPPORTED_OBSERVER_EVENTS = frozenset({PROMPT_EVENT_KIND})
+_SUPPORTED_OBSERVER_EVENTS = frozenset({PROMPT_EVENT_KIND, "host_action.triggered"})
 
 
 @dataclass
@@ -46,6 +46,7 @@ class _ApiSession:
     buffer: bytearray = field(default_factory=bytearray)
     extension_id: str | None = None
     subscribed_events: set[str] = field(default_factory=set)
+    api_minor: int = 0
 
 
 @dataclass
@@ -156,12 +157,23 @@ class ExtensionLocalApiServer(QObject):
             for session in self._sessions.values()
         )
 
+    @property
+    def active_action_count(self) -> int:
+        return len(self._pending_actions) + len(self._accepted_actions)
+
+    @property
+    def active_extension_ids(self) -> tuple[str, ...]:
+        return tuple(dict.fromkeys(
+            [pending.extension_id for pending in self._pending_actions.values()]
+            + list(self._accepted_actions.values())
+        ))
+
     def invoke_action(
         self,
         invocation: ActionInvocation,
         completed: ActionCompleted,
     ) -> bool:
-        if invocation.invocation_id in self._pending_actions:
+        if invocation.invocation_id in self._pending_actions or invocation.invocation_id in self._accepted_actions:
             raise ValueError(f"duplicate invocation_id {invocation.invocation_id}")
         session = next(
             (
@@ -172,7 +184,9 @@ class ExtensionLocalApiServer(QObject):
             ),
             None,
         )
-        if session is None:
+        if session is None or self.active_action_count >= _MAX_ACCEPTED_ACTIONS:
+            return False
+        if invocation.event.kind == "host_action.triggered" and session.api_minor < 1:
             return False
         self._pending_actions[invocation.invocation_id] = _PendingAction(
             extension_id=invocation.extension_id,
@@ -185,6 +199,16 @@ class ExtensionLocalApiServer(QObject):
             self._pending_actions.pop(invocation.invocation_id, None)
             return False
         return True
+
+    def request_cancel_invocation(self, invocation_id: str) -> bool:
+        """Request cooperation without discarding the eventual terminal result."""
+        pending = self._pending_actions.get(invocation_id)
+        extension_id = pending.extension_id if pending else self._accepted_actions.get(invocation_id)
+        session = next((item for item in self._sessions.values()
+                        if item.extension_id == extension_id and item.api_minor >= 1), None)
+        if extension_id is None or session is None:
+            return False
+        return self._send(session, {"kind": "action.cancel", "invocation_id": invocation_id})
 
     def cancel_invocation(self, invocation_id: str) -> None:
         self._pending_actions.pop(invocation_id, None)
@@ -355,11 +379,12 @@ class ExtensionLocalApiServer(QObject):
             session.socket.disconnectFromServer()
             return
         session.extension_id = request.extension_id
+        session.api_minor = request.api_version.minor
         self._send(
             session,
             ApiHandshakeResult(
                 request_id=request.request_id,
-                api_version=ApiVersion(API_MAJOR, API_MINOR),
+                api_version=ApiVersion(API_MAJOR, session.api_minor),
                 accepted=True,
                 message="ready",
             ).as_mapping(),
@@ -418,7 +443,8 @@ class ExtensionLocalApiServer(QObject):
             )
             return
         requested = set(events)
-        unsupported = requested - _SUPPORTED_OBSERVER_EVENTS
+        supported = _SUPPORTED_OBSERVER_EVENTS if session.api_minor >= 1 else {PROMPT_EVENT_KIND}
+        unsupported = requested - supported
         if unsupported:
             self._send_error(
                 session,
@@ -539,10 +565,8 @@ class ExtensionLocalApiServer(QObject):
                 )
                 return
             self._pending_actions.pop(result.invocation_id, None)
-            pending.completed(result)
             self._accepted_actions[result.invocation_id] = pending.extension_id
-            if len(self._accepted_actions) > _MAX_ACCEPTED_ACTIONS:
-                self._accepted_actions.popitem(last=False)
+            pending.completed(result)
             self.action_result_received.emit(session.extension_id or "", result)
         elif result.status == "rejected":
             if pending is None:

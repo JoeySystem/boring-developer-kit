@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import plistlib
+import json
 import sys
 from collections.abc import Callable
 from datetime import datetime
@@ -113,7 +114,7 @@ class _CodexQuotaProgress(QWidget):
 
     def __init__(self, role: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        color = "#54b9d1" if role == "primary" else "#e85b42"
+        color = "#FF6A00"
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 2)
         self.progress = QProgressBar(objectName="menuBarQuotaProgress")
@@ -348,19 +349,26 @@ class ApplicationInstanceCoordinator(QObject):
 
     def __init__(
         self,
-        server_name: str = "com.boring.controller-config.community",
+        server_name: str = "com.boring.controller-config",
         *,
+        origin: str = "official",
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self._server_name = server_name
+        self._origin = "official" if origin == "official" else "custom"
         self._server = QLocalServer(self)
         self._server.newConnection.connect(self._accept_connections)
         self._primary = False
+        self._conflict_message = ""
 
     @property
     def is_primary(self) -> bool:
         return self._primary
+
+    @property
+    def conflict_message(self) -> str:
+        return self._conflict_message
 
     def acquire(self, *, activate_existing: bool) -> bool:
         if self._primary:
@@ -372,8 +380,37 @@ class ApplicationInstanceCoordinator(QObject):
         socket = QLocalSocket(self)
         socket.connectToServer(self._server_name)
         if socket.waitForConnected(500):
-            socket.write(b"show" if activate_existing else b"background")
+            request = json.dumps(
+                {
+                    "action": "show" if activate_existing else "background",
+                    "origin": self._origin,
+                },
+                separators=(",", ":"),
+            ).encode("utf-8")
+            socket.write(request)
             socket.waitForBytesWritten(500)
+            if socket.waitForReadyRead(500):
+                try:
+                    response = json.loads(bytes(socket.readAll()))
+                except (UnicodeError, ValueError, TypeError):
+                    response = {}
+                if response.get("status") == "occupied":
+                    self._conflict_message = (
+                        "官方版 BORING 控制台正在运行。请先从菜单栏退出它，再打开当前版本。"
+                        if response.get("origin") == "official"
+                        else "DIY 版 BORING 控制台正在运行。请先从菜单栏退出它，再打开当前版本。"
+                    )
+                elif response.get("status") != "activated":
+                    self._conflict_message = (
+                        "另一份 BORING 控制台正在运行。请先从菜单栏退出它，再打开当前版本。"
+                    )
+            else:
+                # An older process understands only the legacy activation
+                # message and cannot report its origin. It still owns the
+                # global device host, so do not start a second process.
+                self._conflict_message = (
+                    "另一份 BORING 控制台正在运行。请先从菜单栏退出它，再打开当前版本。"
+                )
             socket.disconnectFromServer()
             return False
 
@@ -400,33 +437,69 @@ class ApplicationInstanceCoordinator(QObject):
             if socket is None:
                 continue
             socket.setParent(self)
+            socket.disconnected.connect(socket.deleteLater)
             socket.readyRead.connect(lambda current=socket: self._consume(current))
             if socket.bytesAvailable():
                 self._consume(socket)
 
     def _consume(self, socket: QLocalSocket) -> None:
         message = bytes(socket.readAll())
-        if message == b"show":
+        response, _activate = self.handle_request(message)
+        if response:
+            socket.write(response)
+        socket.disconnectFromServer()
+
+    def handle_request(self, message: bytes) -> tuple[bytes, bool]:
+        """Handle one request; kept separate so identity behavior is testable."""
+
+        if message in {b"show", b"background"}:
+            activate = message == b"show"
+            if activate:
+                self.activate_requested.emit()
+            return b"", activate
+        try:
+            request = json.loads(message)
+        except (UnicodeError, ValueError, TypeError):
+            return b"", False
+        if not isinstance(request, dict):
+            return b"", False
+        action = request.get("action")
+        requester_origin = request.get("origin")
+        same_origin = requester_origin == self._origin
+        activate = same_origin and action == "show"
+        if activate:
             self.activate_requested.emit()
+        response = json.dumps(
+            {
+                "status": "activated" if same_origin else "occupied",
+                "origin": self._origin,
+            },
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return response, activate
 
 
 class MacLaunchAgent:
-    LABEL = "com.boring.controller-config.community.prompt-helper"
+    LABEL = "com.boring.controller-config.prompt-helper"
 
     def __init__(
         self,
         program_arguments: tuple[str, ...],
         *,
         directory: Path | None = None,
+        label: str | None = None,
+        other_labels: tuple[str, ...] = (),
     ) -> None:
         if not program_arguments:
             raise ValueError("后台助手启动命令不能为空")
         self._program_arguments = program_arguments
         self._directory = directory or Path.home() / "Library" / "LaunchAgents"
+        self._label = label or self.LABEL
+        self._other_labels = tuple(other_labels)
 
     @property
     def path(self) -> Path:
-        return self._directory / f"{self.LABEL}.plist"
+        return self._directory / f"{self._label}.plist"
 
     @property
     def enabled(self) -> bool:
@@ -434,9 +507,14 @@ class MacLaunchAgent:
 
     def set_enabled(self, enabled: bool) -> None:
         if enabled:
+            if any((self._directory / f"{label}.plist").is_file()
+                   for label in self._other_labels):
+                raise ValueError(
+                    "另一版本的 BORING 控制台已设置登录后启动；请先在该版本中关闭。"
+                )
             self._directory.mkdir(parents=True, exist_ok=True)
             payload = {
-                "Label": self.LABEL,
+                "Label": self._label,
                 "ProgramArguments": list(self._program_arguments),
                 "RunAtLoad": True,
             }
@@ -463,6 +541,7 @@ class PromptBackgroundController(QObject):
         codex_usage_monitor: CodexUsageMonitor | None = None,
         claude_usage_monitor: ClaudeUsageMonitor | None = None,
         language_manager: LanguageManager | None = None,
+        build_origin: str = "official",
         platform: str | None = None,
         parent: QObject | None = None,
     ) -> None:
@@ -481,6 +560,7 @@ class PromptBackgroundController(QObject):
         self._codex_usage_monitor = codex_usage_monitor
         self._claude_usage_monitor = claude_usage_monitor
         self._language_manager = language_manager
+        self._custom_build = build_origin != "official"
         self._codex_usage_snapshot = (
             codex_usage_monitor.snapshot
             if codex_usage_monitor is not None
@@ -697,12 +777,22 @@ class PromptBackgroundController(QObject):
         self._tray_usage_panel_action = usage_panel_action
         self._tray_refresh_usage = refresh_usage
         self._tray_status = status
-        show = QAction(translate_ui_text("打开 BORING 控制台"), menu)
+        show_source = (
+            "打开 BORING 控制台 DIY"
+            if self._custom_build
+            else "打开 BORING 控制台"
+        )
+        quit_source = (
+            "退出 BORING DIY 主机自动化助手"
+            if self._custom_build
+            else "退出 BORING 主机自动化助手"
+        )
+        show = QAction(translate_ui_text(show_source), menu)
         show.triggered.connect(self.show_window)
         menu.addAction(show)
         menu.addSeparator()
         quit_action = QAction(
-            translate_ui_text("退出 BORING 主机自动化助手"), menu
+            translate_ui_text(quit_source), menu
         )
         quit_action.triggered.connect(self.quit_application)
         self._tray_show_console = show
@@ -735,7 +825,11 @@ class PromptBackgroundController(QObject):
             tray = QSystemTrayIcon(self)
             from PySide6.QtWidgets import QStyle
             tray.setIcon(self._application.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
-            tray.setToolTip("BORING 控制台")
+            tray.setToolTip(
+                translate_ui_text(
+                    "BORING 控制台 DIY" if self._custom_build else "BORING 控制台"
+                )
+            )
             tray.setContextMenu(menu)
             tray.activated.connect(
                 lambda reason: self.show_window()
@@ -765,6 +859,8 @@ class PromptBackgroundController(QObject):
         if self._native_status_item is not None:
             title = ("BORING" if self._menu_bar_display == "compact" else
                      claude_label if self._menu_bar_display == "claude" else codex_label)
+            if self._custom_build:
+                title += " · DIY"
             self._native_status_item.set_title(title)
             if self._menu_bar_display == "both":
                 if self._native_claude_status_item is None:
@@ -794,11 +890,19 @@ class PromptBackgroundController(QObject):
             )
         if self._tray_show_console is not None:
             self._tray_show_console.setText(
-                translate_ui_text("打开 BORING 控制台")
+                translate_ui_text(
+                    "打开 BORING 控制台 DIY"
+                    if self._custom_build
+                    else "打开 BORING 控制台"
+                )
             )
         if self._tray_quit_helper is not None:
             self._tray_quit_helper.setText(
-                translate_ui_text("退出 BORING 主机自动化助手")
+                translate_ui_text(
+                    "退出 BORING DIY 主机自动化助手"
+                    if self._custom_build
+                    else "退出 BORING 主机自动化助手"
+                )
             )
         self._tray_display_menu.setTitle(translate_ui_text("菜单栏显示"))
         self._tray_display_menu.menuAction().setVisible(self._native_status_item is not None)
@@ -819,7 +923,7 @@ class PromptBackgroundController(QObject):
         if self._native_status_item is None and self._tray is None:
             return
         helper = (
-            f"{translate_ui_text('BORING 主机自动化助手')} "
+            f"{translate_ui_text('BORING DIY 主机自动化助手' if self._custom_build else 'BORING 主机自动化助手')} "
             f"{translate_ui_text(self._helper_state_label)}"
         )
         if self._native_status_item is not None:
@@ -827,6 +931,8 @@ class PromptBackgroundController(QObject):
                      if self._menu_bar_display == "claude" else
                      "BORING" if self._menu_bar_display == "compact" else
                      _menu_bar_usage_label(self._codex_usage_snapshot))
+            if self._custom_build:
+                label += " · DIY"
             self._native_status_item.set_tooltip(
                 f"{label} · {helper}"
             )

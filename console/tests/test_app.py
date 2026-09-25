@@ -4,6 +4,7 @@ import pytest
 
 import controller_config.app as app_module
 from controller_config.app import build_parser
+from controller_config.build_identity import BuildIdentity
 
 
 def test_runtime_pid_cannot_be_overridden_from_cli() -> None:
@@ -40,7 +41,8 @@ def test_background_mode_is_an_explicit_startup_option() -> None:
 def test_packaged_firmware_source_and_explicit_sample_channel() -> None:
     from controller_config.firmware_release import default_firmware_source
     source = default_firmware_source()
-    assert source == {"manifest_url": "", "channel": "stable"}
+    assert source["channel"] == "sample"
+    assert source["manifest_url"].endswith('/sample/firmware-manifest.json')
     assert isinstance(source["manifest_url"], str)
     assert build_parser().parse_args(["--firmware-channel", "sample"]).firmware_channel == "sample"
 
@@ -60,9 +62,14 @@ def test_application_quit_always_shuts_down_device_gateway(
 ) -> None:
     shutdowns = []
     integrations = []
+    startup_events = []
+    updater_identities = []
+    update_ui_identities = []
+    window_identities = []
     device_authenticators = []
     extension_starts = []
     authenticator = object()
+    build_identity = BuildIdentity("official")
 
     class FakeSignal:
         def __init__(self) -> None:
@@ -77,15 +84,8 @@ def test_application_quit_always_shuts_down_device_gateway(
 
     class FakeApplication:
         def __init__(self, _argv) -> None:
+            startup_events.append("application")
             self.aboutToQuit = FakeSignal()
-
-        def setWindowIcon(self, _icon):
-            pass
-
-        def style(self):
-            from PySide6.QtGui import QIcon
-            from types import SimpleNamespace
-            return SimpleNamespace(standardIcon=lambda *_: QIcon())
 
         def setApplicationName(self, _name: str) -> None:  # noqa: N802
             pass
@@ -94,6 +94,9 @@ def test_application_quit_always_shuts_down_device_gateway(
             pass
 
         def setOrganizationName(self, _name: str) -> None:  # noqa: N802
+            pass
+
+        def setProperty(self, _name: str, _value) -> None:  # noqa: N802
             pass
 
         def setWindowIcon(self, _icon) -> None:  # noqa: N802
@@ -110,7 +113,9 @@ def test_application_quit_always_shuts_down_device_gateway(
             self.aboutToQuit.emit()
 
     class FakeInstance:
-        def __init__(self) -> None:
+        conflict_message = ""
+
+        def __init__(self, **_kwargs) -> None:
             self.activate_requested = FakeSignal()
 
         def acquire(self, *, activate_existing: bool) -> bool:
@@ -162,6 +167,9 @@ def test_application_quit_always_shuts_down_device_gateway(
             pass
 
     class FakeWindow:
+        def show_agent_focus_error(self, _message) -> None:
+            pass
+
         def show(self) -> None:
             pass
 
@@ -194,6 +202,11 @@ def test_application_quit_always_shuts_down_device_gateway(
     monkeypatch.setattr(focus_module, "MacChatGPTActivator", FakeFocusActivator)
 
     monkeypatch.setattr(app_module, "QApplication", FakeApplication)
+    monkeypatch.setattr(
+        app_module,
+        "load_build_identity",
+        lambda: startup_events.append("build-identity") or build_identity,
+    )
     monkeypatch.setattr(app_module, "ApplicationInstanceCoordinator", FakeInstance)
     monkeypatch.setattr(app_module.Contract, "load", lambda: object())
     monkeypatch.setattr(app_module, "load_default_authenticator", lambda: authenticator)
@@ -213,19 +226,38 @@ def test_application_quit_always_shuts_down_device_gateway(
     monkeypatch.setattr(app_module, "ClaudeUsageMonitor", FakeClaudeUsageMonitor)
     monkeypatch.setattr(app_module, "MacClipboardPaster", lambda *_args: object())
     monkeypatch.setattr(app_module, "PromptHelperRuntime", lambda *_args: object())
-    monkeypatch.setattr(app_module, "MacLaunchAgent", lambda *_args: object())
-    monkeypatch.setattr(app_module, "MainWindow", lambda *_args, **_kwargs: FakeWindow())
+    monkeypatch.setattr(app_module, "MacLaunchAgent", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(
+        app_module,
+        "MainWindow",
+        lambda *_args, **kwargs: window_identities.append(
+            kwargs.get("build_identity")
+        )
+        or FakeWindow(),
+    )
     monkeypatch.setattr(app_module.sys, "platform", platform)
     from types import SimpleNamespace
     import controller_config.desktop_update as update_module
     import controller_config.views.desktop_update as update_ui_module
-    monkeypatch.setattr(update_ui_module, 'DesktopUpdateUi', lambda _window: SimpleNamespace(
-        prepare_restart=lambda: True, attach=lambda _updater: None,
-    ))
-    monkeypatch.setattr(update_module, 'create_desktop_updater', lambda *_args, **_kwargs: SimpleNamespace(
-        quit_requested=FakeSignal(), start=lambda: None,
-        shutdown=lambda: shutdowns.append('desktop-updater'),
-    ))
+    monkeypatch.setattr(
+        update_ui_module,
+        'DesktopUpdateUi',
+        lambda _window, **kwargs: update_ui_identities.append(
+            kwargs.get('build_identity')
+        )
+        or SimpleNamespace(
+            prepare_restart=lambda: True, attach=lambda _updater: None,
+        ),
+    )
+    monkeypatch.setattr(
+        update_module,
+        'create_desktop_updater',
+        lambda *_args, **kwargs: updater_identities.append(kwargs.get('build_identity'))
+        or SimpleNamespace(
+            quit_requested=FakeSignal(), start=lambda: None,
+            shutdown=lambda: shutdowns.append('desktop-updater'),
+        ),
+    )
 
     arguments = [] if live_device else ["--demo", "ready"]
     assert app_module.main(arguments) == 0
@@ -252,3 +284,7 @@ def test_application_quit_always_shuts_down_device_gateway(
     assert isinstance(claude_integration, FakeClaudeUsageMonitor) is usage_enabled
     assert device_authenticators == ([authenticator] if live_device else [])
     assert extension_starts == []
+    assert startup_events[:2] == ["build-identity", "application"]
+    assert update_ui_identities == ([build_identity] if live_device else [])
+    assert updater_identities == ([build_identity] if live_device else [])
+    assert window_identities == [build_identity]

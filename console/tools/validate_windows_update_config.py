@@ -14,14 +14,24 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 def validate(
     path: Path,
     *,
+    build_origin: str,
     skip_installer: bool = False,
     has_signing_certificate: bool = False,
 ) -> str:
+    if build_origin not in {"official", "custom"}:
+        raise ValueError("Console build origin must be official or custom")
     document = json.loads(path.read_text(encoding="utf-8-sig"))
     config = document["windows"]
     channel = config.get("channel", "stable")
     if channel not in {"stable", "trial"}:
         raise ValueError("Windows desktop update channel must be stable or trial")
+
+    if build_origin == "custom":
+        if config.get("feed_url") or config.get("public_key"):
+            raise ValueError(
+                "Custom Windows update configuration must be cleared by stage_app_build.py"
+            )
+        return "custom"
 
     url = config.get("feed_url", "")
     key = config.get("public_key", "")
@@ -54,12 +64,14 @@ def validate(
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("config", type=Path)
+    parser.add_argument("--build-origin", required=True)
     parser.add_argument("--skip-installer", action="store_true")
     parser.add_argument("--has-signing-certificate", action="store_true")
     args = parser.parse_args()
     print(
         validate(
             args.config,
+            build_origin=args.build_origin,
             skip_installer=args.skip_installer,
             has_signing_certificate=args.has_signing_certificate,
         )

@@ -16,7 +16,17 @@ from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 
-def build_feed(installer: Path, private_key_file: Path, version: str, url: str, *, public_key: str) -> dict:
+def build_feed(
+    installer: Path,
+    private_key_file: Path,
+    version: str,
+    url: str,
+    *,
+    public_key: str,
+    build_origin: str,
+) -> dict:
+    if build_origin != 'official':
+        raise ValueError('Windows update feeds require an official build origin')
     if re.fullmatch(r'\d+\.\d+\.\d+', version) is None:
         raise ValueError('Version must be major.minor.patch')
     parsed = urlparse(url)
@@ -43,8 +53,12 @@ if __name__ == '__main__':
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--source-config', type=Path,
                         default=Path(__file__).resolve().parents[1] / 'src/controller_config/assets/app-update-source.json')
+    parser.add_argument('--build-identity', type=Path, required=True,
+                        help='app-build.json staged with the final installer')
     args = parser.parse_args()
     config = json.loads(args.source_config.read_text(encoding='utf-8'))
+    identity = json.loads(args.build_identity.read_text(encoding='utf-8'))
     result = build_feed(args.installer, args.private_key_file, args.version, args.url,
-                        public_key=config['windows']['public_key'])
+                        public_key=config['windows']['public_key'],
+                        build_origin=identity.get('origin'))
     args.output.write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')

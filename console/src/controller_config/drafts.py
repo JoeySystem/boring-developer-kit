@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from controller_config.models import DeviceSnapshot
-from controller_config.official_controls import is_matrix12_official_status_key
 from controller_config.protocol.contract import ConfigEditorRules, Contract, ContractError
 from controller_config.protocol.framing import canonical_json_bytes
 
@@ -193,6 +192,66 @@ class LocalDraft:
                 "mappings": mappings,
             }
         )
+        return profile_id
+
+    def create_profile_from_template(
+        self, name: str, mappings: list[dict[str, Any]]
+    ) -> int:
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise ValueError("配置方案名称不能为空。")
+        if len(normalized_name) > self.editor_rules.profile_name_max_length:
+            raise ValueError(
+                f"配置方案名称最多 {self.editor_rules.profile_name_max_length} 个字符。"
+            )
+        if any(
+            str(profile.get("name", "")) == normalized_name
+            for profile in self.profiles
+        ):
+            raise ValueError("已存在同名配置方案。")
+
+        by_control: dict[str, dict[str, Any]] = {}
+        for mapping in mappings:
+            control_id = mapping.get("control_id")
+            short_name = mapping.get("short_name")
+            action = mapping.get("action")
+            if not isinstance(control_id, str) or control_id not in self.controls:
+                raise ValueError(f"{control_id} 不在设备 CAPABILITIES 中")
+            if control_id in by_control:
+                raise ValueError(f"配置方案中重复定义了 {control_id}")
+            if not isinstance(short_name, str):
+                raise ValueError(f"{control_id} 的快捷键名称不可用")
+            if len(short_name) > self.editor_rules.mapping_short_name_max_length:
+                raise ValueError(
+                    f"快捷键名称最多 {self.editor_rules.mapping_short_name_max_length} 个字符。"
+                )
+            if not isinstance(action, dict) or action.get("type") not in self.actions:
+                action_type = action.get("type") if isinstance(action, dict) else ""
+                raise ValueError(f"设备不支持 {action_type} 动作")
+            by_control[control_id] = {
+                "control_id": control_id,
+                "short_name": short_name,
+                "action": copy.deepcopy(action),
+            }
+
+        missing = [
+            control_id for control_id in self.controls if control_id not in by_control
+        ]
+        if missing:
+            raise ValueError(f"配置方案缺少控件：{', '.join(missing)}")
+
+        profile_id = self._next_profile_id()
+        profiles = self.config.get("profiles")
+        if not isinstance(profiles, list):
+            raise ValueError("Profiles 不可用")
+        profiles.append(
+            {
+                "id": profile_id,
+                "name": normalized_name,
+                "mappings": [by_control[control_id] for control_id in self.controls],
+            }
+        )
+        self.set_active_profile(profile_id)
         return profile_id
 
     def copy_profile(self, profile_id: int | None) -> int:
@@ -388,6 +447,17 @@ class LocalDraft:
                 return candidate
         raise ValueError("无法生成唯一的按键序列名称")
 
+    def set_codex_voice(self, profile_id: int | None, action: dict) -> None:
+        if self.features.get("codex_voice") is not True:
+            raise ValueError("此设备固件尚不支持 CODEX 模式第三方语音。")
+        if action.get("type") not in {"none", "key_gesture"}:
+            raise ValueError("请选择 Codex 自带语音或第三方语音输入软件。")
+        profile = self.profile(profile_id)
+        if action.get("type") == "none":
+            profile.pop("codex_voice", None)
+        else:
+            profile["codex_voice"] = copy.deepcopy(action)
+
     def set_mapping(
         self,
         profile_id: int | None,
@@ -397,8 +467,6 @@ class LocalDraft:
     ) -> None:
         if control_id not in self.controls:
             raise ValueError(f"{control_id} 不在设备 CAPABILITIES 中")
-        if is_matrix12_official_status_key(self.hardware_id, control_id):
-            raise ValueError("状态灯键使用 Codex 官方功能，不支持自定义")
         action_type = action.get("type")
         if action_type not in self.actions:
             raise ValueError(f"设备不支持 {action_type} 动作")
@@ -447,28 +515,9 @@ class LocalDraft:
             errors.append("按键序列 ID 不能重复")
         macro_id_set = set(macro_ids)
         profile_id_set = set(profile_ids)
-        baseline_status_mappings: dict[tuple[Any, str], dict[str, Any]] = {}
-        reusable_status_mappings: dict[str, list[dict[str, Any]]] = {}
-        baseline_profile_ids: set[Any] = set()
-        if self.hardware_id == config.get("hardware_id"):
-            for profile in self._baseline.get("profiles", ()):
-                if not isinstance(profile, dict):
-                    continue
-                profile_id = profile.get("id")
-                baseline_profile_ids.add(profile_id)
-                for mapping in profile.get("mappings", ()):
-                    if not isinstance(mapping, dict):
-                        continue
-                    control_id = mapping.get("control_id")
-                    if is_matrix12_official_status_key(self.hardware_id, control_id):
-                        baseline_status_mappings[(profile_id, control_id)] = mapping
-                        reusable_status_mappings.setdefault(control_id, []).append(mapping)
-            for control_id in self.controls:
-                if is_matrix12_official_status_key(self.hardware_id, control_id):
-                    reusable_status_mappings.setdefault(control_id, []).append(
-                        {"control_id": control_id, "short_name": "", "action": {"type": "none"}}
-                    )
         for profile in profiles:
+            if "codex_voice" in profile and self.features.get("codex_voice") is not True:
+                errors.append("此设备固件尚不支持 CODEX 模式第三方语音。")
             mappings = profile.get("mappings")
             if not isinstance(mappings, list):
                 continue
@@ -483,15 +532,6 @@ class LocalDraft:
                 action = mapping.get("action") if isinstance(mapping, dict) else None
                 if not isinstance(action, dict):
                     continue
-                control_id = mapping.get("control_id")
-                if is_matrix12_official_status_key(self.hardware_id, control_id):
-                    profile_id = profile.get("id")
-                    if profile_id in baseline_profile_ids:
-                        allowed = mapping == baseline_status_mappings.get((profile_id, control_id))
-                    else:
-                        allowed = mapping in reusable_status_mappings.get(control_id, ())
-                    if not allowed:
-                        errors.append("状态灯键使用 Codex 官方功能，不支持自定义")
                 if mapping.get("control_id") not in self.controls:
                     errors.append(f"{mapping.get('control_id')} 不在设备 CAPABILITIES 中")
                 if action.get("type") not in self.actions:

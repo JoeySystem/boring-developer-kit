@@ -47,7 +47,10 @@ def test_japanese_setting_is_selectable_persisted_and_keeps_user_names(session, 
     assert manager._settings.value('ui/language') == JAPANESE
     assert window.findChild(QAction, 'languageAction_ja_JP').isChecked()
     assert window._nav_buttons['overview'].accessibleName() == 'キー設定'
-    assert window.findChild(QPushButton, 'openDiagnosticsSettings').text() == '診断を開く'
+    assert {
+        button.text()
+        for button in window.findChildren(QPushButton, 'settingsGroup')
+    } == {'システム', 'デバイス', 'ファームウェア更新'}
     vm.rename_profile(snapshot.active_profile_id, '设置・私の設定')
     vm.navigate('overview')
     for language, name in [('en_US', 'Key Mapping'), ('zh_CN', '按键配置'), ('ja_JP', 'キー設定')]:

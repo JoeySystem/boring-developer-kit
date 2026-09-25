@@ -83,10 +83,13 @@ def test_import_rejects_invalid_manifest_and_missing_entrypoint(tmp_path: Path) 
     manager = ExtensionManager(tmp_path / "managed")
     with pytest.raises(ExtensionManagerError, match="API major 2"):
         manager.import_package(invalid)
+    assert (invalid / MANIFEST_FILENAME).is_file()
+    assert (invalid / "src" / "main.py").is_file()
 
     missing = _write_package(tmp_path / "missing", include_entrypoint=False)
     with pytest.raises(ExtensionManagerError, match="入口缺失"):
         manager.import_package(missing)
+    assert (missing / MANIFEST_FILENAME).is_file()
     assert manager.extensions == ()
 
 

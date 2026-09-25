@@ -81,7 +81,7 @@ class WorkflowStep:
 class LocalWorkflow:
     workflow_id: str
     name: str
-    trigger_prompt_id: int
+    trigger_prompt_id: int | None
     steps: tuple[WorkflowStep, ...]
     enabled: bool = False
     tested: bool = False
@@ -92,7 +92,7 @@ class LocalWorkflow:
             raise WorkflowError("自动化 ID 不能为空")
         if not self.name.strip():
             raise WorkflowError("自动化名称不能为空")
-        if (
+        if self.trigger_prompt_id is not None and (
             not isinstance(self.trigger_prompt_id, int)
             or isinstance(self.trigger_prompt_id, bool)
             or not 1 <= self.trigger_prompt_id <= PROMPT_SLOT_COUNT
@@ -171,7 +171,7 @@ class LocalWorkflow:
 
 
 class WorkflowStore:
-    VERSION = 1
+    VERSION = 2
 
     def __init__(self, directory: Path | None = None) -> None:
         if directory is None:
@@ -195,7 +195,7 @@ class WorkflowStore:
             "workflows",
         }:
             raise WorkflowError("自动化文件结构不受支持")
-        if value.get("version") != self.VERSION:
+        if value.get("version") not in (1, self.VERSION):
             raise WorkflowError("自动化文件版本不受支持")
         if value.get("serial") != serial:
             raise WorkflowError("自动化与当前设备序列号不一致")
@@ -210,7 +210,7 @@ class WorkflowStore:
         _validate_workflows(workflows)
         self._directory.mkdir(parents=True, exist_ok=True)
         payload = {
-            "version": self.VERSION,
+            "version": self.VERSION if any(item.trigger_prompt_id is None for item in workflows) else 1,
             "serial": serial,
             "workflows": [workflow.as_mapping() for workflow in workflows],
         }
@@ -257,10 +257,10 @@ def _validate_workflows(workflows: tuple[LocalWorkflow, ...]) -> None:
         workflow.validate()
         if workflow.workflow_id in ids:
             raise WorkflowError(f"自动化 ID 重复：{workflow.workflow_id}")
-        if workflow.enabled and workflow.trigger_prompt_id in enabled_prompts:
+        if workflow.enabled and workflow.trigger_prompt_id is not None and workflow.trigger_prompt_id in enabled_prompts:
             raise WorkflowError(
                 f"提示词槽位 {workflow.trigger_prompt_id} 已绑定其他内置自动化"
             )
         ids.add(workflow.workflow_id)
-        if workflow.enabled:
+        if workflow.enabled and workflow.trigger_prompt_id is not None:
             enabled_prompts.add(workflow.trigger_prompt_id)

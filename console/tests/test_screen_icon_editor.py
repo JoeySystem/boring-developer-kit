@@ -2,7 +2,7 @@ from dataclasses import replace
 
 import pytest
 from PySide6.QtGui import QColor, QCloseEvent, QImage
-from PySide6.QtWidgets import QMessageBox, QPushButton
+from PySide6.QtWidgets import QLabel, QMessageBox, QPushButton, QWidget
 
 from controller_config.transport.demo import DemoGateway
 from controller_config.viewmodels.main import MainViewModel
@@ -49,6 +49,73 @@ def test_device_buttons_wait_for_real_protocol(qtbot, image_path, supported):
     assert len(editor.payload) == 32768
     assert not editor.findChild(QPushButton, "screenIconWrite").isEnabled()
     assert not editor.findChild(QPushButton, "screenIconReset").isEnabled()
+
+
+def test_empty_editor_puts_import_first_without_blank_preview(qtbot, image_path):
+    editor = ScreenIconEditor(ScreenIconDraft())
+    qtbot.addWidget(editor)
+
+    assert not editor.import_button.isHidden()
+    assert editor.import_button.text() == "选择首页图片"
+    assert editor.import_button.property("buttonRole") == "primary"
+    assert editor.device_preview.isHidden()
+    assert editor.preview.isHidden()
+    assert editor.filename.isHidden()
+    assert editor.findChild(QWidget, "screenIconCropControls").isHidden()
+    assert editor.findChild(QWidget, "screenIconRequirements").isHidden()
+    assert editor.device_buttons["screenIconReset"].isHidden()
+    assert editor.refresh_button.isHidden()
+    assert editor.cancel_button.isHidden()
+    assert editor.local_retention.isHidden()
+
+    editor.requirements_toggle.click()
+    assert not editor.findChild(QWidget, "screenIconRequirements").isHidden()
+    editor.import_image(image_path)
+    assert not editor.preview.isHidden()
+    assert not editor.filename.isHidden()
+    assert not editor.findChild(QWidget, "screenIconCropControls").isHidden()
+    assert editor.import_button.property("buttonRole") == "secondary"
+    assert editor.device_buttons["screenIconWrite"].property("buttonRole") == "primary"
+    assert not editor.local_retention.isHidden()
+
+
+def test_device_actions_follow_current_home_image_state(qtbot, contract):
+    transfer = ScreenIconTransfer(contract, lambda command: None)
+    transfer.supported = transfer.writable = True
+    editor = ScreenIconEditor(ScreenIconDraft())
+    qtbot.addWidget(editor)
+    editor.bind_transfer(transfer)
+
+    transfer.metadata = {
+        "revision": 1,
+        "source": "default",
+        "target": "normal_home",
+        "format": "rgb565_le",
+        "width": 128,
+        "height": 128,
+        "total_bytes": 0,
+    }
+    transfer.status = "设备正在使用默认图标"
+    transfer.changed.emit()
+    assert editor.device_label.text() == "当前：默认图片"
+    assert editor.device_buttons["screenIconReset"].isHidden()
+    assert editor.refresh_button.isHidden()
+
+    transfer.metadata = {**transfer.metadata, "source": "custom", "total_bytes": 32768}
+    transfer.pixels = bytes(32768)
+    transfer.status = "已读取设备自定义图标"
+    transfer.changed.emit()
+    assert editor.device_label.text() == "当前：自定义图片"
+    assert not editor.device_buttons["screenIconReset"].isHidden()
+    assert not editor.reset_scope.isHidden()
+
+    transfer.metadata = None
+    transfer.pixels = None
+    transfer.state = "error"
+    transfer.status = "图标操作失败：读取超时"
+    transfer.changed.emit()
+    assert not editor.refresh_button.isHidden()
+    assert not editor.transfer_status.isHidden()
 
 
 def test_drag_and_slider_edge_have_no_hidden_pan_offset(qtbot, image_path):

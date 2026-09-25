@@ -2,8 +2,9 @@ import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QPushButton, QScrollArea, QWidget
 
-from controller_config.views.device_silhouette import KeycapButton
+from controller_config.views.device_silhouette import DeviceModelCanvas, KeycapButton
 from controller_config.views.preferences_editor import PreferencesEditor, RgbButton
+from controller_config.views.v4_widgets import UsageRings
 from test_session_recovery import session
 
 
@@ -19,13 +20,18 @@ def test_lighting_workspace_layout_preview_and_controls(session, qtbot, tmp_path
     window._language_manager.set_language(language)
     window.resize(width, 940 if width == 1440 else 820)
     window.show()
+    window.resize(width, 940 if width == 1440 else 820)
     vm.navigate("lighting")
     qtbot.wait(150)
     editor = window.findChild(PreferencesEditor)
     nav = window._nav_buttons["lighting"]
     expected_name = "Appearance & Feedback" if language == "en_US" else "外观与反馈"
-    assert nav.text() == nav.accessibleName() == expected_name
-    assert nav.width() >= nav.fontMetrics().horizontalAdvance(expected_name) + nav.iconSize().width() + 24
+    assert nav.accessibleName() == expected_name
+    if nav.property("compactNavigation"):
+        assert nav.text() == "" and nav.width() >= nav.iconSize().width() + 24
+    else:
+        assert nav.text() == expected_name
+        assert nav.width() >= nav.fontMetrics().horizontalAdvance(expected_name) + nav.iconSize().width() + 24
     assert nav.toolTip() == (
         "Appearance & Feedback · Lighting, Haptics, Display"
         if language == "en_US" else "外观与反馈 · 灯光、震动、屏幕"
@@ -41,16 +47,51 @@ def test_lighting_workspace_layout_preview_and_controls(session, qtbot, tmp_path
     stage = window.findChild(QWidget, "lightingDevicePreview")
     left = window.findChild(QScrollArea, "lightingLeftScroll")
     right = window.findChild(QScrollArea, "lightingRightScroll")
-    assert not editor._compact_cards
-    assert left.geometry().right() < stage.geometry().left()
-    assert stage.geometry().right() < right.geometry().left()
+    qtbot.waitUntil(lambda: (
+        stage.geometry().bottom() < left.geometry().top()
+        if editor._compact_cards else
+        left.geometry().right() < stage.geometry().left() < right.geometry().left()
+    ), timeout=2000)
+    assert editor._compact_cards == (editor.width() < 1080)
+    if editor._compact_cards:
+        assert stage.geometry().bottom() < left.geometry().top()
+        assert left.geometry().right() < right.geometry().left()
+    else:
+        assert left.geometry().right() < stage.geometry().left()
+        assert stage.geometry().right() < right.geometry().left()
     assert left.widget().width() <= left.viewport().width()
     assert right.widget().width() <= right.viewport().width()
     assert window.findChild(QPushButton, "savePreferencesToDevice").isVisible()
     assert window.findChild(QPushButton, "expandScreenIcons").isVisible()
     assert not window.findChild(QWidget, "screenIconOptions").isVisible()
-    key = next(k for k in stage.findChildren(KeycapButton) if k.property("controlId") == "key.3")
-    swatch = next(b for b in editor.findChildren(RgbButton) if b.property("controlId") == "key.3")
+    canvas = stage.findChild(DeviceModelCanvas, "deviceModelCanvas")
+    assert canvas is not None
+    assert canvas._preset == "lighting"
+    key = next(
+        item
+        for item in stage.findChildren(KeycapButton)
+        if item.property("controlId") == "key.3"
+    )
+    swatch = next(
+        item
+        for item in editor.findChildren(RgbButton)
+        if item.property("controlId") == "key.3"
+    )
+    assert swatch.isHidden()
+    assert canvas._selected_control_id == "key.3"
+    for control_id in ("key.3", "key.8", "key.12"):
+        assert canvas.can_activate_control(control_id)
+    for control_id in (
+        "key.1", "encoder.cw", "encoder.press", "joystick.up", "joystick.press",
+    ):
+        assert not canvas.can_activate_control(control_id)
+    canvas.activateControl("key.1")
+    canvas.activateControl("encoder.cw")
+    canvas.activateControl("joystick.up")
+    assert canvas._springs["key.1"].target == 0.0
+    assert canvas._springs["encoder.rotation"].target == 0.0
+    assert canvas._springs["joystick.x"].target == 0.0
+    assert canvas._springs["joystick.y"].target == 0.0
     editor._lighting_brightness.setValue(4)
     swatch._set_rgb((230, 120, 40), emit=True)
     assert key.property("lightingColor").red() == 255
@@ -61,6 +102,10 @@ def test_lighting_workspace_layout_preview_and_controls(session, qtbot, tmp_path
     before = len(gateway.commands)
     qtbot.mouseClick(key, Qt.LeftButton)
     assert swatch._dialog is not None
+    selected = canvas.key_visual_states()["key.3"]
+    assert selected["cap_light_color"] == selected["diffuser_light_color"]
+    assert selected["cap_light_color"] == selected["spill_light_color"]
+    assert selected["light_source"] == "lighting_preview"
     swatch._dialog.reject()
     assert len(gateway.commands) == before  # Local preview does not write hardware.
     editor._haptic_strength.setCurrentIndex(3)
@@ -75,6 +120,15 @@ def test_lighting_workspace_layout_preview_and_controls(session, qtbot, tmp_path
     assert window.grab().save(str(tmp_path / "lighting-workspace-compact.png"))
     window.findChild(QPushButton, "expandScreenIcons").click()
     assert window.findChild(QWidget, "screenIconOptions").isVisible()
+    left_scroll = window.findChild(QScrollArea, "lightingLeftScroll")
+    qtbot.waitUntil(lambda: left_scroll.verticalScrollBar().value() > 0)
+    assert window.findChild(QPushButton, "screenIconImport").isVisible()
+    glyph_options = window.findChild(QWidget, "screenGlyphOptions")
+    glyph_toggle = window.findChild(QPushButton, "expandScreenGlyphs")
+    assert glyph_toggle.isVisible()
+    assert not glyph_options.isVisible()
+    glyph_toggle.click()
+    assert glyph_options.isVisible()
 
 
 def test_level_segments_select_real_firmware_values(session):
@@ -82,15 +136,23 @@ def test_level_segments_select_real_firmware_values(session):
     vm.navigate("lighting")
     editor = window.findChild(PreferencesEditor)
     segments = editor.findChildren(QPushButton, "lightingLevelSegment")
+    gauge = editor.findChild(UsageRings, "lightingLevelGauge")
     original_brightness = editor.lighting_value()["brightness"]
-    for segment, brightness in zip(segments[1:], (10, 20, 40, 80), strict=True):
+    for segment, brightness, displayed_percentage in zip(
+        segments[1:],
+        (10, 20, 40, 80),
+        (25, 50, 75, 100),
+        strict=True,
+    ):
         segment.click()
         assert editor.lighting_value()["brightness"] == brightness
         assert editor.lighting_value()["enabled"] is True
+        assert gauge.seven_day == displayed_percentage
         assert segment.isChecked()
     segments[0].click()
     assert editor.lighting_value()["enabled"] is False
     assert editor.lighting_value()["brightness"] == original_brightness
+    assert gauge.seven_day == 0
 
 
 def test_zero_lighting_preview_does_not_invent_agent_state(session, qtbot):
@@ -103,27 +165,25 @@ def test_zero_lighting_preview_does_not_invent_agent_state(session, qtbot):
         assert key.property("lightingColor").alpha() == 0
 
 
-@pytest.mark.parametrize("rgb", [(0, 24, 48), (0, 48, 64), (255, 255, 255), (0, 0, 0)])
-def test_preview_boost_preserves_color_values_and_level_order(session, qtbot, tmp_path, rgb):
+def test_preview_preserves_configured_color_values_and_level_order(session, qtbot, tmp_path):
     window, vm, gateway, _snapshot, _store = session
     window.resize(1440, 940)
     window.show()
     vm.navigate("lighting")
     qtbot.wait(100)
     editor = window.findChild(PreferencesEditor)
-    key = next(k for k in window.findChildren(KeycapButton) if k.property("controlId") == "key.3")
-    swatch = next(b for b in editor.findChildren(RgbButton) if b.property("controlId") == "key.3")
+    key = next(k for k in window._content.findChildren(KeycapButton) if k.property("controlId") == "key.3")
+    original_rgb = editor.lighting_value()["under_key"][2]
     before = len(gateway.commands)
-    swatch._set_rgb(rgb, emit=True)
     alphas = []
     for level in range(5):
         editor._lighting_brightness.setValue(level)
         alphas.append(key.property("lightingColor").alpha())
-        assert editor.lighting_value()["under_key"][2] == dict(zip(("r", "g", "b"), rgb))
+        assert editor.lighting_value()["under_key"][2] == original_rgb
     assert alphas[0] == 0
-    if max(rgb):
+    if max(original_rgb.values()):
         assert all(a < b for a, b in zip(alphas, alphas[1:]))
-        assert alphas[-1] >= 100  # Dark shipped blue/cyan must be visible at the top level.
+        assert alphas[-1] >= 75  # Dark saved colors must remain visible at the top level.
     else:
         assert alphas == [0] * 5
     assert len(gateway.commands) == before

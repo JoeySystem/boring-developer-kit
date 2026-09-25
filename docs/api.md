@@ -1,3 +1,5 @@
+> 2026-09-25 / preview.10：控制台社区源码已同步至 **0.2.1**，SDK **1.1.0** / API **1.1**，增加 `save_host_task` 示例；固件仍保留 20260916.01 历史参考。本次变化以 [源码说明](../docs/console-source.md) 为准。以下旧版本记录不代表当前安装包。
+
 # Python SDK 1.0.0 API
 
 包名 `boring-console-sdk`，导入名 `boring_console_sdk`。SDK 是阻塞式的本地 API 客户端，连接地址和已登记扩展 ID 由控制台 Runner 提供。

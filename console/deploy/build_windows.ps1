@@ -54,7 +54,9 @@ if ($env:BORING_WINDOWS_SIGN_CERT_SHA1) {
     $SignTool = (Get-Command signtool.exe -ErrorAction SilentlyContinue).Source
     if (-not $SignTool) { throw 'signtool.exe from the Windows SDK is required for signing' }
 }
-$ValidateUpdateArgs = @($UpdateSource)
+& $Python (Join-Path $ProjectDir 'tools\stage_app_build.py') --assets $StagedAssets --origin custom
+if ($LASTEXITCODE -ne 0) { throw 'Community build staging failed' }
+$ValidateUpdateArgs = @($UpdateSource, '--build-origin', 'custom')
 if ($SkipInstaller) { $ValidateUpdateArgs += '--skip-installer' }
 if ($SignTool) { $ValidateUpdateArgs += '--has-signing-certificate' }
 $UpdateChannel = (& $Python (Join-Path $ProjectDir 'tools\validate_windows_update_config.py') @ValidateUpdateArgs).Trim()

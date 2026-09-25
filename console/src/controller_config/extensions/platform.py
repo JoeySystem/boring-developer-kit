@@ -5,8 +5,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
+from collections.abc import Callable
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QProcess, QTimer, Signal
 
 from controller_config.automation import (
     EventDispatchResult,
@@ -127,6 +128,7 @@ class ExtensionPlatformController(QObject):
         )
         self._action_coordinator.log_added.connect(self._append_log)
         self._proposals.changed.connect(self.changed)
+        self._api.action_result_received.connect(view_model.host_tasks.extension_result)
         self._api.session_opened.connect(
             lambda extension_id: self._append_log(
                 "success", "扩展已连接本地 API", extension_id
@@ -226,6 +228,37 @@ class ExtensionPlatformController(QObject):
         self._action_coordinator.cancel_extension(
             extension_id, "扩展已停用，action 已撤销"
         )
+        self.changed.emit()
+
+    def disable_async(self, extension_id: str, completed: Callable[[], None]) -> None:
+        """Disable all functions of a package; finish only after its runner exits."""
+        self._manager.disable(extension_id)
+        runtime = self._runtimes.get(extension_id)
+        process = runtime.process if runtime is not None else None
+        self._action_coordinator.cancel_extension(extension_id, "扩展正在停用")
+        if process is None or process.state() == QProcess.ProcessState.NotRunning:
+            if runtime is not None:
+                runtime.set_enabled(False)
+            self.changed.emit()
+            completed()
+            return
+
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        def finished(*_args) -> None:
+            timer.stop()
+            timer.deleteLater()
+            process.finished.disconnect(finished)
+            runtime.set_enabled(False)
+            self.changed.emit()
+            completed()
+        def force_stop() -> None:
+            if process.state() != QProcess.ProcessState.NotRunning:
+                process.kill()
+        process.finished.connect(finished)
+        timer.timeout.connect(force_stop)
+        process.terminate()
+        timer.start(500)
         self.changed.emit()
 
     def restart(self, extension_id: str) -> bool:
@@ -414,7 +447,13 @@ class ExtensionPlatformController(QObject):
         self._runtimes[extension_id] = runtime
         return runtime
 
-    def _runtime_state_changed(self, _state) -> None:
+    def _runtime_state_changed(self, record) -> None:
+        runtime = self._runtimes.get(record.extension_id)
+        process = runtime.process if runtime is not None else None
+        if (record.state in {ExtensionRuntimeState.STOPPED, ExtensionRuntimeState.FAILED,
+                             ExtensionRuntimeState.INSTALLED_DISABLED}
+                and process is not None and process.state() == QProcess.ProcessState.NotRunning):
+            self._view_model.host_tasks.extension_stopped(record.extension_id)
         self._proposals.reconcile()
         self.changed.emit()
 
@@ -439,7 +478,7 @@ class ExtensionPlatformController(QObject):
         return BoundExtensionAction(binding, extension.manifest)
 
     def _broadcast_event(self, event: DeviceEvent) -> None:
-        if event.kind != "prompt.triggered" or not isinstance(event.event_id, int):
+        if event.kind not in {"prompt.triggered", "host_action.triggered"} or not isinstance(event.event_id, int):
             return
         try:
             self._api.broadcast_event(

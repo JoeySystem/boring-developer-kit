@@ -12,7 +12,7 @@ from PySide6.QtNetwork import QLocalSocket
 
 
 API_MAJOR = 1
-API_MINOR = 0
+API_MINOR = 1
 DEFAULT_TIMEOUT_MS = 2_000
 _MAX_QUEUED_NOTIFICATIONS = 256
 
@@ -57,6 +57,7 @@ class BoringConsoleClient:
         self._notifications: dict[str, deque[dict[str, Any]]] = {
             "event": deque(),
             "action.invoke": deque(),
+            "action.cancel": deque(),
         }
 
     @classmethod
@@ -145,6 +146,17 @@ class BoringConsoleClient:
         message = self._next_notification("action.invoke", timeout)
         return None if message is None else self._action_value(message)
 
+    def next_cancellation(self, *, timeout_ms: int = 0) -> dict[str, Any] | None:
+        """Poll cooperative cancellation while working; report failed after stopping."""
+        if timeout_ms < 0:
+            raise ValueError("timeout_ms cannot be negative")
+        message = self._next_notification("action.cancel", timeout_ms)
+        if message is not None and (set(message) != {"kind", "invocation_id"}
+                                    or not isinstance(message["invocation_id"], str)
+                                    or not message["invocation_id"]):
+            raise RequestError("invalid_cancellation", "invalid cancellation notification")
+        return message
+
     def respond_action(
         self, invocation_id: str, status: str, message: str = ""
     ) -> None:
@@ -191,7 +203,7 @@ class BoringConsoleClient:
                 response = self._read_message(remaining_ms)
             except TimeoutError as exc:
                 raise ConnectionError(f"request {kind} timed out") from exc
-            if response.get("kind") in {"event", "action.invoke"}:
+            if response.get("kind") in {"event", "action.invoke", "action.cancel"}:
                 self._queue_notification(response)
                 continue
             if response.get("request_id") != request_id:
@@ -220,7 +232,7 @@ class BoringConsoleClient:
                 return None
             if message.get("kind") == expected_kind:
                 return message
-            if message.get("kind") in {"event", "action.invoke"}:
+            if message.get("kind") in {"event", "action.invoke", "action.cancel"}:
                 self._queue_notification(message)
                 continue
             raise RequestError(
@@ -271,6 +283,18 @@ class BoringConsoleClient:
         event = message.get("event")
         if not isinstance(event, dict):
             raise RequestError("invalid_event", "event must be an object")
+        if event.get("kind") == "host_action.triggered":
+            expected = {"schema_version", "kind", "source", "device_serial", "event_id", "payload"}
+            payload = event.get("payload")
+            if (set(event) != expected or type(event.get("schema_version")) is not int
+                    or event["schema_version"] != 1 or event.get("source") != "usb.host_action"
+                    or not isinstance(event.get("device_serial"), str) or not event["device_serial"].strip()
+                    or type(event.get("event_id")) is not int or event["event_id"] < 0
+                    or not isinstance(payload, dict) or set(payload) != {"action_id", "task_token"}
+                    or type(payload.get("action_id")) is not int or not 1 <= payload["action_id"] <= 255
+                    or not isinstance(payload.get("task_token"), str) or len(payload["task_token"]) != 32
+                    or any(char not in "0123456789abcdef" for char in payload["task_token"])):
+                raise RequestError("invalid_event", "invalid host_action.triggered event")
         return event
 
     @staticmethod
@@ -278,4 +302,16 @@ class BoringConsoleClient:
         invocation = message.get("invocation")
         if not isinstance(invocation, dict):
             raise RequestError("invalid_action", "invocation must be an object")
+        event = BoringConsoleClient._event_value({"event": invocation.get("event")})
+        if event.get("kind") == "host_action.triggered":
+            expected = {"schema_version", "invocation_id", "extension_id", "action_id",
+                        "device_serial", "context_revision", "event"}
+            if (set(invocation) != expected or type(invocation.get("schema_version")) is not int
+                    or invocation["schema_version"] != 1
+                    or any(not isinstance(invocation.get(key), str) or not invocation[key].strip()
+                           for key in ("invocation_id", "extension_id", "action_id", "device_serial"))
+                    or invocation["device_serial"] != event["device_serial"]
+                    or type(invocation.get("context_revision")) is not int
+                    or invocation["context_revision"] < 0):
+                raise RequestError("invalid_action", "invalid host action invocation")
         return invocation

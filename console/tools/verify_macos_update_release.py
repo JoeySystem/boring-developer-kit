@@ -10,6 +10,7 @@ from contextlib import contextmanager
 import json
 from pathlib import Path
 import plistlib
+import re
 import subprocess
 import tempfile
 from urllib.parse import unquote, urlparse
@@ -18,6 +19,29 @@ import xml.etree.ElementTree as ET
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 SPARKLE = '{http://www.andymatuschak.org/xml-namespaces/sparkle}'
+
+
+def _verify_minimum_system_version(item, candidate_app: Path, candidate: dict) -> str:
+    declared = candidate.get('LSMinimumSystemVersion')
+    offered = item.findtext(SPARKLE + 'minimumSystemVersion')
+    if not declared or not offered:
+        raise ValueError('Package and appcast must declare minimum macOS version')
+    # Inspect the pinned Qt runtime already present in the mounted package.
+    build = subprocess.run(
+        ['xcrun', 'vtool', '-show-build', str(candidate_app / 'Contents/MacOS/QtCore')],
+        check=True, capture_output=True, text=True,
+    ).stdout
+    requirements = re.findall(r'^\s*minos\s+([\d.]+)', build, re.MULTILINE)
+    if not requirements:
+        raise ValueError('Cannot read packaged Qt minimum macOS version')
+    def version(value):
+        parts = tuple(map(int, value.split('.')))
+        return parts + (0,) * (3 - len(parts))
+    if version(offered) != version(declared):
+        raise ValueError('Appcast minimum macOS version differs from the package')
+    if version(declared) < max(map(version, requirements)):
+        raise ValueError('Package minimum macOS version is lower than packaged Qt requires')
+    return declared
 
 
 @contextmanager
@@ -60,7 +84,16 @@ def verify(previous_app: Path, archives: Path, version: str, source_config: Path
     # Inspect the very archive just verified, not an unrelated local .app.
     with _mounted_app(archive) as candidate_app:
         candidate = plistlib.loads((candidate_app / 'Contents/Info.plist').read_bytes())
-        bundled = json.loads((candidate_app / 'Contents/MacOS/controller_config/assets/app-update-source.json').read_text())['macos']
+        packaged_assets = candidate_app / 'Contents/MacOS/controller_config/assets'
+        bundled = json.loads((packaged_assets / 'app-update-source.json').read_text())['macos']
+        try:
+            candidate_origin = json.loads(
+                (packaged_assets / 'app-build.json').read_text(encoding='utf-8')
+            ).get('origin')
+        except (OSError, UnicodeError, ValueError, TypeError) as exc:
+            raise ValueError('Candidate package must declare official build origin') from exc
+        if candidate_origin != 'official':
+            raise ValueError('Candidate package must declare official build origin')
         if candidate['CFBundleVersion'] != version:
             raise ValueError('Packaged version differs from the appcast')
         if any(key != public_key for key in (candidate.get('SUPublicEDKey'), bundled.get('public_key'))):
@@ -71,8 +104,10 @@ def verify(previous_app: Path, archives: Path, version: str, source_config: Path
             candidate.get('SUFeedURL'), bundled.get('feed_url'), configured.get('feed_url'),
         )):
             raise ValueError('Update feed changed; channel migration needs a separate old-client upgrade plan')
+        minimum_system_version = _verify_minimum_system_version(item, candidate_app, candidate)
     return {'previous_version': previous['CFBundleVersion'], 'candidate_version': version,
-            'public_key_unchanged': True, 'feed_unchanged': True,
+            'build_origin': 'official', 'public_key_unchanged': True, 'feed_unchanged': True,
+            'minimum_system_version': minimum_system_version,
             'archive_signature_verified_by_previous_key': True, 'archive': str(archive)}
 
 

@@ -8,9 +8,11 @@ from controller_config.protocol.contract import Contract, ContractError
 
 ACTION_LABELS = {
     "key": "键盘按键",
+    "key_gesture": "单击 / 双击",
     "consumer": "媒体与系统",
     "mouse": "鼠标",
-    "macro": "按键序列",
+    "macro": "连续按键",
+    "host_action": "电脑任务",
     "prompt": "提示词",
     "profile": "切换 Profile",
     "device": "设备功能",
@@ -20,12 +22,15 @@ ACTION_LABELS = {
 FIELD_LABELS = {
     "usage": "Usage",
     "modifiers": "修饰键 Usage",
+    "double_usage": "双击按键",
+    "double_modifiers": "双击组合键",
     "button": "鼠标按键",
     "x": "水平移动",
     "y": "垂直移动",
     "wheel": "滚轮",
     "pan": "横向滚动",
-    "macro_id": "按键序列",
+    "macro_id": "连续按键",
+    "action_id": "电脑任务",
     "prompt_id": "快捷提示词",
     "profile_id": "目标 Profile",
     "name": "设备功能",
@@ -153,7 +158,7 @@ def action_field_choices(
     platform: str = "",
 ) -> tuple[tuple[str, Any], ...]:
     """Return user-facing choices without changing the protocol value."""
-    if action_type == "key" and field.name == "usage":
+    if action_type in {"key", "key_gesture"} and field.name in {"usage", "double_usage"}:
         minimum = field.minimum if field.minimum is not None else 0
         maximum = field.maximum if field.maximum is not None else -1
         choices = [
@@ -188,6 +193,10 @@ def action_field_label(action_type: str, field_name: str) -> str:
     labels = {
         ("key", "usage"): "按键",
         ("key", "modifiers"): "组合键",
+        ("key_gesture", "usage"): "单击按键",
+        ("key_gesture", "modifiers"): "单击组合键",
+        ("key_gesture", "double_usage"): "双击按键",
+        ("key_gesture", "double_modifiers"): "双击组合键",
         ("consumer", "usage"): "媒体功能",
         ("device", "name"): "设备功能",
     }
@@ -236,16 +245,64 @@ def action_definitions(
     return tuple(definitions)
 
 
+def is_voice_input_action(action: object) -> bool:
+    """Recognize the voice presets, without relabeling other shortcut gestures."""
+    return (
+        isinstance(action, dict)
+        and action.get("type") == "key_gesture"
+        and action.get("usage") in {104, 228, 230, 231}
+        and action.get("double_usage") == 40
+        and not action.get("modifiers")
+        and not action.get("double_modifiers")
+    )
+
+
+def is_encoder_scroll(control_id: str, action: object) -> bool:
+    return (
+        control_id in {"encoder.cw", "encoder.ccw"}
+        and isinstance(action, dict)
+        and action.get("type") == "mouse"
+        and bool(action.get("wheel"))
+        and not any(action.get(field) for field in ("x", "y", "pan", "button"))
+    )
+
+
+def mapping_display_name(control_id: str, mapping: dict | None) -> str:
+    name = str(mapping.get("short_name", "未映射")) if mapping else "未映射"
+    if mapping and is_voice_input_action(mapping.get("action")) and name.strip().casefold() == "typeless 语音":
+        return "语音输入"
+    if mapping and is_encoder_scroll(control_id, mapping.get("action")) and name.strip().casefold() in {
+        "scroll up", "scroll down", "向上滚动", "向下滚动", "滚轮向上", "滚轮向下",
+    }:
+        return "顺时针" if control_id == "encoder.cw" else "逆时针"
+    return name
+
+
 def describe_action(
     action: object,
     *,
     platform: str = "",
     compact: bool = False,
+    control_id: str = "",
 ) -> str:
     """Return a user-facing description derived from the protocol action."""
     if not isinstance(action, dict):
         return "未映射"
     action_type = action.get("type")
+    if action_type == "key_gesture":
+        if is_voice_input_action(action):
+            return "语音启停 · 双击发送"
+        single = describe_action(
+            {"type": "key", "usage": action.get("usage"), "modifiers": action.get("modifiers")},
+            platform=platform,
+            compact=compact,
+        )
+        double = describe_action(
+            {"type": "key", "usage": action.get("double_usage"), "modifiers": action.get("double_modifiers")},
+            platform=platform,
+            compact=compact,
+        )
+        return f"单击 {single} / 双击 {double}"
     if action_type == "key":
         usage = _integer_or_none(action.get("usage"))
         if usage is None:
@@ -270,7 +327,11 @@ def describe_action(
             return "媒体动作无效"
         return CONSUMER_USAGE_LABELS.get(usage, f"媒体 Usage {usage}")
     if action_type == "mouse":
+        if is_encoder_scroll(control_id, action):
+            return "页面滚动"
         return _describe_mouse_action(action, compact)
+    if action_type == "host_action":
+        return "运行电脑任务"
     if action_type == "macro":
         return f"运行按键序列 {action.get('macro_id', '—')}"
     if action_type == "prompt":
@@ -315,7 +376,7 @@ def _key_usage_label(usage: int, platform: str, compact: bool) -> str:
     if 104 <= usage <= 115:
         return f"F{usage - 91}"
     if 224 <= usage <= 231:
-        return _modifier_label(usage, platform, compact)
+        return modifier_choice_label(usage, platform)
     if compact and usage == 42:
         return "退格"
     if compact and usage == 75:

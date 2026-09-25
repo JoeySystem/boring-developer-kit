@@ -42,8 +42,6 @@ def session(qtbot, qapp, contract, tmp_path):
         initial_language=SIMPLIFIED_CHINESE,
     )
     window = MainWindow(view_model, language_manager=language)
-    # The application-wide translator and Show event filter must leave with
-    # this test window, rather than accumulate on the session-scoped qapp.
     language.setParent(window)
 
     def cleanup_window(_window):
@@ -376,4 +374,143 @@ def test_unresolved_exit_dialog_explains_unknown_result_in_both_languages(
         assert "保存结果未确认" in title
         assert "退出不会取消" in message
         assert "导出草稿并退出" in buttons
+    window._language_manager.set_language(SIMPLIFIED_CHINESE)
+
+
+def test_failed_ble_link_accepts_new_usb_without_retrying_failed_ports(session, monkeypatch):
+    """An attached USB cable must recover a failed BLE configuration session."""
+    from controller_config.models import PortCandidate
+
+    _window, view_model, gateway, snapshot, _store = session
+    scans, connections = [], []
+    monkeypatch.setattr(gateway, "scan", lambda **kwargs: scans.append(kwargs))
+    monkeypatch.setattr(gateway, "connect_port", connections.append)
+    view_model.connect_candidate("ble:known")
+    gateway.failure.emit(BootstrapKind.READ_FAILED, "蓝牙配置读取失败", "services unavailable")
+    assert view_model._reconnect_timer.isActive()
+    failed = view_model.model
+    view_model._scan_for_reconnect()
+    assert scans == [{"usb_only": True}]
+    gateway.candidates_found.emit(())
+    gateway.candidates_found.emit((PortCandidate("ble:known", transport="bluetooth"),))
+    assert view_model.model == failed
+    assert connections == ["ble:known"]
+
+    gateway.candidates_found.emit((PortCandidate("/dev/cu.usbmodem-new"),))
+    assert connections[-1] == "/dev/cu.usbmodem-new"
+    gateway.failure.emit(BootstrapKind.READ_FAILED, "读取超时", "GET_CONFIG timeout")
+    gateway.candidates_found.emit((PortCandidate("/dev/cu.usbmodem-new"),))
+    assert connections.count("/dev/cu.usbmodem-new") == 1
+
+    # Only an explicit retry retries that failed port.
+    view_model.refresh()
+    gateway.candidates_found.emit((PortCandidate("/dev/cu.usbmodem-new"),))
+    assert connections.count("/dev/cu.usbmodem-new") == 2
+    gateway.snapshot_ready.emit(replace(snapshot, port_name="/dev/cu.usbmodem-new"))
+    assert view_model.model.state is AppState.READY
+    assert not view_model._reconnect_timer.isActive()
+
+
+@pytest.mark.parametrize("scan_state", ["disconnected", "refresh"])
+def test_bluetooth_query_failure_does_not_blacklist_previous_usb(session, monkeypatch, scan_state):
+    from controller_config.models import PortCandidate
+
+    _window, view_model, gateway, snapshot, _store = session
+    connections = []
+    monkeypatch.setattr(gateway, "scan", lambda **kwargs: None)
+    monkeypatch.setattr(gateway, "connect_port", connections.append)
+    if scan_state == "disconnected":
+        gateway.disconnected.emit("USB cable removed")
+    else:
+        view_model.refresh()
+    gateway.failure.emit(BootstrapKind.READ_FAILED, "无法读取系统蓝牙连接状态", "Bluetooth unavailable")
+    assert snapshot.port_name not in view_model._failed_connection_ports
+    gateway.candidates_found.emit((PortCandidate(snapshot.port_name),))
+    assert connections == [snapshot.port_name]
+
+
+def test_discovery_timeout_retries_bluetooth_and_keeps_draft(session, monkeypatch):
+    from controller_config.models import PortCandidate
+    window, view_model, gateway, snapshot, _store = session
+    snapshot = replace(snapshot, port_name="ble:known")
+    gateway.snapshot_ready.emit(snapshot)
+    view_model.rename_profile(0, "Unsaved work")
+    original_draft = view_model.draft
+    scans, connections = [], []
+    monkeypatch.setattr(gateway, "scan", lambda **kwargs: scans.append(kwargs))
+    monkeypatch.setattr(gateway, "scan_reconnect", lambda port, **kwargs: scans.append((port, kwargs)), raising=False)
+    monkeypatch.setattr(gateway, "connect_port", connections.append)
+    gateway.failure.emit(BootstrapKind.DISCOVERY_INTERRUPTED, "query delayed", "timeout")
+
+    assert view_model.model.state is AppState.DISCONNECTED
+    assert view_model._reconnect_timer.isActive()
+    assert view_model._reconnect_timer.interval() == 5000
+    assert not scans  # Retry after a delay, not inside the failed callback.
+    view_model._scan_for_reconnect()
+    assert scans == [("ble:known", {"usb_only": False})]
+    gateway.candidates_found.emit((PortCandidate("ble:known", transport="bluetooth"),))
+    assert connections == ["ble:known"]
+    gateway.snapshot_ready.emit(snapshot)
+    assert view_model.model.state is AppState.READY
+    assert not view_model._reconnect_timer.isActive()
+    assert view_model.draft is original_draft and original_draft.is_dirty
+    assert not any(command.name == "SET_CONFIG" for command in gateway.commands)
+
+
+def test_discovery_timeout_manual_retry_does_not_wait_for_timer(session, monkeypatch):
+    _window, view_model, gateway, _snapshot, _store = session
+    scans = []
+    monkeypatch.setattr(gateway, "scan", lambda **kwargs: scans.append(kwargs))
+    gateway.failure.emit(BootstrapKind.DISCOVERY_INTERRUPTED, "query delayed", "timeout")
+    view_model.refresh()
+    assert scans == [{}]
+    assert not view_model._reconnect_timer.isActive()
+    assert view_model._reconnect_timer.interval() == 500
+
+
+def test_failed_connection_retry_preserves_visible_prompt_edits(session, monkeypatch):
+    from PySide6.QtWidgets import QPushButton
+
+    window, view_model, gateway, snapshot, _store = session
+    view_model.navigate("prompts")
+    editor = _editor(window)
+    editor._select_direction(3)
+    editor._name.setText("Keep this draft")
+    editor._body.setPlainText("Unsaved work")
+    scans = []
+    monkeypatch.setattr(gateway, "scan", lambda **kwargs: scans.append(kwargs))
+    gateway.failure.emit(BootstrapKind.READ_FAILED, "读取失败", "GET_CONFIG timeout")
+    retry = window.findChild(QPushButton, "connectionRetry")
+    assert not retry.isHidden()
+    assert window._device_auth_summary.text() == "配置连接失败"
+    retry.click()
+    assert scans == [{}]
+    gateway.snapshot_ready.emit(snapshot)
+    assert _editor(window)._name.text() == "Keep this draft"
+    assert _editor(window)._body.toPlainText() == "Unsaved work"
+
+
+def test_authenticity_failure_never_schedules_automatic_retry(session, monkeypatch):
+    _window, view_model, gateway, _snapshot, _store = session
+    scans = []
+    monkeypatch.setattr(gateway, "scan", lambda **kwargs: scans.append(kwargs))
+    gateway.failure.emit(BootstrapKind.AUTHENTICITY_FAILED, "认证失败", "invalid signature")
+    assert not view_model._reconnect_timer.isActive()
+    view_model._scan_for_reconnect()
+    assert not scans
+
+
+@pytest.mark.parametrize("language, expected_title, expected_retry", [
+    ("zh_CN", "配置连接失败", "重新连接"),
+    ("en_US", "Configuration Connection Failed", "Reconnect"),
+    ("ja_JP", "設定用接続に失敗しました", "再接続"),
+])
+def test_connection_failure_labels_are_translated(session, language, expected_title, expected_retry):
+    window, _view_model, gateway, _snapshot, _store = session
+    window._language_manager.set_language(language)
+    gateway.failure.emit(BootstrapKind.READ_FAILED, "读取失败", "GET_CONFIG timeout")
+    assert window._device_auth_summary.text() == expected_title
+    assert window._connection_retry.text() == expected_retry
+    if language != "zh_CN":
+        assert "配置连接失败" not in window._connection_message.text()
     window._language_manager.set_language(SIMPLIFIED_CHINESE)

@@ -82,7 +82,12 @@ class ScreenGlyphEditor(QWidget):
     write_requested = Signal(bytes)
     reset_requested = Signal()
 
-    def __init__(self, drafts: dict[tuple[str, str, str], GlyphDraft]) -> None:
+    def __init__(
+        self,
+        drafts: dict[tuple[str, str, str], GlyphDraft],
+        *,
+        show_heading: bool = True,
+    ) -> None:
         super().__init__(objectName="screenGlyphEditor")
         self.drafts = drafts
         self.payload: bytes | None = None
@@ -100,7 +105,8 @@ class ScreenGlyphEditor(QWidget):
             layout.addWidget(widget)
             return widget
 
-        label("功能／模式小图标 · 单色点阵")
+        if show_heading:
+            label("功能／模式小图标 · 单色点阵")
         label("选择一个图标单独修改；未修改的图标继续保留，每个图标都可单独恢复默认。")
         self.selector = QComboBox(objectName="screenGlyphSelector")
         self.selector.setAccessibleName(translate_ui_text("选择图标"))
@@ -115,6 +121,7 @@ class ScreenGlyphEditor(QWidget):
         self.device_label = label("设备当前图标：尚未读取")
         self.device_preview = QLabel(objectName="screenGlyphDevicePreview")
         self.device_preview.setAlignment(Qt.AlignCenter)
+        self.device_preview.hide()
         layout.addWidget(self.device_preview)
         label("转换后预览 · 尚未写入设备")
         self.preview = QLabel(objectName="screenGlyphPreview")
@@ -122,12 +129,29 @@ class ScreenGlyphEditor(QWidget):
         self.preview.setWordWrap(True)
         layout.addWidget(self.preview)
         self.filename = label("尚未选择图片", "screenGlyphFilename")
-        label("素材要求", "screenGlyphRequirementsTitle")
-        label("静态 PNG、JPG/JPEG · 最大 10 MiB · 总像素不超过 1600 万", "screenGlyphFormats")
-        label("不支持 GIF、APNG 动图、SVG 或视频。", "screenGlyphUnsupportedFormats")
-        label("推荐透明背景、轮廓清晰的简单图形。照片、细小文字和复杂渐变缩小后可能难以辨认。", "screenGlyphRecommendation")
-        label("等比例缩放为单色点阵，不保留原图颜色；保留设备原有位置、文字和状态颜色。", "screenGlyphConversion")
-        label("白色显示，黑色或透明区域隐藏；黑色图案可勾选下方“反色”。", "screenGlyphContrast")
+        self.requirements_toggle = QPushButton(objectName="screenGlyphRequirementsToggle")
+        self.requirements_toggle.setCheckable(True)
+        set_translatable_text(self.requirements_toggle, "素材要求")
+        layout.addWidget(self.requirements_toggle)
+        requirements = QWidget(objectName="screenGlyphRequirements")
+        requirements_layout = QVBoxLayout(requirements)
+        requirements_layout.setContentsMargins(0, 4, 0, 4)
+        requirements_layout.setSpacing(6)
+        for source, name in (
+            ("静态 PNG、JPG/JPEG · 最大 10 MiB · 总像素不超过 1600 万", "screenGlyphFormats"),
+            ("不支持 GIF、APNG 动图、SVG 或视频。", "screenGlyphUnsupportedFormats"),
+            ("推荐透明背景、轮廓清晰的简单图形。照片、细小文字和复杂渐变缩小后可能难以辨认。", "screenGlyphRecommendation"),
+            ("等比例缩放为单色点阵，不保留原图颜色；保留设备原有位置、文字和状态颜色。", "screenGlyphConversion"),
+            ("白色显示，黑色或透明区域隐藏；黑色图案可勾选下方“反色”。", "screenGlyphContrast"),
+        ):
+            widget = QLabel(objectName=name)
+            widget.setWordWrap(True)
+            widget.setTextFormat(Qt.PlainText)
+            set_translatable_text(widget, source)
+            requirements_layout.addWidget(widget)
+        self.requirements_toggle.toggled.connect(requirements.setVisible)
+        layout.addWidget(requirements)
+        requirements.hide()
         self.import_button = QPushButton(objectName="screenGlyphImport")
         set_translatable_text(self.import_button, "导入图片…")
         self.import_button.clicked.connect(self._choose_image)
@@ -232,6 +256,9 @@ class ScreenGlyphEditor(QWidget):
         metadata = t.metadata if t else None
         if entry and metadata and metadata.get("id") == entry["id"] and t.pixels is not None:
             self.device_preview.setPixmap(QPixmap.fromImage(glyph_preview(t.pixels, entry["width"], entry["height"])))
+        self.device_preview.setVisible(bool(
+            entry and metadata and metadata.get("id") == entry["id"] and t.pixels is not None
+        ))
         set_translatable_text(self.device_label, "设备当前图标：内置默认" if metadata and metadata.get("source") == "default"
                               else "设备当前图标：自定义（已读回）" if metadata else "设备当前图标：尚未读取")
         supported = bool(t and t.supported and t.device_key)

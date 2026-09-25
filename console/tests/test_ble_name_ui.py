@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import QLabel, QMessageBox, QWidget
+from PySide6.QtWidgets import QLabel, QMessageBox, QPushButton, QWidget
 
 from controller_config.i18n import LanguageManager, translate_ui_text
 from controller_config.views.desktop_update import DesktopUpdateUi
@@ -31,7 +31,7 @@ class NameSession(QObject):
 
     @property
     def dirty(self):
-        return self.draft != self.result['saved_name']
+        return self.result is None or self.draft != self.result['saved_name']
 
     def edit(self, value):
         self.draft = value
@@ -85,6 +85,38 @@ def edit(widget, text):
     widget.name_input.textEdited.emit(text)
 
 
+def test_default_name_keeps_one_write_action_and_read_failure_reuses_it(editor, qtbot):
+    widget, vm = editor
+    visible_actions = {
+        button.objectName()
+        for button in widget.findChildren(QPushButton)
+        if button.isVisible()
+    }
+    assert visible_actions == {'saveBleName', 'bleNameHelpToggle'}
+    assert not widget.name_help.isVisible()
+
+    vm.ble_name.result = None
+    vm.ble_name.draft = ''
+    vm.ble_name.message = '名称读取失败，输入已保留'
+    vm.ble_name.changed.emit()
+    assert widget.save_button.text() == '重新读取名称'
+    assert widget.save_button.isEnabled()
+    assert not widget.name_help_toggle.isVisible()
+    qtbot.mouseClick(widget.save_button, Qt.LeftButton)
+    assert vm.ble_name.calls[-1] == ('read',)
+
+
+def test_restore_default_only_appears_for_custom_saved_name(editor, qtbot):
+    widget, vm = editor
+    assert not widget.default_button.isVisible()
+    vm.ble_name.result.update(saved_name='Office Mist', active_name='Office Mist')
+    vm.ble_name.draft = 'Office Mist'
+    vm.ble_name.changed.emit()
+    assert widget.default_button.isVisible()
+    qtbot.mouseClick(widget.default_button, Qt.LeftButton)
+    assert vm.ble_name.calls[-1] == ('restore', 'Boring Mist')
+
+
 def test_name_bytes_and_validation_do_not_truncate_input(editor):
     widget, vm = editor
     edit(widget, '办公室键盘')
@@ -121,10 +153,45 @@ def test_save_waits_for_readback_and_retains_failed_input(editor, qtbot):
     vm.ble_name.changed.emit()
     assert widget.saved.text() == 'Office Mist'
     assert widget.active.text() == 'Boring Mist'
-    assert '重启' in widget.restart.text()
+    assert '关机再开机' in widget.restart.text()
     assert not widget.save_button.isEnabled()
     qtbot.mouseClick(widget.default_button, Qt.LeftButton)
     assert vm.ble_name.calls[-1] == ('restore', 'Boring Mist')
+
+
+def test_reconnect_confirms_active_name_and_help_does_not_change_pairing(editor, qtbot):
+    widget, vm = editor
+    vm.ble_name.result.update(saved_name='Office Mist', restart_required=True)
+    vm.ble_name.draft = 'Office Mist'
+    vm.ble_name.changed.emit()
+    assert widget.restart.isVisible()
+    assert widget.active.text() == 'Boring Mist'
+    qtbot.mouseClick(widget.name_help_toggle, Qt.LeftButton)
+    assert widget.name_help.isVisible()
+    assert '退出并重新打开' in widget.name_help.text()
+    assert vm.ble_name.calls == []
+
+    vm.ble_name.result.update(active_name='Office Mist', restart_required=False)
+    vm.ble_name.message = '已保存，当前名称已生效'
+    vm.ble_name.changed.emit()
+    assert not widget.restart.isVisible()
+    assert widget.message.isVisible()
+    assert '已生效' in widget.message.text()
+    assert widget.name_help.isVisible()  # Preserve the user's expanded help.
+
+
+@pytest.mark.parametrize('language', ['zh_CN', 'en_US', 'ja_JP'])
+def test_name_refresh_help_has_explicit_three_language_copy(language):
+    for source in (
+        '电脑仍显示旧名称？',
+        '请将设备关机再开机；重新连接后，控制台会自动确认新名称是否生效。',
+        '先确认新名称已生效，再重新打开电脑的蓝牙设置。Mac 请退出并重新打开“系统设置”。旧条目不代表设备仍在线，无需为改名删除配对。',
+    ):
+        from controller_config.text_catalog import TextCatalog
+        translated = TextCatalog.load().translate(source, language)
+        assert translated
+        if language != 'zh_CN':
+            assert translated != source
 
 
 def test_offline_old_firmware_and_maintenance_are_explained(editor):
@@ -132,16 +199,18 @@ def test_offline_old_firmware_and_maintenance_are_explained(editor):
     edit(widget, '离线草稿')
     vm.ble_name.connected = False
     vm.reason = '离线草稿，连接设备后可保存'
+    vm.ble_name.message = vm.reason
     vm.changed.emit(None)
     assert widget.name_input.isEnabled()
     assert widget.name_input.text() == '离线草稿'
     assert not widget.save_button.isEnabled()
     assert '连接' in widget.reason.text()
+    assert not widget.message.isVisible()
     vm.ble_name.supported = False
     vm.reason = '此固件暂不支持修改蓝牙名称'
     vm.changed.emit(None)
     assert not widget.name_input.isEnabled()
-    assert not widget.read_button.isEnabled()
+    assert not widget.save_button.isEnabled()
     assert not vm.ble_name.calls
     vm.ble_name.supported = vm.ble_name.connected = True
     vm.reason = '设备维护或写入尚未结束，请稍后修改蓝牙名称'
@@ -151,15 +220,16 @@ def test_offline_old_firmware_and_maintenance_are_explained(editor):
     vm.reason = '设备当前只读，不能保存蓝牙名称'
     vm.changed.emit(None)
     assert not widget.save_button.isEnabled()
-    assert widget.read_button.isEnabled()
 
 
-@pytest.mark.parametrize('language,save_label,limit_fragment', [
-    ('zh_CN', '保存名称', '字节'),
-    ('en_US', 'Save name', 'bytes'),
-    ('ja_JP', '名前を保存', 'バイト'),
+@pytest.mark.parametrize('language,save_label,read_label,limit_fragment', [
+    ('zh_CN', '保存名称', '重新读取名称', '字节'),
+    ('en_US', 'Save name', 'Read name again', 'bytes'),
+    ('ja_JP', '名前を保存', '名前を再読み取り', 'バイト'),
 ])
-def test_three_languages_keep_device_values_literal(editor, qapp, language, save_label, limit_fragment):
+def test_three_languages_keep_device_values_literal(
+    editor, qapp, language, save_label, read_label, limit_fragment
+):
     widget, vm = editor
     manager = LanguageManager(qapp, initial_language='zh_CN', persist=False)
     vm.ble_name.result.update(saved_name='保存名称', active_name='<b>Device</b>')
@@ -174,6 +244,11 @@ def test_three_languages_keep_device_values_literal(editor, qapp, language, save
     assert widget.identity.text() == 'CP01-1234'
     edit(widget, '键' * 9)
     assert limit_fragment in widget.validation.text()
+    vm.ble_name.result = None
+    vm.ble_name.draft = ''
+    vm.ble_name.changed.emit()
+    manager.retranslate_widget_tree(widget)
+    assert widget.save_button.text() == read_label
     manager.set_language('zh_CN')
     qapp.removeEventFilter(manager)
     manager.deleteLater()
@@ -199,7 +274,12 @@ def test_name_session_refresh_keeps_editor_and_focus(editor):
 def test_busy_name_operation_blocks_normal_close(monkeypatch):
     warnings = []
     monkeypatch.setattr(QMessageBox, 'warning', lambda *args: warnings.append(args))
-    window = SimpleNamespace(_view_model=SimpleNamespace(ble_name=SimpleNamespace(busy=True)))
+    window = SimpleNamespace(
+        _view_model=SimpleNamespace(ble_name=SimpleNamespace(busy=True),
+                                    normal_agent=SimpleNamespace(busy=False)),
+        _connection_transition_model=None,
+        _cancel_connection_transition=lambda: None,
+    )
     event = QCloseEvent()
     MainWindow.closeEvent(window, event)
     assert not event.isAccepted()
@@ -231,5 +311,10 @@ def test_restart_update_respects_name_draft_cancel():
 
 
 def test_restart_update_blocks_busy_name_before_workspace_operations():
-    ui = SimpleNamespace(vm=SimpleNamespace(ble_name=SimpleNamespace(busy=True)))
+    ui = SimpleNamespace(
+        vm=SimpleNamespace(ble_name=SimpleNamespace(busy=True),
+                           normal_agent=SimpleNamespace(busy=False, pending_drafts=lambda: ()),
+                           host_tasks=SimpleNamespace(running=False)),
+        window=SimpleNamespace(findChild=lambda *_: None),
+    )
     assert DesktopUpdateUi.blocked_reason(ui) == '蓝牙名称正在保存或读回，请稍后操作'

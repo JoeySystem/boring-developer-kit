@@ -1,19 +1,18 @@
 from __future__ import annotations
 
-import pytest
+from PySide6.QtCore import QSettings, Qt
+from PySide6.QtWidgets import QMessageBox, QPushButton
 
-from PySide6.QtCore import QPoint, QSettings, Qt
-from PySide6.QtWidgets import QLabel, QMessageBox, QPushButton
-
-from controller_config.i18n import ENGLISH, LanguageManager, SIMPLIFIED_CHINESE
-from controller_config.transport.demo import DemoGateway
-from controller_config.viewmodels.main import MainViewModel
-from controller_config.views.main_window import MainWindow
-from controller_config.views.onboarding import (
+from controller_config.i18n import LanguageManager, SIMPLIFIED_CHINESE
+from controller_config.onboarding import (
     ONBOARDING_COMPLETED_KEY,
     ONBOARDING_STEPS,
     OnboardingDialog,
 )
+from controller_config.models import AppState, ScreenModel
+from controller_config.transport.demo import DemoGateway
+from controller_config.viewmodels.main import MainViewModel
+from controller_config.views.main_window import MainWindow
 
 
 def _settings(tmp_path) -> QSettings:
@@ -37,8 +36,8 @@ def _window(qtbot, qapp, contract, settings: QSettings) -> MainWindow:
         language_manager=language,
         onboarding_settings=settings,
     )
+
     def cleanup(_window):
-        # Page navigation can start asynchronous icon reads in the demo device.
         view_model.screen_icon.attach(None)
         view_model.screen_glyphs.attach(None)
         view_model.shutdown()
@@ -49,119 +48,127 @@ def _window(qtbot, qapp, contract, settings: QSettings) -> MainWindow:
     return window
 
 
-def test_first_visible_window_shows_guide_once(
+def test_first_visible_window_starts_with_multiple_ai_choices(qtbot, qapp, contract, tmp_path):
+    from controller_config.ai_setup import AI_SETUP_COMPLETED_KEY
+    from controller_config.views.ai_setup import AISetupDialog
+
+    settings = _settings(tmp_path)
+    window = _window(qtbot, qapp, contract, settings)
+    qtbot.waitUntil(lambda: window._ai_setup_dialog is not None, timeout=1000)
+    dialog = window._ai_setup_dialog
+    assert isinstance(dialog, AISetupDialog)
+    assert dialog.isModal()
+    assert not dialog._next.isEnabled()
+    dialog._choices["codex"].setChecked(True)
+    dialog._choices["claude"].setChecked(True)
+    assert dialog.selected() == ["codex", "claude"]
+    dialog.reject()
+    assert not settings.value(AI_SETUP_COMPLETED_KEY, False, type=bool)
+    second = _window(qtbot, qapp, contract, settings)
+    qtbot.waitUntil(lambda: second._ai_setup_dialog is not None)
+    assert second._ai_setup_dialog.selected() == ["codex", "claude"]
+    second._ai_setup_dialog.reject()
+    settings.setValue(AI_SETUP_COMPLETED_KEY, True)
+    third = _window(qtbot, qapp, contract, settings)
+    qtbot.wait(30)
+    assert third._ai_setup_dialog is None
+
+
+def test_existing_user_is_not_forced_back_into_optional_ai_setup(
+    qtbot, qapp, contract, tmp_path
+) -> None:
+    from controller_config.ai_setup import AI_SETUP_STARTED_KEY
+    from controller_config.voice_setup import voice_provider
+
+    settings = _settings(tmp_path)
+    settings.setValue(ONBOARDING_COMPLETED_KEY, True)
+    settings.setValue(AI_SETUP_STARTED_KEY, True)
+    settings.setValue("ui/voice_input_software", "typeless")
+    window = _window(qtbot, qapp, contract, settings)
+    qtbot.waitUntil(lambda: window._view_model.draft is not None)
+
+    assert window._ai_setup_dialog is None
+    snapshot = window._view_model.model.snapshot
+    draft = window._view_model.draft
+    assert snapshot is not None
+    assert draft.config == snapshot.config
+    assert voice_provider(
+        settings,
+        snapshot.identity["serial"],
+        snapshot.active_profile_id,
+        "codex",
+    ) == "typeless"
+
+
+def test_home_has_one_book_entry_and_reopens_animated_device_guide(
     qtbot, qapp, contract, tmp_path
 ) -> None:
     settings = _settings(tmp_path)
+    settings.setValue(ONBOARDING_COMPLETED_KEY, True)
     window = _window(qtbot, qapp, contract, settings)
+    qtbot.wait(30)
+    assert window._onboarding_dialog is None
+    qtbot.waitUntil(lambda: window.findChild(QPushButton, "openOnboardingGuide") is not None)
 
+    for language, expected in (
+        ("zh_CN", "设备操作演示"),
+        ("en_US", "Device controls demo"),
+        ("ja_JP", "デバイスの操作デモ"),
+    ):
+        window._language_manager.set_language(language)
+        reopen = window.findChild(QPushButton, "openOnboardingGuide")
+        assert reopen is not None
+        assert reopen.text() == ""
+        assert not reopen.icon().isNull()
+        assert reopen.accessibleName() == expected
+        assert reopen.toolTip() == expected
+    assert window.findChild(QPushButton, "openCompanionGuide") is None
+    assert window.findChild(QPushButton, "openDetailedGuide") is None
+
+    qtbot.mouseClick(window._nav_buttons["settings"], Qt.MouseButton.LeftButton)
+    qtbot.waitUntil(lambda: not reopen.isVisibleTo(window))
+    qtbot.mouseClick(window._nav_buttons["overview"], Qt.MouseButton.LeftButton)
+    reopen = window.findChild(QPushButton, "openOnboardingGuide")
+    assert reopen is not None
+
+    qtbot.mouseClick(reopen, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(lambda: window._onboarding_dialog is not None, timeout=1000)
     dialog = window._onboarding_dialog
     assert isinstance(dialog, OnboardingDialog)
-    assert dialog.isModal()
-    assert len(ONBOARDING_STEPS) == 7
-
-    next_button = dialog.findChild(QPushButton, "onboardingNext")
-    assert next_button is not None
-    for expected_step in range(1, len(ONBOARDING_STEPS)):
-        qtbot.mouseClick(next_button, Qt.MouseButton.LeftButton)
-        assert dialog.step_index == expected_step
-    assert next_button.text() == "开始设置"
-    qtbot.mouseClick(next_button, Qt.MouseButton.LeftButton)
-    qtbot.waitUntil(lambda: window._onboarding_dialog is None, timeout=1000)
-    assert settings.value(ONBOARDING_COMPLETED_KEY, False, type=bool) is True
-
-    second = _window(qtbot, qapp, contract, settings)
-    qtbot.wait(30)
-    assert second._onboarding_dialog is None
+    assert dialog.step_index == 0
+    assert dialog.player.error_message
+    assert "社区源码版" in dialog._cue.text()
 
 
-def test_guide_can_be_skipped_and_reopened_from_settings(
+def test_disconnected_home_keeps_book_guide_entry(
     qtbot, qapp, contract, tmp_path
 ) -> None:
     settings = _settings(tmp_path)
+    settings.setValue(ONBOARDING_COMPLETED_KEY, True)
     window = _window(qtbot, qapp, contract, settings)
-    qtbot.waitUntil(lambda: window._onboarding_dialog is not None, timeout=1000)
-    dialog = window._onboarding_dialog
-    assert dialog is not None
+    window._view_model._set(ScreenModel(AppState.NO_DEVICE, "尚未发现 BORING 设备"))
 
-    skip = dialog.findChild(QPushButton, "onboardingSkip")
-    assert skip is not None
-    qtbot.mouseClick(skip, Qt.MouseButton.LeftButton)
-    qtbot.waitUntil(lambda: window._onboarding_dialog is None, timeout=1000)
-
-    qtbot.mouseClick(window._nav_buttons["settings"], Qt.MouseButton.LeftButton)
     reopen = window.findChild(QPushButton, "openOnboardingGuide")
     assert reopen is not None
-    assert reopen.text() == "重新查看引导"
+    assert reopen.text() == ""
+    assert not reopen.icon().isNull()
     qtbot.mouseClick(reopen, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(lambda: window._onboarding_dialog is not None, timeout=1000)
-    assert window._onboarding_dialog.step_index == 0
+    assert isinstance(window._onboarding_dialog, OnboardingDialog)
 
 
-def test_guide_is_fully_available_in_english(qtbot, qapp, tmp_path) -> None:
-    manager = LanguageManager(
-        qapp,
-        settings=_settings(tmp_path),
-        initial_language=ENGLISH,
-        persist=False,
-    )
-    dialog = OnboardingDialog()
-    qtbot.addWidget(dialog)
-    manager.retranslate_widget_tree(dialog)
-
-    assert dialog.findChild(QLabel, "onboardingProgress").text() == "Step 1 of 7"
-    assert dialog.findChild(QLabel, "onboardingTitle").text() == (
-        "Connect Your Device"
-    )
-    next_button = dialog.findChild(QPushButton, "onboardingNext")
-    assert next_button is not None
-    for _ in range(len(ONBOARDING_STEPS) - 1):
-        qtbot.mouseClick(next_button, Qt.MouseButton.LeftButton)
-    assert next_button.text() == "Get Started"
-
-
-@pytest.mark.parametrize("step_index", range(len(ONBOARDING_STEPS)))
-def test_guide_opens_matching_page(qtbot, qapp, contract, tmp_path, step_index):
-    window = _window(qtbot, qapp, contract, _settings(tmp_path))
-    qtbot.waitUntil(lambda: window._onboarding_dialog is not None)
-    qtbot.waitUntil(lambda: window._view_model.draft is not None, timeout=5000)
-    dialog = window._onboarding_dialog
-    for _ in range(step_index):
-        dialog.next_step()
-    qtbot.mouseClick(dialog._open_page, Qt.MouseButton.LeftButton)
-    qtbot.waitUntil(lambda: window._onboarding_dialog is None)
-    assert window._view_model.page == ONBOARDING_STEPS[step_index].page
-    assert not window._view_model.draft.is_dirty
-
-
-@pytest.mark.parametrize("language", [SIMPLIFIED_CHINESE, ENGLISH])
-def test_all_guide_steps_fit_and_translate(qtbot, qapp, tmp_path, language):
-    manager = LanguageManager(qapp, settings=_settings(tmp_path),
-                              initial_language=language, persist=False)
-    dialog = OnboardingDialog()
-    from controller_config.views.main_window import APP_STYLE
-    dialog.setStyleSheet(APP_STYLE)
-    qtbot.addWidget(dialog)
-    manager.retranslate_widget_tree(dialog)
-    dialog.show()
-    for index, step in enumerate(ONBOARDING_STEPS):
-        qtbot.wait(20)
-        assert dialog._open_page.isVisible()
-        assert dialog.rect().contains(dialog._next.mapTo(dialog, QPoint(
-            dialog._next.width() - 1, dialog._next.height() - 1)))
-        if language == ENGLISH:
-            assert not any('\u4e00' <= char <= '\u9fff' for char in
-                           dialog._description.text() + dialog._action.text())
-        assert dialog.grab().save(str(tmp_path / f"guide-{language}-{index}.png"))
-        if index < len(ONBOARDING_STEPS) - 1:
-            dialog.next_step()
-
-
-def test_guide_explains_missing_device_without_blocking(qtbot, qapp, contract, tmp_path, monkeypatch):
-    window = _window(qtbot, qapp, contract, _settings(tmp_path))
+def test_guide_page_navigation_still_respects_missing_device(
+    qtbot, qapp, contract, tmp_path, monkeypatch
+) -> None:
+    settings = _settings(tmp_path)
+    settings.setValue(ONBOARDING_COMPLETED_KEY, True)
+    window = _window(qtbot, qapp, contract, settings)
     messages = []
-    monkeypatch.setattr(QMessageBox, "information", lambda *args: messages.append(args[2]))
+    monkeypatch.setattr(
+        QMessageBox,
+        "information",
+        lambda *args: messages.append(args[2]),
+    )
     assert window._view_model.draft is None
     window._open_onboarding_page("lighting")
     assert window._view_model.page == "overview"

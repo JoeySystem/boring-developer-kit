@@ -22,7 +22,7 @@ def test_available_snooze_manual_expiry_and_downloaded(session,tmp_path):
     ui, snap = offer(session)
     now=[1000.]
     ui.reminders=UpdateReminders(QSettings(str(tmp_path/'pause.ini'),QSettings.IniFormat),clock=lambda:now[0])
-    ui.refresh(force=True)
+    ui.refresh()
     assert ui.window._nav_buttons['settings'].property('firmwareUpdateAvailable') is True
     ui.snooze.click()
     assert ui.window._nav_buttons['settings'].property('firmwareUpdateAvailable') is False
@@ -30,7 +30,7 @@ def test_available_snooze_manual_expiry_and_downloaded(session,tmp_path):
     assert ui.window._nav_buttons['settings'].property('firmwareUpdateAvailable') is True
     ui.snooze.click()
     now[0]+=86400
-    ui.refresh(force=True)
+    ui.refresh()
     assert ui.window._nav_buttons['settings'].property('firmwareUpdateAvailable') is True
     offer(session, state=RemoteFirmwareState.DOWNLOADED)
     assert ui.window._nav_buttons['settings'].property('firmwareUpdateAvailable') is True
@@ -73,13 +73,50 @@ def test_manual_check_bypasses_pause_after_async_response(session,tmp_path):
     assert ui.window._nav_buttons['settings'].property('firmwareUpdateAvailable') is True
 
 
-def test_unrelated_view_model_changes_do_not_relayout_navigation(session, monkeypatch):
-    ui, _ = offer(session)
-    calls = []
-    original_context = ui.context
-    monkeypatch.setattr(ui, 'context', lambda: (calls.append(True), original_context())[1])
+def test_opening_offer_acknowledges_only_that_device_and_target_for_session(session, qtbot):
+    window, vm, gateway, _, _ = session
+    window.show()
+    ui, snap = offer(session)
+    button = window._nav_buttons['settings']
 
-    ui.vm.changed.emit(ui.vm.model)
-    ui.vm.changed.emit(ui.vm.model)
+    assert button.firmware_notice_visible()
+    button.click()
+    assert vm.page == 'settings'
+    assert button.property('firmwareUpdateAvailable') is True
+    qtbot.waitUntil(lambda: ui.action.isVisible())
+    ui.action.click()
+    assert vm.page == 'firmware'
+    assert button.property('firmwareUpdateAvailable') is False
+    ui.refresh()
+    assert button.property('firmwareUpdateAvailable') is False
 
-    assert calls == []
+    # Downloading the release does not make the same reminder return.
+    offer(session, state=RemoteFirmwareState.DOWNLOADED)
+    assert button.property('firmwareUpdateAvailable') is False
+
+    # A newer target is a new reminder even during the same app session.
+    offer(session, build='20260913.03-gabcdef12')
+    assert button.property('firmwareUpdateAvailable') is True
+
+    # Acknowledging device A must not hide the same release for device B.
+    ui.open_update()
+    device_b = replace(snap, identity={**snap.identity, 'serial': 'DEVICE-B'})
+    gateway.snapshot_ready.emit(device_b)
+    vm._remote_firmware_device = tuple(
+        str(device_b.identity[key]) for key in ('serial', 'product_id', 'hardware_id')
+    )
+    vm._set_remote_firmware(RemoteFirmwareCheck(
+        state=RemoteFirmwareState.AVAILABLE,
+        release=RemoteFirmwareRelease(
+            {
+                'version': '0.3.0-alpha.1',
+                'build_id': '20260913.03-gabcdef12',
+                'size': 123,
+                'product_id': device_b.identity['product_id'],
+                'hardware_id': device_b.identity['hardware_id'],
+            },
+            'https://example.test/manifest.json',
+            'https://example.test/a.bin',
+        ),
+    ))
+    assert button.property('firmwareUpdateAvailable') is True

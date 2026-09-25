@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from importlib.resources import files
 
 # Installed Hooks must exit quickly without Qt, a window or a second serial
 # owner. Keep this dispatch before every GUI/platform import.
@@ -27,10 +28,12 @@ from controller_config.qt_bootstrap import prepare_qt_platform_plugins
 prepare_qt_platform_plugins()
 
 from PySide6.QtCore import QSettings, QTimer  # noqa: E402
+from PySide6.QtGui import QIcon  # noqa: E402
 from PySide6.QtWidgets import QApplication, QMessageBox, QStyle  # noqa: E402
 
 from controller_config.protocol.contract import Contract, ContractError
 from controller_config.protocol.device_auth import load_default_authenticator
+from controller_config.build_identity import load_build_identity
 from controller_config.claude_usage import ClaudeUsageMonitor
 from controller_config.codex_usage import CodexUsageMonitor
 from controller_config.background_helper import (
@@ -45,6 +48,7 @@ from controller_config.extensions.bindings import ExtensionBindingError
 from controller_config.extensions.platform import ExtensionPlatformController
 from controller_config.i18n import LanguageManager
 from controller_config.prompt_helper import MacClipboardPaster, PromptHelperRuntime
+from controller_config.settings_migration import migrate_legacy_user_state
 from controller_config.transport.demo import DemoGateway
 from controller_config.transport.device_gateway import DeviceGateway
 from controller_config.viewmodels.main import MainViewModel
@@ -86,25 +90,38 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    build_identity = load_build_identity()
     app = QApplication(sys.argv[:1])
     app.setWindowIcon(app.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
-    # Community settings and drafts are separate from the official application.
-    app.setApplicationName("BORING Console Community")
-    app.setApplicationDisplayName("BORING Console Community")
+    app.setApplicationName(build_identity.application_name)
+    app.setApplicationDisplayName(build_identity.application_display_name)
     app.setOrganizationName("BORING")
-    instance = ApplicationInstanceCoordinator()
-    try:
-        if not instance.acquire(activate_existing=not args.background):
-            return 0
-    except RuntimeError as exc:
-        QMessageBox.critical(None, "无法启动 BORING 控制台", str(exc))
-        return 2
     ui_settings = QSettings()
+    migrate_legacy_user_state(ui_settings, build_identity)
     language_manager = LanguageManager(
         app,
         settings=ui_settings,
         use_system_default=True,
     )
+    from controller_config.claude_hooks import configure_default_identity
+    configure_default_identity(
+        owner_id=build_identity.claude_owner_id,
+        origin=build_identity.runtime_origin,
+        endpoint_path=build_identity.claude_endpoint_path,
+    )
+    instance = ApplicationInstanceCoordinator(origin=build_identity.runtime_origin)
+    try:
+        if not instance.acquire(activate_existing=not args.background):
+            if instance.conflict_message:
+                QMessageBox.information(
+                    None,
+                    language_manager.translate("BORING 控制台已在运行"),
+                    language_manager.translate(instance.conflict_message),
+                )
+            return 0
+    except RuntimeError as exc:
+        QMessageBox.critical(None, "无法启动 BORING 控制台", str(exc))
+        return 2
     try:
         contract = Contract.load()
         authenticator = load_default_authenticator()
@@ -154,7 +171,11 @@ def main(argv: list[str] | None = None) -> int:
         QMessageBox.critical(None, "扩展平台无法启动", str(exc))
         return 2
     launch_agent = (
-        MacLaunchAgent(background_program_arguments())
+        MacLaunchAgent(
+            background_program_arguments(),
+            label=build_identity.launch_agent_label,
+            other_labels=(build_identity.other_launch_agent_label,),
+        )
         if sys.platform == "darwin"
         else None
     )
@@ -167,23 +188,32 @@ def main(argv: list[str] | None = None) -> int:
         codex_usage_monitor=codex_usage,
         claude_usage_monitor=claude_usage,
         language_manager=language_manager,
+        build_origin=build_identity.runtime_origin,
     )
     window = MainWindow(
         view_model,
         language_manager=language_manager,
         background_controller=background,
         onboarding_settings=ui_settings,
+        build_identity=build_identity,
     )
+    if sys.platform == "darwin" and not args.demo:
+        focus_activator.failed.connect(window.show_agent_focus_error)
     from controller_config.desktop_update import create_desktop_updater
     from controller_config.views.desktop_update import DesktopUpdateUi
     if not args.demo:
-        update_ui = DesktopUpdateUi(window)
+        update_ui = DesktopUpdateUi(window, build_identity=build_identity)
         window._desktop_update_ui = update_ui
-        updater = create_desktop_updater(update_ui.prepare_restart, parent=app)
+        updater = create_desktop_updater(
+            update_ui.prepare_restart,
+            parent=app,
+            build_identity=build_identity,
+        )
         update_ui.attach(updater)
         updater.quit_requested.connect(app.quit)
         app.aboutToQuit.connect(updater.shutdown)
         QTimer.singleShot(1500, updater.start)
+    from controller_config.views.device_silhouette import DeviceModelCanvas
     background.attach_window(window)
     instance.activate_requested.connect(background.show_window)
     app.aboutToQuit.connect(view_model.shutdown)

@@ -2,7 +2,6 @@
 import copy
 
 import pytest
-from PySide6.QtCore import QRect
 from PySide6.QtWidgets import QLabel, QLineEdit, QPushButton, QScrollArea, QWidget
 
 from controller_config.transactions import ConfigTransactionState
@@ -44,6 +43,7 @@ def test_mapping_apply_disables_without_changes_and_after_readback(session):
     editor.set_action({'type': 'key', 'usage': 27, 'modifiers': []})
     assert apply.isEnabled()
     apply.click()
+    assert window.findChild(QPushButton, 'saveMappingDraft').isHidden()
     generation = complete_write(vm, gateway, snapshot)
     apply = window.findChild(QPushButton, 'applyMappingToDevice')
     assert not apply.isEnabled()
@@ -55,6 +55,53 @@ def test_mapping_apply_disables_without_changes_and_after_readback(session):
     assert not window.findChild(QWidget, 'syncSummaryCard').findChildren(QWidget, 'card')
     window.findChild(QLineEdit, 'mappingShortNameEditor').setText('New name')
     assert apply.isEnabled()
+
+
+def test_two_mapping_writes_read_back_and_survive_same_device_reconnect(session):
+    window, vm, gateway, snapshot, _ = session
+    window._select_physical_control('key.8')
+    editor = window.findChild(ActionEditor)
+
+    editor.set_action({'type': 'key', 'usage': 20, 'modifiers': []})  # Q
+    window.findChild(QPushButton, 'applyMappingToDevice').click()
+    complete_write(vm, gateway, snapshot)
+    first_snapshot = vm.model.snapshot
+    assert first_snapshot is not None
+    assert vm.draft.mapping(0, 'key.8')['action']['usage'] == 20
+
+    gateway.disconnected.emit('unplugged')
+    gateway.snapshot_ready.emit(first_snapshot)
+    assert not vm.draft.is_dirty
+    assert vm.draft.mapping(0, 'key.8')['action']['usage'] == 20
+
+    window._select_physical_control('key.8')
+    window.findChild(ActionEditor).set_action(
+        {'type': 'key', 'usage': 26, 'modifiers': []}  # W
+    )
+    window.findChild(QPushButton, 'applyMappingToDevice').click()
+    complete_write(vm, gateway, first_snapshot)
+
+    assert not vm.draft.is_dirty
+    assert vm.draft.mapping(0, 'key.8')['action']['usage'] == 26
+    names = [command.name for command in gateway.commands]
+    assert names.count('VALIDATE_CONFIG') == 2
+    assert names.count('SET_CONFIG') == 2
+    assert names.count('GET_CONFIG') == 2
+
+
+def test_connected_mapping_flow_has_one_customer_action_and_offline_keeps_local_save(session):
+    window, vm, gateway, _snapshot, _ = session
+    window._select_physical_control('key.8')
+    apply = window.findChild(QPushButton, 'applyMappingToDevice')
+    local = window.findChild(QPushButton, 'saveMappingDraft')
+    assert not apply.isHidden()
+    assert local.isHidden()
+
+    gateway.disconnected.emit('unplugged')
+    apply = window.findChild(QPushButton, 'applyMappingToDevice')
+    local = window.findChild(QPushButton, 'saveMappingDraft')
+    assert not apply.isEnabled()
+    assert not local.isHidden()
 
 
 def test_haptic_has_direct_apply_and_becomes_synced_after_readback(session):
@@ -69,24 +116,39 @@ def test_haptic_has_direct_apply_and_becomes_synced_after_readback(session):
     assert button.isEnabled()
     assert not vm.draft.is_dirty  # No separate save-draft click.
     button.click()
+    assert window.findChild(QPushButton, 'savePreferencesDraft').isHidden()
     complete_write(vm, gateway, snapshot)
     assert not window.findChild(QPushButton, 'savePreferencesToDevice').isEnabled()
     assert '已同步' in window.findChild(QLabel, 'preferencesSyncSummary').text()
     assert not window.findChild(QWidget, 'lightingSyncCard').findChildren(QWidget, 'card')
 
 
+def test_connected_preferences_flow_has_one_customer_action_and_offline_keeps_local_save(session):
+    window, vm, gateway, _snapshot, _ = session
+    vm.navigate('lighting')
+    device = window.findChild(QPushButton, 'savePreferencesToDevice')
+    local = window.findChild(QPushButton, 'savePreferencesDraft')
+    assert not device.isHidden()
+    assert local.isHidden()
+
+    gateway.disconnected.emit('unplugged')
+    device = window.findChild(QPushButton, 'savePreferencesToDevice')
+    local = window.findChild(QPushButton, 'savePreferencesDraft')
+    assert not device.isEnabled()
+    assert not local.isHidden()
+
+
 @pytest.mark.parametrize('selected', [None, 'key.8'])
-def test_mapping_write_has_one_confirmation_in_side_rail(session, selected):
+def test_generic_save_writes_without_a_second_confirmation(session, selected):
     window, vm, gateway, snapshot, _ = session
     if selected:
         window._select_physical_control(selected)
     vm.rename_profile(snapshot.active_profile_id, 'Changed')
-    vm.prepare_device_write()
-    gateway.command_completed.emit('VALIDATE_CONFIG', _ack('VALIDATE_CONFIG'))
-    buttons = window.findChildren(QPushButton, 'confirmConfigurationWrite')
-    assert len(buttons) == 1
-    rail = window.findChild(QScrollArea, 'overviewScroll').findChild(QPushButton, 'confirmConfigurationWrite')
-    assert rail is buttons[0]
+    save = window.findChild(QPushButton, 'saveConfigurationToDevice')
+    assert save is not None and save.isEnabled()
+    save.click()
+    complete_write(vm, gateway, snapshot)
+    assert window.findChild(QPushButton, 'confirmConfigurationWrite') is None
 
 
 def test_mode_context_identifies_edited_profile_without_switching_it(session):
@@ -107,8 +169,6 @@ def test_navigation_keeps_destinations_in_place(session, qtbot, language):
     window._language_manager.set_language(language)
     window.resize(1280, 820)
     window.show()
-    window._fit_window_to_available_area(QRect(0, 0, 1280, 820))
-    window.resize(1280, 820)
     qtbot.wait(60)
     positions = {name: button.geometry() for name, button in window._nav_buttons.items()}
     for page in ('lighting', 'settings', 'overview'):
@@ -122,8 +182,6 @@ def test_mapping_write_keeps_container_selection_and_visible_actions(session, qt
     window, vm, gateway, snapshot, _ = session
     window.resize(1100, 700)
     window.show()
-    window._fit_window_to_available_area(QRect(0, 0, 1100, 700))
-    window.resize(1100, 700)
     window._select_physical_control('key.8')
     qtbot.wait(60)
     scroll = window.findChild(QScrollArea, 'overviewScroll')

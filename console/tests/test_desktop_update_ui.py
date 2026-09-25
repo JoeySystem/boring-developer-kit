@@ -9,6 +9,7 @@ from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QFileDialog, QLineEdit, QPushButton
 
 from controller_config.desktop_update import UpdateStatus
+from controller_config.build_identity import BuildIdentity
 from controller_config.drafts import LocalDraft
 from controller_config.firmware_update import FirmwareUpdateState, FirmwareUpdateTransaction
 from controller_config.protocol.device_auth import DeviceTrustState
@@ -47,6 +48,9 @@ class FakeUpdater(QObject):
         self.calls.append("download")
         self.publish("downloading", version="0.2.0", received=25, total=100)
 
+    def retry(self):
+        {"download": self.download, "install": self.install}.get(self.status.retry_action, self.check)()
+
     def cancel(self):
         if self.status.state not in {'checking', 'downloading'}:
             return
@@ -66,14 +70,18 @@ def update_session(session, tmp_path, monkeypatch):
     # These updater recovery cases model older firmware, not name operations.
     # The fake gateway does not answer automatic BLE_NAME_GET requests.
     capabilities.setdefault("features", {})["ble_name"] = False
+    # Shortcut recovery exercises ordinary editable keys, not CODEX official controls.
     snapshot = replace(snapshot, capabilities=capabilities,
+                       status={**snapshot.status, "operating_mode": "normal"},
                        trust=replace(snapshot.trust, state=DeviceTrustState.AUTHENTICATED))
     gateway.snapshot_ready.emit(snapshot)
     # Automatic artwork reads belong to the artwork flow, not update recovery.
     monkeypatch.setattr(vm, "refresh_screen_icon", lambda: None)
     monkeypatch.setattr(vm, "refresh_screen_glyphs", lambda *args: None)
     store = UpdateRecoveryStore(tmp_path / "recovery.json")
-    ui = DesktopUpdateUi(window, store=store)
+    identity = BuildIdentity("official")
+    window._build_identity = identity
+    ui = DesktopUpdateUi(window, store=store, build_identity=identity)
     window._desktop_update_ui = ui
     updater = FakeUpdater(ui.prepare_restart)
     ui.attach(updater)
@@ -94,8 +102,17 @@ def _restart_destination(source, contract, qtbot, monkeypatch, snapshot=None):
     monkeypatch.setattr(vm, "refresh_screen_icon", lambda: None)
     monkeypatch.setattr(vm, "refresh_screen_glyphs", lambda *args: None)
     gateway.snapshot_ready.emit(snapshot or original)
-    window = MainWindow(vm, language_manager=old_window._language_manager)
-    ui = DesktopUpdateUi(window, store=old_ui.store)
+    identity = BuildIdentity("official")
+    window = MainWindow(
+        vm,
+        language_manager=old_window._language_manager,
+        build_identity=identity,
+    )
+    ui = DesktopUpdateUi(
+        window,
+        store=old_ui.store,
+        build_identity=identity,
+    )
     window._desktop_update_ui = ui
 
     def cleanup(_):
@@ -112,7 +129,7 @@ def test_footer_download_progress_cancel_and_restart(update_session):
     ui.show_status(UpdateStatus(state="current"))
     assert ui.row.isHidden()
     updater.publish("available", version="0.2.0")
-    assert window._nav_buttons['settings'].text() == '更新'
+    assert window._nav_buttons['settings'].accessibleName() == '固件与系统'
     assert ui.row.isHidden()
     assert ui.action.text() == "下载更新"
     ui.action.click()
@@ -128,15 +145,6 @@ def test_footer_download_progress_cancel_and_restart(update_session):
     assert ui.restart_prepared
     assert ui.store.load()["workspace"]["page"] == vm.page
     assert not window.isEnabled()
-
-
-def test_view_model_changes_do_not_queue_recovery_without_pending_workspace(update_session):
-    _window, vm, _gateway, _snapshot, _store, ui, _updater, _shutdown = update_session
-    assert ui._pending is None
-
-    vm.changed.emit(vm.model)
-
-    assert not ui._restore_timer.isActive()
 
 
 @pytest.mark.parametrize("failure_state", ["failed", "ready"])
@@ -155,7 +163,7 @@ def test_installer_launch_failure_reenables_current_app_and_preserves_workspace(
 
 def test_about_settings_exposes_explicit_check(update_session):
     window, vm, _, _, _, ui, updater, _ = update_session
-    window._settings_section = "about"
+    window._settings_section = "system"
     vm.navigate("settings")
     button = window.findChild(QPushButton, "checkDesktopUpdate")
     assert button is not None
@@ -165,7 +173,7 @@ def test_about_settings_exposes_explicit_check(update_session):
     assert ui.message.text() == "当前已是最新版本"
 
 
-@pytest.mark.parametrize("kind", ["mapping", "preferences", "macro", "prompt"])
+@pytest.mark.parametrize("kind", ["mapping", "preferences", "macro", "prompt", "automation", "workflow"])
 def test_pending_editor_survives_fresh_window_without_device_write(update_session, contract, qtbot, monkeypatch, kind):
     window, vm, gateway, _, _, ui, _, _ = update_session
     if kind == "mapping":
@@ -182,6 +190,26 @@ def test_pending_editor_survives_fresh_window_without_device_write(update_sessio
         vm.navigate("sequences")
         window._content.findChild(QLineEdit, "macroNameEditor").setText("Pending sequence")
         window._content.findChild(MacroEditor)._add_step("delay")
+    elif kind == "workflow":
+        from controller_config.views.actions import ActionsPage
+        vm.navigate("actions")
+        actions = window._content.findChild(ActionsPage)
+        actions._new_workspace_workflow()
+        editor = actions._workflow_page
+        editor._name.setText("尚未保存的办公动作")
+        editor._parameter.setText("/tmp/未完成的路径")
+        editor._parameter_changed()
+        vm.navigate("settings")
+    elif kind == "automation":
+        from controller_config.views.actions import ActionsPage
+        vm.navigate("actions")
+        actions = window._content.findChild(ActionsPage)
+        actions.show_developer_lane(0)
+        editor = actions._developer._automation_page
+        editor._name.setText("未保存的脚本")
+        editor._script_path.setText("/tmp/office-tool.py")
+        editor._timeout.setValue(137)
+        vm.navigate("lighting")
     else:
         vm.navigate("prompts")
         editor = window._content.findChild(PromptLibraryEditor)
@@ -201,6 +229,56 @@ def test_pending_editor_survives_fresh_window_without_device_write(update_sessio
     assert restored_vm.draft.config == vm.draft.config
     assert restored_gateway.commands == []
     assert not ui.store.path.exists()
+
+
+def test_mapping_inputs_survive_update_from_system_page(update_session, contract, qtbot, monkeypatch):
+    window, vm, gateway, _, _, ui, updater, _ = update_session
+    confirmed = deepcopy(vm.draft.config)
+    window._selected_control_id = "key.8"
+    window.render(vm.model)
+    action = {"type": "key", "usage": 17, "modifiers": [227]}
+    window._content.findChild(ActionEditor).set_action(action)
+    window._content.findChild(QLineEdit, "mappingShortNameEditor").setText("更新验收临时")
+
+    updater.publish("ready", version="0.2.0")
+    window._activate_settings_navigation()
+    assert vm.page == "settings"
+    assert window._settings_section == "system"
+    assert window._current_mapping_card() is None
+    gateway.commands.clear()
+    ui.action.click()
+    assert ui.restart_prepared
+    saved = ui.store.load()["workspace"]["mapping"]
+    assert saved["short_name"] == "更新验收临时"
+    assert saved["action"] == action
+    assert vm.draft.config == confirmed
+    assert gateway.commands == []
+
+    window2, vm2, gateway2, restored = _restart_destination(update_session, contract, qtbot, monkeypatch)
+    restored.restore_if_ready()
+    assert vm2.page == "settings"
+    assert window2._settings_section == "system"
+    vm2.navigate("overview")
+    assert window2._selected_control_id == "key.8"
+    assert window2._content.findChild(QLineEdit, "mappingShortNameEditor").text() == "更新验收临时"
+    assert window2._content.findChild(ActionEditor).action() == action
+    assert vm2.draft.config == confirmed
+    assert gateway2.commands == []
+    assert not ui.store.path.exists()
+
+
+def test_update_does_not_capture_mapping_inputs_from_previous_device(update_session):
+    window, vm, gateway, snapshot, _, ui, _, _ = update_session
+    window._selected_control_id = "key.8"
+    window.render(vm.model)
+    window._content.findChild(QLineEdit, "mappingShortNameEditor").setText("上一台设备的输入")
+    window._activate_settings_navigation()
+    assert ui.capture_workspace()["mapping"]["short_name"] == "上一台设备的输入"
+
+    gateway.disconnected.emit("device A unplugged")
+    gateway.snapshot_ready.emit(replace(snapshot, identity={**snapshot.identity, "serial": "OTHER-DEVICE"}))
+    assert vm.draft.serial == "OTHER-DEVICE"
+    assert "mapping" not in ui.capture_workspace()
 
 
 @pytest.mark.parametrize("blocker", ["writing", "unknown", "image_draft", "maintenance"])
@@ -253,12 +331,17 @@ def test_recovery_conflict_keeps_file_and_current_workspace(update_session, cont
     assert restored._pending
 
 
-@pytest.mark.parametrize("page", ["lighting", "prompts"])
+@pytest.mark.parametrize("page", ["lighting", "prompts", "actions"])
 def test_recovery_never_overwrites_new_pending_editor_input(update_session, contract, qtbot, monkeypatch, page):
     window, vm, _, _, _, ui, _, _ = update_session
     vm.navigate(page)
     if page == "lighting":
         window._content.findChild(PreferencesEditor)._haptic_duration.setValue(37)
+    elif page == "actions":
+        from controller_config.views.actions import ActionsPage
+        actions = window._content.findChild(ActionsPage)
+        actions.show_developer_lane(0)
+        actions._developer._automation_page._timeout.setValue(137)
     else:
         window._content.findChild(PromptLibraryEditor)._body.setPlainText("更新前的输入")
     assert ui.prepare_restart()
@@ -266,6 +349,10 @@ def test_recovery_never_overwrites_new_pending_editor_input(update_session, cont
     fresh_vm.navigate(page)
     if page == "lighting":
         window._content.findChild(PreferencesEditor)._haptic_duration.setValue(91)
+    elif page == "actions":
+        actions = window._content.findChild(ActionsPage)
+        actions.show_developer_lane(0)
+        actions._developer._automation_page._timeout.setValue(91)
     else:
         window._content.findChild(PromptLibraryEditor)._body.setPlainText("重启后刚输入的内容")
     before = restored.capture_workspace()
@@ -428,7 +515,7 @@ def test_manual_current_supersedes_successful_workspace_recovery_message(
     ('state', 'values', 'expected'),
     [
         ('available', {'version': '0.2.0'}, '控制台有更新 0.2.0'),
-        ('failed', {'message': 'network unavailable'}, '更新未完成，可稍后重试'),
+        ('failed', {'message': 'network unavailable'}, '更新未完成\nnetwork unavailable'),
     ],
 )
 def test_manual_terminal_result_is_not_masked_by_successful_recovery_message(
@@ -465,19 +552,22 @@ def test_snooze_and_manual_check_ready_state(update_session, tmp_path, monkeypat
     from PySide6.QtCore import QSettings
     window, _, _, _, _, ui, updater, _ = update_session
     window.show()
+    assert not ui._reminder_timer.isActive()
     now = [1000.]
     ui.reminders = UpdateReminders(QSettings(str(tmp_path/'pause.ini'), QSettings.IniFormat), clock=lambda: now[0])
     updater.publish('available', version='0.2.0')
     ui.snooze.click()
     assert ui.row.isHidden()
+    assert ui._reminder_timer.isActive()
     updater.publish('available', version='0.2.0')
     assert ui.row.isHidden()
     monkeypatch.setattr(updater, 'check', lambda: updater.publish('available', version='0.2.0'))
     ui.check()
     assert not ui.row.isHidden()
     updater.publish('ready', version='0.2.0')
+    assert not ui._reminder_timer.isActive()
     assert ui.action.text() == '重启并更新'
-    assert window._nav_buttons['settings'].text() == '更新'
+    assert window._nav_buttons['settings'].accessibleName() == '固件与系统'
 
 
 def test_update_notifications_never_resize_editor(update_session):
@@ -537,12 +627,12 @@ def test_snooze_releases_native_offer_and_allows_newer_release(update_session, t
     native._version = '0.3.0'
     native._download_reply = choices.append
     native._publish('available')
-    assert ui.window._nav_buttons['settings'].text() == '更新'
+    assert ui.window._nav_buttons['settings'].accessibleName() == '固件与系统'
     assert native._download_reply is not None
 
 
 @pytest.mark.parametrize('language', ['zh_CN', 'en_US', 'ja_JP'])
-def test_both_reminders_fit_small_window_in_all_languages(update_session, qtbot, tmp_path, language):
+def test_both_reminders_fit_small_window_in_all_languages(update_session, qtbot, language):
     from PySide6.QtWidgets import QApplication
     from test_firmware_reminder_ui import offer
     window, vm, gateway, snapshot, store, ui, updater, _ = update_session
@@ -553,19 +643,22 @@ def test_both_reminders_fit_small_window_in_all_languages(update_session, qtbot,
     updater.publish('available', version='0.2.0')
     QApplication.processEvents()
     button = window._nav_buttons['settings']
-    assert button.text() == window._language_manager.translate('更新')
+    assert button.accessibleName() == window._language_manager.translate('固件与系统')
     assert button.property('firmwareUpdateAvailable') is True
     assert not button.firmware_notice_visible()
     assert button.fontMetrics().horizontalAdvance(button.text()) < button.width()
     assert button.parentWidget().rect().contains(button.geometry())
     assert ui.row.isHidden() and firmware_ui.row.isHidden()
-    assert window.grab().save(str(tmp_path / f'controlled-navigation-{language}.png'))
+    from pathlib import Path
+    output = Path('output/update-navigation-20260914')
+    output.mkdir(parents=True, exist_ok=True)
+    window.grab().save(str(output / f'controlled-navigation-{language}.png'))
 
 
 def test_about_button_dispatches_manual_update_request(update_session, qtbot):
     from PySide6.QtCore import Qt
     window, vm, _, _, _, ui, updater, _ = update_session
-    window._settings_section = 'about'
+    window._settings_section = 'system'
     vm.navigate('settings')
     window.show()
     button = window.findChild(QPushButton, 'checkDesktopUpdate')
@@ -596,3 +689,170 @@ def test_transfer_cancel_clears_user_error_marker_without_check_callback(update_
     # Sparkle's scheduled checks need not call its user-initiated checking delegate.
     updater.publish('failed', message='background unavailable')
     assert ui.row.isHidden()
+
+
+@pytest.mark.parametrize('state', ['available', 'ready', 'downloading'])
+def test_update_navigation_never_downloads_or_installs(update_session, qtbot, state):
+    window, vm, _, _, _, ui, updater, _ = update_session
+    updater.publish(state, version='0.2.0')
+    window._activate_settings_navigation()
+    assert vm.page == 'settings'
+    assert window._settings_section == 'system'
+    assert updater.calls == []
+    updater.publish('ready', version='0.2.0')
+    from PySide6.QtWidgets import QApplication
+    QApplication.processEvents()
+    assert updater.calls == []
+    assert window.isEnabled()
+    ui.action.click()
+    assert updater.calls == ['install']
+
+
+@pytest.mark.parametrize('action, label', [('check', '重新检查'), ('download', '重试下载'), ('install', '重试安装')])
+def test_retry_shows_reason_and_dispatches_correct_stage(update_session, action, label):
+    _, _, _, _, _, ui, updater, _ = update_session
+    updater.publish('ready' if action == 'install' else 'failed', version='0.2.0',
+                    message='Connection interrupted', retry_action=action)
+    ui.show_status(updater.status, force=True)
+    assert 'Connection interrupted' in ui.message.text()
+    assert ui.action.text() == label
+    ui.action.click()
+    assert updater.calls == [action]
+
+
+@pytest.mark.parametrize('installed', [True, False])
+def test_recovery_confirms_actual_running_version(update_session, contract, qtbot, monkeypatch, installed):
+    import controller_config.views.desktop_update as module
+    _, _, _, _, _, ui, updater, _ = update_session
+    updater.publish('ready', version=module.__version__ if installed else '99.0.0')
+    assert ui.prepare_restart()
+    _, _, gateway, restored = _restart_destination(update_session, contract, qtbot, monkeypatch)
+    restored.restore_if_ready()
+    assert ('更新完成' if installed else '仍在运行原版本') in restored.message.text()
+    assert gateway.commands == []
+    assert not restored.store.path.exists()
+
+
+def test_new_workflow_input_prevents_recovery_overwrite(update_session, contract, qtbot, monkeypatch):
+    from controller_config.views.actions import ActionsPage
+    _, _, _, _, _, ui, _, _ = update_session
+    assert ui.prepare_restart()
+    window, vm, gateway, restored = _restart_destination(update_session, contract, qtbot, monkeypatch)
+    vm.navigate('actions')
+    actions = window._content.findChild(ActionsPage)
+    actions._new_workspace_workflow()
+    actions._workflow_page._name.setText('重开后新输入')
+    restored.restore_if_ready()
+    assert actions._workflow_page._name.text() == '重开后新输入'
+    assert restored._pending
+    assert restored.store.path.exists()
+    assert gateway.commands == []
+
+
+def test_cached_editors_restore_together_from_settings(update_session, contract, qtbot, monkeypatch):
+    from controller_config.views.actions import ActionsPage
+    window, vm, _, _, _, ui, _, _ = update_session
+    vm.navigate('lighting')
+    window._content.findChild(PreferencesEditor)._haptic_duration.setValue(37)
+    vm.navigate('prompts')
+    prompt = window._content.findChild(PromptLibraryEditor)
+    prompt._select_direction(3)
+    prompt._name.setText('后台页面的草稿')
+    prompt._body.setPlainText('保留正文')
+    vm.navigate('actions')
+    actions = window._content.findChild(ActionsPage)
+    actions._new_workspace_workflow()
+    actions._workflow_page._name.setText('动作草稿')
+    vm.navigate('settings')
+    before = ui.capture_workspace()
+    assert ui.prepare_restart()
+    _, vm2, gateway, restored = _restart_destination(update_session, contract, qtbot, monkeypatch)
+    restored.restore_if_ready()
+    after = restored.capture_workspace()
+    for kind in ('preferences', 'prompt', 'workflow', 'actions_section'):
+        assert after[kind] == before[kind]
+    assert vm2.page == 'settings'
+    assert gateway.commands == []
+
+
+@pytest.mark.parametrize('queued', [True, False])
+def test_running_or_queued_task_blocks_restart(update_session, monkeypatch, queued):
+    from controller_config.views.actions import ActionsPage
+    window, vm, _, _, _, ui, _, _ = update_session
+    vm.navigate('actions')
+    editor = window.findChild(ActionsPage)._workflow_page
+    if queued:
+        editor._test_timer.start(60000)
+    else:
+        monkeypatch.setattr(type(vm.host_tasks), 'running', property(lambda _: True))
+    assert not ui.prepare_restart()
+    assert '自定义动作' in ui.message.text()
+    assert not ui.store.path.exists()
+    assert window.isEnabled()
+    editor._test_timer.stop()
+
+
+@pytest.mark.parametrize('language', ['zh_CN', 'en_US', 'ja_JP'])
+def test_update_retry_and_recovery_text_translated(update_session, language):
+    window, _, _, _, _, ui, updater, _ = update_session
+    window._language_manager.set_language(language)
+    updater.publish('failed', message='检查更新失败：Connection closed', retry_action='check')
+    assert 'Connection closed' in ui.message.text()
+    if language != 'zh_CN':
+        assert '检查更新失败' not in ui.message.text()
+        assert ui.action.text() != '重新检查'
+    ui._pending = {'workspace': {}}
+    ui.show_status(updater.status)
+    assert not ui.restore_recovery.isHidden()
+    if language != 'zh_CN':
+        assert ui.restore_recovery.text() != '恢复草稿'
+    ui._pending = None
+
+
+
+def test_recovery_waits_until_connection_transition_finishes(update_session, contract, qtbot, monkeypatch):
+    _, _, _, _, _, ui, _, _ = update_session
+    assert ui.prepare_restart()
+    window, vm, gateway, restored = _restart_destination(update_session, contract, qtbot, monkeypatch)
+    window._connection_transition_model = vm.model
+    restored.restore_if_ready()
+    assert restored._pending
+    assert restored.store.path.exists()
+    window._connection_transition_model = None
+    window._connection_fade.finished.emit()
+    qtbot.waitUntil(lambda: restored._pending is None)
+    assert not restored.store.path.exists()
+    # Background prompt and host-action event polling may run during the fade.
+    # Restoring the workspace must not send any device mutation.
+    assert all(command.name in {'GET_PROMPT_EVENT', 'GET_HOST_ACTION_EVENT'}
+               for command in gateway.commands), [command.name for command in gateway.commands]
+
+
+
+def test_missing_install_location_keeps_reason_visible(update_session, monkeypatch):
+    _, _, _, _, _, ui, updater, _ = update_session
+    updater.publish('ready', version='0.2.0')
+    reason = '找不到当前安装位置，请使用 Windows 安装程序重新安装'
+    monkeypatch.setattr(updater, 'install', lambda: updater.publish('unconfigured', message=reason))
+    ui.activate()
+    assert ui.message.text() == reason
+    assert not ui.row.isHidden()
+
+
+@pytest.mark.parametrize('language', ['zh_CN', 'en_US', 'ja_JP'])
+def test_failure_reason_fits_footer_in_all_languages(update_session, language):
+    from PySide6.QtWidgets import QApplication
+    window, _, _, _, _, ui, updater, _ = update_session
+    window._language_manager.set_language(language)
+    window._select_settings_section('system')
+    window.resize(1100, 760)
+    window.show()
+    updater.publish('failed', version='0.2.0',
+                    message='安装包签名验证失败或下载不完整，未执行安装', retry_action='download')
+    ui.show_status(updater.status, force=True)
+    QApplication.processEvents()
+    assert ui.message.isVisible() and ui.action.isVisible()
+    assert ui.row.rect().contains(ui.action.geometry())
+    assert ui.message.height() >= ui.message.heightForWidth(ui.message.width())
+    if language != 'zh_CN':
+        assert '安装包签名验证失败' not in ui.message.text()

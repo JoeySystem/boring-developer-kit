@@ -36,16 +36,20 @@ def test_guidance_round_trips_languages_without_losing_dimensions(qapp, qtbot):
     assert "不保留原图颜色" in glyph.findChild(QLabel, "screenGlyphConversion").text()
     assert "圆形" in home.findChild(QLabel, "screenIconCropHint").text()
     assert glyph.write_button.text() == "写入当前图标"
+    assert home.import_button.text() == "选择首页图片"
+    assert home.requirements_toggle.text() == "查看图片要求"
     manager.set_language(ENGLISH)
     assert glyph.write_button.text() == "Write This Icon"
     assert home.device_buttons["screenIconReset"].text() == "Reset Home"
+    assert home.import_button.text() == "Choose Home Image"
+    assert home.requirements_toggle.text() == "View Image Requirements"
     assert "16 million pixels" in glyph.findChild(QLabel, "screenGlyphFormats").text()
     assert "circular area" in home.findChild(QLabel, "screenIconCropHint").text()
     assert glyph.dimensions.text() == "3 × 3"
     manager.set_language(SIMPLIFIED_CHINESE)
     assert glyph.write_button.text() == "写入当前图标"
     assert "其他图标、按键映射和提示词不变" in glyph.findChild(QLabel, "screenGlyphScope").text()
-    assert "不重置设备" in home.findChild(QLabel, "screenIconResetScope").text()
+    assert "其他设置保持不变" in home.findChild(QLabel, "screenIconResetScope").text()
 
 
 def test_readonly_warning_stays_explicit_with_material_guidance(qtbot):

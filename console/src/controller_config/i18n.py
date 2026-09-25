@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import weakref
+
 from PySide6.QtCore import (
     QEvent,
     QLibraryInfo,
@@ -18,9 +20,11 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMenu,
+    QPlainTextEdit,
     QProgressBar,
     QWidget,
 )
+from shiboken6 import isValid as is_qobject_valid
 
 from .text_catalog import get_text_catalog
 
@@ -31,6 +35,7 @@ SUPPORTED_LANGUAGES = (SIMPLIFIED_CHINESE, ENGLISH, JAPANESE)
 LANGUAGE_SETTING_KEY = "ui/language"
 TRANSLATION_CONTEXT = "ControllerConfig"
 SKIP_TRANSLATION_PROPERTY = "boringI18nSkip"
+_ACTIVE_LANGUAGE_FILTER_ATTR = "_boring_active_language_filter"
 
 
 def normalize_language(value: object) -> str | None:
@@ -100,7 +105,16 @@ class LanguageManager(QObject):
         if selected is None:
             selected = system_language() if use_system_default else SIMPLIFIED_CHINESE
         self._install_language(selected)
+        previous_ref = getattr(application, _ACTIVE_LANGUAGE_FILTER_ATTR, None)
+        previous = previous_ref() if isinstance(previous_ref, weakref.ReferenceType) else None
+        if (
+            isinstance(previous, LanguageManager)
+            and previous is not self
+            and is_qobject_valid(previous)
+        ):
+            application.removeEventFilter(previous)
         application.installEventFilter(self)
+        setattr(application, _ACTIVE_LANGUAGE_FILTER_ATTR, weakref.ref(self))
 
     @property
     def language(self) -> str:
@@ -126,9 +140,31 @@ class LanguageManager(QObject):
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
         if event.type() == QEvent.Type.Show and isinstance(watched, QWidget):
-            self.retranslate_widget_tree(watched)
-        # QObject's default filter returns False. Avoid wrapping the watched
-        # object again while Qt is delivering its destruction events.
+            # Qt emits Show for the parent and each visible child. Walking the
+            # full subtree for every one of those events makes a newly built
+            # page translate the same controls repeatedly and blocks navigation.
+            # Language changes still use retranslate_widget_tree() once for each
+            # top-level window; the Show path only needs the object being shown.
+            if watched.property(SKIP_TRANSLATION_PROPERTY) is not True:
+                self._translate_widget(watched)
+                actions = list(watched.actions())
+                if isinstance(watched, QMenu):
+                    actions.append(watched.menuAction())
+                seen: set[int] = set()
+                for action in actions:
+                    identity = id(action)
+                    if (
+                        identity in seen
+                        or action.property(SKIP_TRANSLATION_PROPERTY) is True
+                    ):
+                        continue
+                    seen.add(identity)
+                    self._translate_object_text(
+                        action, "text", action.text, action.setText
+                    )
+                    self._translate_object_text(
+                        action, "toolTip", action.toolTip, action.setToolTip
+                    )
         return False
 
     def retranslate_widget_tree(self, root: QWidget) -> None:
@@ -196,7 +232,7 @@ class LanguageManager(QObject):
             self._translate_object_text(widget, "text", widget.text, widget.setText)
         elif isinstance(widget, QGroupBox):
             self._translate_object_text(widget, "title", widget.title, widget.setTitle)
-        elif isinstance(widget, QLineEdit):
+        elif isinstance(widget, (QLineEdit, QPlainTextEdit)):
             self._translate_object_text(
                 widget,
                 "placeholderText",

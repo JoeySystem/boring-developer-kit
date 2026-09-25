@@ -60,6 +60,19 @@ def test_describe_action_translates_real_keyboard_and_consumer_actions() -> None
     assert describe_action({"type": "consumer", "usage": 234}) == "音量降低"
 
 
+def test_encoder_copy_preserves_custom_actions_and_names():
+    from controller_config.actions import mapping_display_name
+    scroll = {'type': 'mouse', 'wheel': 1}
+    assert describe_action(scroll, control_id='encoder.ccw') == '页面滚动'
+    assert describe_action(scroll, control_id='key.8') == '滚轮向上'
+    assert mapping_display_name('encoder.ccw', {'short_name': '浏览资料', 'action': scroll}) == '浏览资料'
+    shortcut = {'type': 'key', 'usage': 75}
+    assert describe_action(shortcut, control_id='encoder.ccw') == describe_action(shortcut)
+    assert mapping_display_name('encoder.ccw', {'short_name': 'Scroll up', 'action': shortcut}) == 'Scroll up'
+    combined = {**scroll, 'button': 1}
+    assert describe_action(combined, control_id='encoder.ccw') == describe_action(combined)
+
+
 def test_describe_action_covers_mouse_and_non_keyboard_protocol_actions() -> None:
     assert describe_action(
         {"type": "mouse", "button": 0, "x": 0, "y": 0, "wheel": 1, "pan": 0}

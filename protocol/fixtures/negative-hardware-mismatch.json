@@ -1,11 +1,4 @@
 {
-  "candidate": {
-    "product_id": "wired-macro-pad-v1",
-    "hardware_id": "OTHER-BOARD",
-    "schema_version": 1
-  },
-  "expected_error": {
-    "code": 8,
-    "name": "HARDWARE_MISMATCH"
-  }
+  "candidate": {"product_id": "wired-macro-pad-v1", "hardware_id": "OTHER-BOARD", "schema_version": 1},
+  "expected_error": {"code": 8, "name": "HARDWARE_MISMATCH"}
 }

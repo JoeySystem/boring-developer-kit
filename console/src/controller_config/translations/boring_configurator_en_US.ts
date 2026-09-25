@@ -3,6 +3,52 @@
 <TS version="2.1" language="en_US" sourcelanguage="zh_CN">
   <context>
     <name>ControllerConfig</name>
+    <message><source>暂无可用的固件发布
+已连接更新服务，当前渠道尚未提供固件。你可以继续使用设备，稍后再检查。</source><translation>No firmware release available
+Connected to the update service. This channel has no firmware yet. You can keep using your device and check again later.</translation></message>
+    <message><source>暂时无法连接更新服务，请检查网络后重试。</source><translation>Unable to connect to the update service. Check your network and try again.</translation></message>
+    <message><source>更新服务暂时无法提供固件，请稍后重试。</source><translation>The update service is temporarily unavailable. Please try again later.</translation></message>
+    <message><source>固件下载暂不可用，未安装。请重新检查发布信息。</source><translation>The firmware download is unavailable. Nothing was installed. Check the release again.</translation></message>
+    <message><source>固件校验未通过，未安装。</source><translation>Firmware verification failed. Nothing was installed.</translation></message>
+    <message><source>固件发布信息校验未通过，未安装。</source><translation>Firmware release information failed validation. Nothing was installed.</translation></message>
+    <message><source>在线固件下载失败，未安装。</source><translation>Firmware download failed. Nothing was installed.</translation></message>
+    <message><source>在线固件检查失败，请稍后重试。</source><translation>Firmware check failed. Please try again later.</translation></message>
+    <message><source>重新检查</source><translation>Check Again</translation></message>
+
+    <message><source>固件渠道尚未发布（HTTP 404），请稍后重新检查。</source><translation>This firmware channel has not been published (HTTP 404). Check again later.</translation></message>
+    <message><source>固件镜像尚未发布或已移除（HTTP 404），请重新检查发布信息。</source><translation>The firmware image is not published or has been removed (HTTP 404). Check the release again.</translation></message>
+    <message><source>设备已变化，请检查当前设备的在线固件</source><translation>The device has changed. Check online firmware for this device.</translation></message>
+    <message><source>导出保留的工作区…</source><translation>Export Saved Workspace…</translation></message>
+    <message><source>导出保留的工作区</source><translation>Export Saved Workspace</translation></message>
+    <message><source>工作区已导出；停止自动恢复，可以继续更新。</source><translation>Workspace exported. Automatic recovery is stopped; you can update now.</translation></message>
+    <message><source>此安装包尚未配置在线更新。</source><translation>Online updates are not configured in this build.</translation></message>
+    <message><source>此安装包尚未配置在线更新，请使用官方安装包更新。</source><translation>Online updates are not configured in this build. Use an official installer to update.</translation></message>
+    <message><source>此系统尚未提供应用内更新。</source><translation>In-app updates are not available on this platform.</translation></message>
+    <message><source>检查应用更新</source><translation>Check for App Updates</translation></message>
+    <message><source>正在检查应用更新…</source><translation>Checking for app updates…</translation></message>
+    <message><source>当前已是最新版本</source><translation>You are up to date</translation></message>
+    <message><source>有新版本 {version}</source><translation>Version {version} is available</translation></message>
+    <message><source>正在下载 {version}，可继续使用</source><translation>Downloading {version}. You can keep working.</translation></message>
+    <message><source>正在验证并准备更新…</source><translation>Verifying and preparing the update…</translation></message>
+    <message><source>更新已准备好，重启后生效</source><translation>The update is ready. Restart to install.</translation></message>
+    <message><source>正在重启并更新…</source><translation>Restarting to install the update…</translation></message>
+    <message><source>更新未完成，可稍后重试</source><translation>The update did not finish. You can retry later.</translation></message>
+    <message><source>应用更新</source><translation>App Update</translation></message>
+    <message><source>下载更新</source><translation>Download Update</translation></message>
+    <message><source>重启并更新</source><translation>Restart and Update</translation></message>
+    <message><source>取消下载</source><translation>Cancel Download</translation></message>
+    <message><source>检查更新</source><translation>Check for Updates</translation></message>
+    <message><source>已保留更新前的草稿；连接原设备后恢复。</source><translation>Your drafts are saved. Connect the original device to restore them.</translation></message>
+    <message><source>更新前的草稿尚未恢复，请先连接原设备处理保留的草稿。</source><translation>Connect the original device and resolve the saved drafts before updating again.</translation></message>
+    <message><source>其他设备或旧配置仍有本地草稿，请先切回处理，再重启更新。</source><translation>Another device or earlier configuration has local drafts. Switch back and resolve them before restarting.</translation></message>
+    <message><source>素材传输或读回尚未结束，请完成后再重启更新。</source><translation>Wait for the artwork transfer or readback to finish before restarting.</translation></message>
+    <message><source>设备维护尚未结束，请完成后再重启更新。</source><translation>Wait for device maintenance to finish before restarting.</translation></message>
+    <message><source>设备写入或对账尚未完成，请完成后再重启更新。</source><translation>Wait for the device write and verification to finish before restarting.</translation></message>
+    <message><source>提示词设备操作尚未结束，请完成后再重启更新。</source><translation>Wait for the device prompt operation to finish before restarting.</translation></message>
+    <message><source>素材裁剪尚未应用，请先完成或取消素材编辑，再重启更新。</source><translation>Finish or cancel artwork editing before restarting.</translation></message>
+    <message><source>当前有新输入，请先保存或取消，再恢复更新前的草稿。</source><translation>Save or cancel your new input before restoring the previous drafts.</translation></message>
+    <message><source>已恢复更新前的本地草稿；尚未写入设备。</source><translation>Your previous local drafts are restored. They have not been written to the device.</translation></message>
+    <message><source>连接原设备后恢复更新前的草稿。</source><translation>Connect the original device to restore your previous drafts.</translation></message>
     <message><source>按键反馈</source><translation>Key feedback</translation></message>
     <message><source>旋钮旋转反馈</source><translation>Knob rotation feedback</translation></message>
     <message><source>摇杆方向反馈</source><translation>Joystick direction feedback</translation></message>
@@ -60,6 +106,7 @@ Quitting does not cancel the device write or confirm success. After reopening, c
     <message><source>尚未应用到设备</source><translation>Not Applied to Device</translation></message>
     <message><source>配置方案尚未应用到设备</source><translation>Profile Not Applied to Device</translation></message>
     <message><source>切换并应用…</source><translation>Switch and Apply…</translation></message>
+    <message><source>切换并应用</source><translation>Switch and Apply</translation></message>
     <message><source>将所选配置方案设为设备当前方案；验证通过后仍需最终确认。</source><translation>Set the selected profile as the device's active profile. Final confirmation is still required after validation.</translation></message>
     <message><source>重命名当前配置方案…</source><translation>Rename Current Profile…</translation></message>
     <message><source>删除当前配置方案…</source><translation>Delete Current Profile…</translation></message>

@@ -18,9 +18,11 @@ dependencies = [
   "pyobjc-core>=11.1,<12; sys_platform == 'darwin'",
   "pyobjc-framework-Cocoa>=11.1,<12; sys_platform == 'darwin'",
   "pyobjc-framework-CoreBluetooth>=11.1,<12; sys_platform == 'darwin'",
+  "pyobjc-framework-libdispatch>=11.1,<12; sys_platform == 'darwin'",
 ]
 
 [project.optional-dependencies]
+build = ["Nuitka==4.2.1"]
 test = [
   "pytest>=8.3,<9",
   "pytest-qt>=4.4,<5",

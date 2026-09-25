@@ -9,14 +9,14 @@ from controller_config.workflows import LocalWorkflow, WorkflowError
 
 
 WORKFLOW_PACKAGE_KIND = "boring-workflow"
-WORKFLOW_PACKAGE_VERSION = 1
+WORKFLOW_PACKAGE_VERSION = 2
 
 
 def export_workflow(path: Path, workflow: LocalWorkflow) -> None:
     workflow.validate()
     payload = {
         "kind": WORKFLOW_PACKAGE_KIND,
-        "version": WORKFLOW_PACKAGE_VERSION,
+        "version": WORKFLOW_PACKAGE_VERSION if workflow.trigger_prompt_id is None else 1,
         "workflow": workflow.as_mapping(),
     }
     try:
@@ -37,7 +37,7 @@ def import_workflow(path: Path) -> LocalWorkflow:
         raise WorkflowError("自动化包字段不完整或包含未知字段")
     if value.get("kind") != WORKFLOW_PACKAGE_KIND:
         raise WorkflowError("这不是 BORING 自动化包")
-    if value.get("version") != WORKFLOW_PACKAGE_VERSION:
+    if value.get("version") not in (1, WORKFLOW_PACKAGE_VERSION):
         raise WorkflowError("自动化包版本不受支持")
     workflow = LocalWorkflow.from_mapping(value.get("workflow"))
     requires_local_review = any(

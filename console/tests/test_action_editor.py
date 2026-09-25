@@ -3,20 +3,23 @@ from __future__ import annotations
 import pytest
 
 from PySide6.QtCore import QEvent, Qt
-from PySide6.QtGui import QKeyEvent
+from PySide6.QtGui import QFocusEvent, QKeyEvent
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
     QGridLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QSpinBox,
+    QVBoxLayout,
     QWidget,
 )
 
 from controller_config.actions import action_definitions
-from controller_config.views.action_editor import ActionEditor
+from controller_config.i18n import translate_ui_text
+from controller_config.views.action_editor import ActionEditor, ShortcutRecorder
 
 
 _MACOS_NATIVE_MODIFIERS = (
@@ -67,7 +70,7 @@ def test_action_editor_records_a_keyboard_shortcut_and_single_key(
     assert not manual.isVisible()
 
     qtbot.mouseClick(record, Qt.MouseButton.LeftButton)
-    assert record.text() == "取消录制"
+    assert record.text() == translate_ui_text("取消录制")
     qtbot.keyClick(
         record,
         Qt.Key.Key_V,
@@ -79,6 +82,9 @@ def test_action_editor_records_a_keyboard_shortcut_and_single_key(
         "modifiers": [225, 227],
     }
     assert preview.text() == "⇧⌘V"
+    assert editor.findChild(QLabel, "shortcutRecorderMessage").text() == translate_ui_text(
+        "已识别，尚未保存到设备。"
+    )
 
     qtbot.mouseClick(record, Qt.MouseButton.LeftButton)
     qtbot.keyClick(
@@ -97,6 +103,22 @@ def test_action_editor_records_a_keyboard_shortcut_and_single_key(
     qtbot.keyClick(record, Qt.Key.Key_Backspace)
     assert editor.action() == {"type": "key", "usage": 42}
     assert preview.text() == "退格"
+
+
+def test_action_editor_preserves_non_key_action_when_manual_controls_are_hidden(
+    qtbot, contract
+) -> None:
+    editor = ActionEditor(
+        action_definitions(contract, ("key", "consumer", "none")),
+        {"type": "consumer", "usage": 233},
+        show_manual_controls=False,
+    )
+    qtbot.addWidget(editor)
+    editor.show()
+
+    assert editor.findChild(QPushButton, "shortcutManualToggle") is None
+    assert not editor.findChild(QWidget, "manualActionEditor").isVisible()
+    assert editor.action() == {"type": "consumer", "usage": 233}
 
 
 def test_action_editor_records_shifted_symbol_as_base_key_plus_shift(
@@ -212,6 +234,71 @@ def test_action_editor_preserves_right_macos_modifier_as_single_key(
     assert editor.action() == {"type": "key", "usage": expected_usage}
 
 
+def test_modifier_only_recording_explains_that_release_completes_it(
+    qtbot,
+    contract,
+) -> None:
+    editor = ActionEditor(
+        action_definitions(contract, ("key", "none")),
+        {"type": "key", "usage": 4},
+        platform="macos",
+    )
+    qtbot.addWidget(editor)
+    editor.show()
+    record = editor.findChild(QPushButton, "shortcutRecordButton")
+    message = editor.findChild(QLabel, "shortcutRecorderMessage")
+
+    qtbot.mouseClick(record, Qt.MouseButton.LeftButton)
+    _send_native_key_event(
+        record,
+        QEvent.Type.KeyPress,
+        Qt.Key.Key_Alt,
+        Qt.KeyboardModifier.AltModifier,
+        0x3D,
+    )
+
+    assert editor.action() == {"type": "key", "usage": 4}
+    assert message.text() == translate_ui_text(
+        "已检测到修饰键。直接松开即可保存；继续按其他键可录制组合键。"
+    )
+
+    _send_native_key_event(
+        record,
+        QEvent.Type.KeyRelease,
+        Qt.Key.Key_Alt,
+        Qt.KeyboardModifier.NoModifier,
+        0x3D,
+    )
+    assert editor.action() == {"type": "key", "usage": 230}
+
+
+def test_focus_loss_keeps_a_visible_recording_cancel_reason(qtbot) -> None:
+    host = QWidget()
+    layout = QVBoxLayout(host)
+    recorder = ShortcutRecorder(
+        {"type": "key", "usage": 4},
+        platform="macos",
+    )
+    other = QLineEdit()
+    layout.addWidget(recorder)
+    layout.addWidget(other)
+    qtbot.addWidget(host)
+    host.show()
+
+    recorder.start_recording()
+    QApplication.sendEvent(
+        recorder._capture,
+        QFocusEvent(QEvent.Type.FocusOut),
+    )
+
+    assert not recorder.is_recording
+    assert recorder._preview.text() == "A"
+    assert recorder._message.isVisible()
+    assert recorder._message.text() == translate_ui_text(
+        "录制已取消：窗口失去焦点。请重新点击录制，并在当前窗口完成按键。"
+    )
+
+
 def test_action_editor_does_not_add_left_shift_to_right_shifted_symbol(
     qtbot,
     contract,
@@ -301,7 +388,7 @@ def test_unsupported_shortcut_does_not_turn_into_released_modifier(
     )
 
     assert editor.action() == {"type": "key", "usage": 4}
-    assert record.text() == "取消录制"
+    assert record.text() == translate_ui_text("取消录制")
     assert "按下按键或组合键" in message.text()
 
     qtbot.keyClick(record, Qt.Key.Key_V)
@@ -324,7 +411,7 @@ def test_action_editor_uses_friendly_key_and_consumer_selectors(qtbot, contract)
     usage = editor.findChild(QComboBox, "actionField_usage")
     modifiers = editor.findChild(QWidget, "actionField_modifiers")
     assert type_selector is not None and type_selector.count() == 7
-    assert type_selector.itemText(type_selector.findData("macro")) == "按键序列"
+    assert type_selector.itemText(type_selector.findData("macro")) == "连续按键"
     assert usage is not None and usage.currentData() == 40
     assert "Enter" in usage.currentText()
     assert editor.findChild(QSpinBox, "actionField_usage") is None

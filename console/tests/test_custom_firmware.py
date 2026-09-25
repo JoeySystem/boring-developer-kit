@@ -2,6 +2,8 @@ from dataclasses import replace
 import hashlib
 import json
 from pathlib import Path
+import subprocess
+import sys
 from zipfile import ZipFile
 
 import pytest
@@ -17,10 +19,11 @@ from test_firmware_update import _write_package
 from test_firmware_transaction import FirmwareGateway, _package
 from test_firmware_release import _TEST_SIGNING_KEY, trust_test_signing_key
 
+TOOL = Path(__file__).resolve().parents[2] / 'firmware/tools/pack_custom_firmware.py'
 
 
 def custom_manifest(tmp_path, contract):
-    path = _write_package(tmp_path, contract, build_id='custom-example-20260912.01')
+    path = _write_package(tmp_path, contract, build_id='custom-joey-20260912.01')
     raw = json.loads(path.read_text())
     image = path.parent / raw['image']
     data = bytearray(image.read_bytes())
@@ -32,18 +35,21 @@ def custom_manifest(tmp_path, contract):
     return path
 
 
-def test_custom_zip_import(tmp_path, contract):
+def test_packager_roundtrip_and_no_overwrite(tmp_path, contract):
     path = custom_manifest(tmp_path, contract)
-    output = tmp_path / 'custom.zip'
-    manifest = json.loads(path.read_text())
-    with ZipFile(output, 'w') as archive:
-        archive.write(path, 'firmware-manifest.json')
-        archive.write(path.parent / manifest['image'], manifest['image'])
+    output = tmp_path/'custom.zip'
+    args = [sys.executable, str(TOOL), '--manifest', str(path), '--output', str(output)]
+    first = subprocess.run(args, capture_output=True, text=True)
+    assert first.returncode == 0, first.stderr
     package = load_local_firmware_package(output, contract, custom=True)
     assert package.source_kind == 'custom'
-    assert package.build_id == 'custom-example-20260912.01'
+    assert package.manifest['origin'] == 'custom'
     assert package.manifest['validation_state'] == 'built'
     assert 'signature' not in package.manifest
+    assert package.build_id == 'custom-joey-20260912.01'
+    original = output.read_bytes()
+    assert subprocess.run(args, capture_output=True).returncode != 0
+    assert output.read_bytes() == original
 
 
 @pytest.mark.parametrize('field,value', [('origin','official'), ('build_id','20260912.05-gabc'),
@@ -74,7 +80,7 @@ def test_official_import_requires_signature_and_never_falls_back(tmp_path, contr
 
 def test_custom_build_not_compared_as_official_even_with_higher_offer(contract):
     snapshot = _power_v2_snapshot(contract, read_only=False)
-    snapshot = replace(snapshot, versions={**snapshot.versions, 'build_id':'custom-example-1'})
+    snapshot = replace(snapshot, versions={**snapshot.versions, 'build_id':'custom-joey-1'})
     release = RemoteFirmwareRelease(dict(version='999.0.0',build_id='20260912.05-gabc'), '', '')
     with pytest.raises(FirmwareReleaseError, match='自定义固件'):
         release_is_newer(release, snapshot)
@@ -118,7 +124,7 @@ def test_custom_install_needs_confirmation_and_keeps_existing_pipeline(qtbot, co
 def test_official_restoration_requires_confirmation(qtbot, contract, tmp_path, monkeypatch):
     gateway = FirmwareGateway();vm = MainViewModel(gateway, contract)
     snapshot = _power_v2_snapshot(contract, read_only=False)
-    gateway.snapshot_ready.emit(replace(snapshot, versions={**snapshot.versions,'build_id':'custom-example-1'}))
+    gateway.snapshot_ready.emit(replace(snapshot, versions={**snapshot.versions,'build_id':'custom-joey-1'}))
     window = MainWindow(vm);qtbot.addWidget(window)
     vm.load_firmware_package(_package(tmp_path, contract))
     dialogs=[]
@@ -151,7 +157,7 @@ def test_custom_device_never_shows_cached_official_current_status(qtbot, contrac
     from controller_config.firmware_release import RemoteFirmwareCheck, RemoteFirmwareState
     gateway = FirmwareGateway(); vm = MainViewModel(gateway, contract)
     snapshot = _power_v2_snapshot(contract, read_only=False)
-    gateway.snapshot_ready.emit(replace(snapshot, versions={**snapshot.versions,'build_id':'custom-example-1'}))
+    gateway.snapshot_ready.emit(replace(snapshot, versions={**snapshot.versions,'build_id':'custom-joey-1'}))
     window = MainWindow(vm); qtbot.addWidget(window)
     vm._remote_firmware = RemoteFirmwareCheck(state=RemoteFirmwareState.CURRENT, message='已是最新版本')
     vm.navigate('firmware'); window.show()
@@ -171,6 +177,7 @@ def test_custom_import_button_uses_custom_loader(qtbot, contract, tmp_path, monk
     window = MainWindow(vm); qtbot.addWidget(window)
     monkeypatch.setattr(QFileDialog,'getOpenFileName',lambda *_: (str(path),''))
     vm.navigate('firmware');window.show()
+    window.findChild(QPushButton,'firmwarePackageToggle').click()
     button = window.findChild(QPushButton,'selectCustomFirmwarePackage')
     qtbot.waitUntil(button.isVisible)
     button.click()

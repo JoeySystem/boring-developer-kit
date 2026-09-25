@@ -171,6 +171,7 @@ class PromptDeviceSession(QObject):
         self._pending_event_deadline = 0.0
         self._dispatch_sequence = 0
         self._event_poll_in_flight = False
+        self._deferred_operation: Command | None = None
         self._discard_event_prompt_response = False
         self._event_timer = QTimer(self)
         self._event_timer.setSingleShot(True)
@@ -211,6 +212,7 @@ class PromptDeviceSession(QObject):
         if not already_bound:
             self._read_prompt_ids.clear()
             self._event_poll_in_flight = False
+            self._deferred_operation = None
             self._discard_event_prompt_response = False
             self._pending_event_id = None
             self._pending_event_prompt_id = None
@@ -262,6 +264,7 @@ class PromptDeviceSession(QObject):
         self._event_timer.stop()
         self._snapshot = None
         self._event_poll_in_flight = False
+        self._deferred_operation = None
         self._discard_event_prompt_response = False
         self._dispatch_sequence += 1
         self._reset_operation_context()
@@ -310,7 +313,7 @@ class PromptDeviceSession(QObject):
         self._pause_listener_for_device_operation("正在读取提示词库")
         self._read_prompt_ids.clear()
         self._set_status(PromptDeviceState.READING, "正在读取设备提示词列表")
-        self._execute(get_prompt_list_command())
+        self._execute_after_event_poll(get_prompt_list_command())
 
     def write_draft(self, prompt_id: int) -> None:
         library, _snapshot = self._writable_context()
@@ -327,7 +330,7 @@ class PromptDeviceSession(QObject):
             PromptDeviceState.WRITING,
             f"正在写入提示词槽位 {prompt_id}；完成后会立即读回确认",
         )
-        self._execute(set_prompt_command(entry))
+        self._execute_after_event_poll(set_prompt_command(entry))
 
     def delete_confirmed(self, prompt_id: int) -> None:
         library, _snapshot = self._writable_context()
@@ -343,13 +346,15 @@ class PromptDeviceSession(QObject):
             PromptDeviceState.DELETING,
             f"正在删除设备提示词槽位 {prompt_id}；完成后会重新读取列表确认",
         )
-        self._execute(delete_prompt_command(prompt_id))
+        self._execute_after_event_poll(delete_prompt_command(prompt_id))
 
     def handle_completed(self, command_name: str, payload: dict) -> bool:
         if command_name not in PROMPT_COMMANDS:
             return False
         if command_name == "GET_PROMPT_EVENT":
             self._event_poll_in_flight = False
+            if self._run_deferred_operation():
+                return True
             if self._polling_paused or self._status.is_busy:
                 self._schedule_event(100)
                 return True
@@ -385,6 +390,8 @@ class PromptDeviceSession(QObject):
             return False
         if command_name == "GET_PROMPT_EVENT":
             self._event_poll_in_flight = False
+            if self._run_deferred_operation():
+                return True
             if self._polling_paused or self._status.is_busy:
                 self._schedule_event(100)
                 return True
@@ -681,6 +688,20 @@ class PromptDeviceSession(QObject):
             return
         self._event_poll_in_flight = True
         self._execute(get_prompt_event_command())
+
+    def _execute_after_event_poll(self, command: Command) -> None:
+        if self._event_poll_in_flight:
+            self._deferred_operation = command
+            return
+        self._execute(command)
+
+    def _run_deferred_operation(self) -> bool:
+        command = self._deferred_operation
+        if command is None:
+            return False
+        self._deferred_operation = None
+        self._execute(command)
+        return True
 
     def _schedule_event(self, delay_ms: int) -> None:
         if (

@@ -1,6 +1,6 @@
-# BORING 本地扩展 1.0
+# BORING 本地扩展 1.1
 
-BORING 本地扩展是由 BORING 控制台管理、由专用 Runner 执行的 Python 扩展包。
+BORING 本地扩展是由 BORING 控制台管理、由私有 Runner 执行的 Python 扩展包。
 它不是固件 MOD，也不是让第三方代码直接控制串口的驱动。用户可以在控制台复制
 “AI 开发提示词”，去 Codex 或其他 AI 中完成开发，再把目录或 ZIP 导回控制台。
 
@@ -15,7 +15,7 @@ BORING 本地扩展是由 BORING 控制台管理、由专用 Runner 执行的 Py
   "id": "com.example.my-boring-extension",
   "name": "My BORING Extension",
   "version": "1.0.0",
-  "api_version": {"major": 1, "minor": 0},
+  "api_version": {"major": 1, "minor": 1},
   "entrypoint": "main.py",
   "observer_events": ["prompt.triggered"],
   "actions": [
@@ -39,7 +39,7 @@ V1 入口只依赖 Python 标准库和 `boring_console_sdk`。控制台拒绝无
 
 ## 本地 API 与 SDK
 
-本地 API 1.0 是只对本机已登记扩展开放的 UTF-8 JSON Lines 通道。首条请求必须是
+本地 API 1.1（兼容 1.0）是只对本机已登记扩展开放的 UTF-8 JSON Lines 通道。首条请求必须是
 handshake。同一扩展 ID 只允许一个已认证 client；同时处理 Observer 和 Action 时，
 应在这个 client 上交替消费事件与调用。SDK 封装以下能力：
 
@@ -54,15 +54,15 @@ handshake。同一扩展 ID 只允许一个已认证 client；同时处理 Obser
 确认或固件维护入口。
 
 扩展收到的事件使用控制台内部事件总线、本地自动化和本地 API 共用的
-`schema_version: 1` 信封。当前唯一正式设备事件及各字段语义见
+`schema_version: 1` 信封。正式设备事件及各字段语义见
 [`device-events.md`](device-events.md)。
 
 ## Observer 与 Action
 
-Observer 只收到事件副本，不能阻止默认 Unicode 粘贴。需要接管实体事件时，扩展先
+Observer 只收到事件副本。旧提示词 Observer 不能阻止默认 Unicode 粘贴。旧提示词需要接管实体事件时，扩展先
 在 manifest 声明 action，再由用户在扩展页把具体设备的提示词槽位绑定到该 action。
 
-事件优先级固定为：
+旧 `prompt.triggered` 事件优先级保持为：
 
 ```text
 内置本地自动化 → 已绑定且就绪的扩展 action → Unicode 粘贴回退
@@ -71,6 +71,33 @@ Observer 只收到事件副本，不能阻止默认 Unicode 粘贴。需要接�
 扩展必须在控制台给定时限内返回 `accepted` 或 `rejected`。未运行、未绑定、拒绝、
 超时或响应无效时，控制台只回退一次 Unicode 粘贴。扩展已经接受后再报告 `failed`
 只记录失败，不会重复粘贴或重复执行。
+
+## 独立电脑任务（API 1.1）
+
+新包在 `boring-extension.json` 声明 `"api_version":{"major":1,"minor":1}`，
+并在 `actions` 声明具名动作。用户在“运行脚本或扩展”导入目录或 ZIP，启用扩展，
+再选择动作并绑定受支持的普通按键。安装或应用配置不会执行任务；首次实体试用成功后
+才启用该绑定。首期设备路径为 USB、普通模式、Matrix12 第 8–12 键。
+
+新的 `host_action.triggered` 事件只含 `payload.action_id` 与 `payload.task_token`，无需提示词正文。调用中的
+顶层 `action_id` 是扩展声明的动作名称（字符串）；`event.payload.action_id` 是设备保存的
+任务槽位（1–255）。`event.payload.task_token` 是32位小写hex UUID任务主键，
+设备和本机绑定必须同时匹配它，防止另一台电脑复用槽位后误运行旧任务。编辑原任务保持
+token，新任务生成新token。扩展动作和设备任务通过本机绑定关联。旧 API 1.0 包必须更新声明和事件解析后才能绑定
+新任务；不会把新事件伪装成提示词，任务缺失或失败也不会粘贴提示词。
+
+先用 `respond_action(id, "accepted")` 表示接受，再在实际工作结束时报告 `completed` 或
+`failed`。电脑任务繁忙时不叠加启动、不自动排队。Observer 不占用前台任务位置。
+首期默认执行时限 60 秒；接受调用的约 700ms 时限与执行时限分开。
+
+取消时，Console 发送 `{"kind":"action.cancel","invocation_id":"..."}`。SDK 的
+`next_cancellation(timeout_ms=0)` 返回该消息或 `None`。较长任务应把工作分为可停止的步骤，
+在每步间检查取消；停止未完成部分后报告 `failed`，消息说明“已停止”及已完成的副作用。
+不能声称撤销此前写出的文件或已打开的应用。取消请求不会抹掉终态追踪。
+
+500ms 内未收到协作终态时，Console 停用整个扩展并异步结束私有 Runner；此包的 Observer
+和全部动作一起停止。确认进程退出后才允许下个任务。若扩展自行启动了外部工具，其停止
+与结果需要作者自行实现并说明；Console 不声称撤销外部副作用。
 
 ## 配置提案
 
@@ -97,13 +124,26 @@ blocked/stale，不会自动换设备、覆盖或合并。
 源码验收可直接在扩展页导入这些目录。实体事件验收必须连接真实样机，再逐项确认
 observer 不影响粘贴、action 接管、停用回退，以及提案批准后仍需用户确认写入。
 
+另外两个可直接核对产物的示例：
+
+- `examples/scripts/save_host_task_event.py`：标准库脚本，从 stdin 读取独立任务事件，
+  在系统临时目录新建 `boring-script-example-*` 文件夹并保存 `task-event.json`；输出完整路径。
+- `examples/extensions/save_host_task`：API 1.1 的 `save_event` 动作，在临时目录保存同样的
+  JSON 文件，检查协作取消并报告实际文件路径。每次执行建立新目录，不覆盖旧文件。
+
+导入后按绑定的实体键，在运行详情中打开输出路径并核对内容；只看到 `accepted` 不算完成。
+示例文件可以在核对后手动删除。它们证明事件、运行器和文件输出路径；不证明任意业务任务成功。
+
 ## 开发与交付边界
 
 - 不打开 USB CDC、HID 或其他设备端口；
 - 不发送原始协议、配置写入或固件维护命令；
 - 不通过 shell 或 `sys.executable` 启动第二套 Python；
 - 不假设用户电脑预装 Python；
+- 普通用户导入现有脚本或包；开发者在外部编辑器编写，首期不提供内置 IDE 或终端；
+- 首期不自动安装第三方 Python 依赖；脚本进程不是安全沙箱，应阅读来源与实际操作；
+- SDK 不承诺任意软件界面点击、等待 AI 回答或通用 RPA，复杂业务需作者实现具体步骤；
 - V1 不包含插件商店、账号、云端分发或网络代码下载。
 
-SDK 开发说明见 [SDK 开发说明](../sdk/python/README.md)。双平台正式包必须同时交付控制台、专用
-Runner、SDK 运行内容及构建时从 `protocol/` 复制的权威协议资产。
+SDK 开发说明见 `sdk/python/README.md`。双平台正式包必须同时交付控制台、私有
+Runner、SDK 运行内容及构建时从 `software/protocol` 复制的权威协议资产。

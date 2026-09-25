@@ -1,4 +1,6 @@
-# BORING Console Python SDK 1.0
+> SDK 1.1.0 / API 1.1：新增 `host_action.triggered` 电脑端任务事件与任务上下文，兼容原有 API 1.0 提示词与映射提案用法。见根目录 `docs/extensions.md`。
+
+# BORING Console Python SDK 1.1.0
 
 本 SDK 只用于由 BORING 控制台专用 Runner 启动的本地扩展。正式用户不需要安装
 Python，也不需要单独安装 SDK；Runner 会随控制台携带兼容版本。
@@ -29,14 +31,15 @@ with BoringConsoleClient.from_environment() as console:
 每个扩展 ID 只建立一个已认证 client。需要同时处理 Observer 和 Action 时，在这个
 client 上用带短超时的 `next_event()` 与 `next_action()` 交替消费；不要分别建立两个
 连接。`subscribe_events()` 只能订阅 manifest 的 `observer_events` 已声明的事件。
-`next_event()` 返回 BORING 设备事件合同 v1 的完整字典；当前只支持
-`prompt.triggered`。字段定义见[设备事件文档](../../docs/device-events.md)。
+`next_event()` 返回 BORING 设备事件合同 v1 的完整字典；支持
+`prompt.triggered` 和 API 1.1 的 `host_action.triggered`。字段定义见[设备事件文档](../../docs/device-events.md)。
 
 公开方法包括：
 
 - `get_context()`：读取不可变 JSON 上下文；
 - `subscribe_events()` / `next_event()`：观察实时语义事件；
 - `next_action()` / `respond_action()`：处理用户明确绑定的扩展 action；
+- `next_cancellation()`：让电脑端任务在步骤之间处理用户停止请求；
 - `propose_mapping()`：提交单个 `set_mapping` 提案，不能直接写设备。
 
 SDK 不提供串口、原始协议、固件安装、配置确认或网络下载接口。

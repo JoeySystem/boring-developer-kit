@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 from PySide6.QtCore import QObject, Signal, Qt
-from PySide6.QtWidgets import QLabel, QPushButton, QPlainTextEdit
+from PySide6.QtWidgets import QLabel, QPushButton, QPlainTextEdit, QWidget
 
 from controller_config.firmware_release import RemoteFirmwareRelease, RemoteFirmwareState
 from controller_config.views.claude_status_settings import ClaudeStatusSettings
@@ -25,19 +25,35 @@ def test_release_summary_keeps_builds_distinct_and_details_optional(session, qtb
         state=RemoteFirmwareState.AVAILABLE, release=release))
     vm.navigate('firmware')
     window.show()
-    qtbot.waitUntil(lambda: window._relink_button.text() == {'zh_CN': '重新连接', 'en_US': 'Reconnect', 'ja_JP': '再接続'}[language])
+    qtbot.waitUntil(lambda: window._nav_buttons['settings'].accessibleName() == {
+        'zh_CN': '固件与系统',
+        'en_US': 'Firmware & System',
+        'ja_JP': 'ファームウェアとシステム',
+    }[language])
     current = window.findChild(QLabel, 'firmwareCurrentVersion')
     target = window.findChild(QLabel, 'remoteFirmwareReleaseSummary')
-    assert '20260912.04' in current.text()
+    focus = window.findChild(QWidget, 'firmwareUpdateFocusCard')
+    assert focus is not None
+    assert current in focus.findChildren(QLabel)
+    assert target in focus.findChildren(QLabel)
+    assert current.text() == '0.3.0-alpha.1'
+    assert window.findChild(QLabel, 'firmwareCurrentBuild').text() == '20260912.04'
     assert '20260912.05' in target.text()
+    assert '测试版' not in target.text() and 'sample' not in target.text()
     assert 'git_dirty' not in target.text() and '-gabc' not in target.text()
-    assert notes in target.text() and target.textFormat() == Qt.PlainText
+    assert notes not in target.text() and target.textFormat() == Qt.PlainText
+    release_notes = window.findChild(QLabel, 'remoteFirmwareReleaseNotes')
+    assert release_notes.text() == notes and release_notes.textFormat() == Qt.PlainText
+    assert not release_notes.isHidden()
     details = window.findChild(QLabel, 'remoteFirmwareTechnical')
     assert details.isHidden()
     assert '20260912.05-gabc-dirty' in details.text()
     window.findChild(QPushButton, 'remoteFirmwareDetailsToggle').click()
     assert not details.isHidden()
-    assert window.findChild(QPushButton, 'downloadRemoteFirmware').isEnabled()
+    install = window.findChild(QPushButton, 'installRemoteFirmware')
+    assert install in focus.findChildren(QPushButton)
+    assert install.isEnabled()
+    assert install.property('buttonRole') == 'primary'
     assert vm.remote_firmware.state is RemoteFirmwareState.AVAILABLE
     assert not vm.firmware_update.is_busy
     vm.navigate('overview')
@@ -55,17 +71,30 @@ def test_diagnostics_and_prompt_logs_expand_without_hiding_primary_actions(sessi
     window.findChild(QPushButton, 'diagnosticDetailsToggle').click()
     assert log.isVisible() and start.isVisible()
     vm.navigate('prompts')
-    log = window.findChild(QPlainTextEdit, 'promptEventLog')
-    assert log.isHidden()
-    window.findChild(QPushButton, 'promptEventDetailsToggle').click()
-    assert not log.isHidden()
+    assert not any(
+        item.isVisible()
+        for item in window.findChildren(QPlainTextEdit, 'promptEventLog')
+    )
+    qtbot.waitUntil(lambda: any(
+        item.isVisible()
+        for item in window.findChildren(QPushButton, 'promptEventDetailsToggle')
+    ))
+    toggle = next(
+        item
+        for item in window.findChildren(QPushButton, 'promptEventDetailsToggle')
+        if item.isVisible()
+    )
+    toggle.click()
+    qtbot.waitUntil(lambda: any(
+        item.isVisible()
+        for item in window.findChildren(QPlainTextEdit, 'promptEventLog')
+    ))
 
 
 def test_name_help_and_error_details_do_not_change_draft_or_save_state(editor):
     widget, vm = editor
     assert widget.counter.isHidden()
-    widget.findChild(QPushButton, 'bleNameHelpToggle').click()
-    assert not widget.counter.isHidden()
+    assert widget.findChild(QPushButton, 'bleNameHelpToggle') is None
     vm.ble_name.technical = 'GET_BLE_NAME timeout'
     vm.ble_name.message = '名称保存失败，输入已保留'
     vm.ble_name.changed.emit()

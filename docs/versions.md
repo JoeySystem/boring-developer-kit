@@ -1,43 +1,18 @@
-# 兼容版本与下载
+# 版本与兼容范围
 
-## 当前安装包
-
-官方 **0.1.13 · Apple Silicon Mac 测试版** 已单独提供。[下载、安装和限制](install-console.md)。已完成实际安装、USB 认证及响应式工作区验收；没有新增 Windows/Intel Mac 包，也未将完整扩展实体触发或固件更新验收标记为通过。
-
-## 源码开发包
-
-| 项目 | 版本 / 范围 |
+| 内容 | 当前公开版本 |
 |---|---|
-| 开发包 | `v0.1.0-preview.9`，非商业源码开放预发布 |
-| 控制台源码 | Console `0.1.46` 公开适配版 BORING Console Community |
-| 来源状态 | 2026-09-15 已验收的 0.1.46 功能状态；精确内容以本次公开提交为准 |
-| Python SDK / 本地扩展 API | `1.0.0` / `1.0` |
-| 扩展 manifest / 设备事件 schema | `1` |
-| WMP1 线协议 / 配置 Schema | `1.0` / `1` |
-| Python | 声明支持 `>=3.12,<3.14`；实际验证环境见发布验证 |
-| PySide6 | `6.11.1` |
-| 固件参考 | Power V2；历史 `.07`；当前 `20260916.01-gbc6d2699-dirty / sample-verified`，提供功能对应的源码快照及独立的官方签名维护 ZIP |
+| 源码开发包 | v0.1.0-preview.10，非商业开发者预发布 |
+| 控制台社区源码 | 0.2.1 / BORING Console Community |
+| SDK / 本地扩展 API | 1.1.0 / 1.1，兼容原有 API 1.0 用法 |
+| 官方安装包 | macOS arm64、Windows x86_64：0.2.1，见 [下载](install-console.md) |
+| 固件源码 | 保留 preview.9 / 20260916.01 历史参考，本次未更新 |
+| Python / Qt | Python >=3.12,<3.14；PySide6 6.11.1；本次使用 macOS / Python 3.12 |
 
-## 源码、宿主与固件
+控制台、SDK、固件与开发包分别编号。新版 SDK 不代表设备支持全部新功能；控制台依据设备报告的能力开放操作。固件源码 ZIP、官方签名维护 ZIP、控制台安装包用途不同，不能互相导入。
 
-- 本轮公开源码同步到 Console 0.1.46，当前公开安装包仍是 0.1.13，保留系统字体、独立应用标识及配置目录等公开分发适配。来源与差异见 [控制台源码说明](console-source.md)。
-- 可使用本仓库源码运行社区控制台，也可使用兼容官方宿主。SDK wheel 单独安装不会启动宿主或 Runner。
-- 源码开发包不附新 DMG / EXE 或固件镜像；官方 0.1.13 安装交付包单独下载。本次另有 `20260916.01` 官方签名维护 ZIP，供具备该入口的新版官方控制台通过 USB 安装，详见[维护包说明](official-firmware-20260916.01.md)。旧无签名 `.07` ZIP 不适用；不要绕过校验。`sample-verified` 表示已有范围内的留样机验证，不是全部硬件和场景的无条件稳定承诺。
-- 使用扩展实体触发需要设备支持提示词存储与 USB 提示词事件，槽位有内容且已有实体映射，并能建立控制台接受的设备会话。
-- SDK 本地 API 与设备 USB / BLE 传输是不同层。BLE 配置协议存在不等于扩展已经通过 BLE 实体触发验收。
+社区版提供独立设置、系统字体、简化设备示意和文字引导，不包含官方图标、产品模型或品牌动画，也不订阅官方在线更新。源码 wheel 不是独立安装包，运行需要开发包中的 protocol 资源。
 
-蓝牙自定义名称需要固件声明 `ble_name` 能力；旧固件不支持时禁用名称编辑。固件源码编译与导入能力不代表任意错误固件可通过控制台恢复，详见 [维护边界](firmware-maintenance.md)。
+本轮没有新增 Windows 安装、实体按键、BLE 重连、固件刷写或长期压力验收。此前官方安装版的历史结果不能代替社区构建验收。详见 [本次验证](verification-console-0.2.1.md) 和 [历史记录](verification.md)。
 
-## 验证范围
-
-社区控制台源码测试、独立构建与启动沿用 [preview.8 发布验证记录](verification.md)；本轮仅固件源码及包交付新增验证。
-
-历史 0.1.6 官方安装版已在内部 Apple Silicon Mac / Power V2 完成普通 USB / BLE 连接、USB `.16 → .07` 升级、自动回连、配置保留及窗口／菜单验收。这是官方安装版历史结果，不能替代本次社区源码适配或三个扩展示例的验收。
-
-Windows、Linux、Python 3.13、干净电脑安装、BLE 扩展实体触发，以及全部历史固件组合不作为本次默认已验收范围。具体新增结果仅以发布验证记录为准。
-
-## 下载
-
-[本次 Release](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.9) 提供完整开发包、官方签名固件维护 ZIP、SDK wheel 和三个独立扩展 ZIP。完整开发包包含 `firmware/` 与 `console/` 源码，但不内含官方固件镜像；SDK wheel 不包含控制台、固件或 Qt 运行库。GitHub 自动生成的 Source code ZIP 是仓库源码，不是可导入扩展、固件维护包或控制台安装包。
-
-安装与构建入口见 [开始使用](../START-HERE.md)。固件需要更新时使用官方维护流程；开发扩展不需要重新预置设备身份或写 eFuse。
+[本次 Release](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.10) 提供完整源码开发包、SDK wheel 和四个示例 ZIP。历史官方固件维护包仍在 [preview.9](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.9) 独立提供。

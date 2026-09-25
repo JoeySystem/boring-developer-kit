@@ -13,9 +13,9 @@ from controller_config import firmware_signature
 from controller_config.firmware_signature import sign_manifest, verify_manifest_signature, FirmwareSignatureError
 
 import pytest
-from PySide6.QtCore import QObject, QUrl
+from PySide6.QtCore import QObject, QTimer, QUrl
 from PySide6.QtNetwork import QNetworkReply
-from PySide6.QtWidgets import QProgressBar, QPushButton
+from PySide6.QtWidgets import QApplication, QMessageBox, QProgressBar, QPushButton
 
 from controller_config.firmware_release import (
     FirmwareReleaseError,
@@ -49,33 +49,18 @@ _TEST_SIGNING_KEY = Ed25519PrivateKey.generate()
 
 
 @pytest.fixture(autouse=True)
-def official_demo_release(
-    monkeypatch, contract, trust_test_signing_key, isolated_firmware_release_history
-):
+def official_demo_release(monkeypatch, contract, trust_test_signing_key, isolated_firmware_release_history):
     from controller_config.firmware_origin import FirmwareReleaseHistory
     import controller_config.transport.demo as demo
-
     original = demo._power_v2_snapshot
-
     def official_snapshot(contract, *, read_only):
         snapshot = original(contract, read_only=read_only)
-        return replace(
-            snapshot,
-            versions={**snapshot.versions, "build_id": "20260901.01-g12345678"},
-        )
-
+        return replace(snapshot, versions={**snapshot.versions, "build_id":"20260901.01-g12345678"})
     snapshot = official_snapshot(contract, read_only=False)
-    FirmwareReleaseHistory().remember(
-        sign_manifest(
-            {
-                "product_id": snapshot.identity["product_id"],
-                "hardware_id": snapshot.identity["hardware_id"],
-                "version": snapshot.versions["firmware"],
-                "build_id": snapshot.versions["build_id"],
-            },
-            _TEST_SIGNING_KEY,
-        )
-    )
+    FirmwareReleaseHistory().remember(sign_manifest({
+        "product_id":snapshot.identity["product_id"], "hardware_id":snapshot.identity["hardware_id"],
+        "version":snapshot.versions["firmware"], "build_id":snapshot.versions["build_id"],
+    }, _TEST_SIGNING_KEY))
     monkeypatch.setattr(demo, "_power_v2_snapshot", official_snapshot)
 
 
@@ -356,7 +341,7 @@ def test_remote_download_failure_keeps_release_for_explicit_retry(qtbot, contrac
     assert len(source.downloads) == 2
 
 
-def test_firmware_page_exposes_check_download_and_install_as_separate_actions(
+def test_firmware_page_offers_one_install_action_and_confirms_after_download(
     qtbot,
     contract,
 ) -> None:
@@ -374,18 +359,73 @@ def test_firmware_page_exposes_check_download_and_install_as_separate_actions(
     bundle = _bundle(contract)
     source.release_found.emit(_release(bundle))
 
-    check = window.findChild(QPushButton, "checkRemoteFirmware")
-    assert check is not None and check.isEnabled()
-    download = window.findChild(QPushButton, "downloadRemoteFirmware")
-    assert download is not None and download.text() == "下载固件更新"
-    download.click()
+    qtbot.waitUntil(lambda: window.findChild(QPushButton, "installRemoteFirmware") is not None)
+    install = window.findChild(QPushButton, "installRemoteFirmware")
+    assert install is not None and install.text() == "安装最新版固件…"
+    assert window.findChild(QPushButton, "checkRemoteFirmware") is None
+    install.click()
     source.download_progress.emit(512, 1024)
     progress = window.findChild(QProgressBar, "remoteFirmwareProgress")
     assert progress is not None and progress.value() == 50
 
+    def cancel_install() -> None:
+        dialog = QApplication.activeModalWidget()
+        assert isinstance(dialog, QMessageBox)
+        dialog.button(QMessageBox.Cancel).click()
+
+    QTimer.singleShot(0, cancel_install)
     source.download_completed.emit(bundle)
+    window._confirm_downloaded_remote_firmware()
     install = window.findChild(QPushButton, "startFirmwareUpdate")
-    assert install is not None and install.text() == "安装下载的固件更新"
+    assert install is not None and install.text() == "安装最新版固件…"
+    assert not any(command.name.startswith("FW_") for command in gateway.commands)
+
+
+def test_remote_install_waits_for_usb_after_bluetooth_download(qtbot, contract) -> None:
+    source = FakeReleaseSource()
+    gateway = RecordingDemoGateway(contract, "ready")
+    view_model = MainViewModel(gateway, contract, firmware_release_source=source)
+    window = MainWindow(view_model)
+    qtbot.addWidget(window)
+    window.show()
+    view_model.start()
+    qtbot.waitUntil(lambda: view_model.model.snapshot is not None, timeout=1000)
+    bluetooth_snapshot = replace(
+        view_model.model.snapshot,
+        port_name="ble:test-device",
+    )
+    gateway.snapshot_ready.emit(bluetooth_snapshot)
+    view_model.navigate("firmware")
+
+    bundle = _bundle(contract)
+    source.release_found.emit(_release(bundle))
+    qtbot.waitUntil(lambda: window.findChild(QPushButton, "installRemoteFirmware") is not None)
+    window.findChild(QPushButton, "installRemoteFirmware").click()
+    source.download_completed.emit(bundle)
+    qtbot.wait(20)
+
+    continue_button = window.findChild(QPushButton, "startFirmwareUpdate")
+    assert continue_button is not None
+    assert continue_button.text() == "请连接 USB 后继续安装"
+    assert not continue_button.isEnabled()
+    assert QApplication.activeModalWidget() is None
+    assert not any(command.name.startswith("FW_") for command in gateway.commands)
+    downloaded_package = view_model.firmware_update.package
+
+    def cancel_install() -> None:
+        dialog = QApplication.activeModalWidget()
+        assert isinstance(dialog, QMessageBox)
+        dialog.button(QMessageBox.Cancel).click()
+
+    QTimer.singleShot(0, cancel_install)
+    gateway.snapshot_ready.emit(replace(
+        bluetooth_snapshot,
+        port_name="/dev/cu.usbmodem-test",
+    ))
+    window._confirm_downloaded_remote_firmware()
+    assert window.findChild(QPushButton, "startFirmwareUpdate").text() == "安装最新版固件…"
+    assert window.findChild(QPushButton, "startFirmwareUpdate").isEnabled()
+    assert view_model.firmware_update.package is downloaded_package
     assert not any(command.name.startswith("FW_") for command in gateway.commands)
 
 
@@ -608,40 +648,46 @@ def test_signing_is_stable_across_json_formatting_and_does_not_mutate_input(cont
     verify_manifest_signature(roundtrip)
 
 
-def test_signed_sample_passes_online_validation_and_package_loader(contract):
+def test_prepared_release_passes_real_online_validation_and_package_loader(contract, tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "firmware" / "tools"))
+    from prepare_online_firmware import prepare_online_firmware
+
     bundle = _bundle(contract, validation_state="built", git_dirty=True)
-    bundle.manifest.update(channel="sample", download_url="https://example.test/firmware.bin")
-    _resign(bundle)
+    local_manifest = {key: value for key, value in bundle.manifest.items() if key != "signature"}
+    source = tmp_path / "local-maintenance"
+    source.mkdir()
+    (source / local_manifest["image"]).write_bytes(bundle.image_data)
+    local_path = source / "firmware-manifest.json"
+    local_path.write_text(json.dumps(local_manifest), encoding="utf-8")
+    key_path = tmp_path / "temporary-test-authority.pem"
+    key_path.write_bytes(_TEST_SIGNING_KEY.private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    ))
+    online_path = prepare_online_firmware(
+        local_path, tmp_path / "online", base_url="https://updates.example.test",
+        channel="sample", release_notes="签名发布工具到控制台集成",
+        private_key_file=key_path,
+    )
+    online = json.loads(online_path.read_text(encoding="utf-8"))
     checked = _validate_release_manifest(
-        bundle.manifest, _power_v2_snapshot(contract, read_only=False), channel="sample",
+        online, _power_v2_snapshot(contract, read_only=False), channel="sample",
     )
     package = load_remote_firmware_bundle(RemoteFirmwareBundle(
-        manifest=checked, image_data=bundle.image_data,
-        manifest_url="https://example.test/firmware-manifest.json", channel="sample",
+        manifest=checked, image_data=(online_path.parent / checked["image"]).read_bytes(),
+        manifest_url="https://updates.example.test/firmware-manifest.json", channel="sample",
     ), contract)
-    assert package.build_id == bundle.manifest["build_id"]
+    assert package.build_id == local_manifest["build_id"]
     assert package.validation_state == "built"
+    # Manual local maintenance continues accepting pre-signature local packages.
+    from controller_config.firmware_update import FirmwarePackage
+    assert FirmwarePackage.load(local_path, contract).build_id == package.build_id
 
 
 def remember_test_snapshot(vm, snapshot):
-    snapshot = replace(
-        snapshot,
-        versions={
-            **snapshot.versions,
-            "build_id": snapshot.versions.get(
-                "build_id", "20260901.01-g12345678"
-            ),
-        },
-    )
-    vm._firmware_release_history.remember(
-        sign_manifest(
-            {
-                "product_id": snapshot.identity["product_id"],
-                "hardware_id": snapshot.identity["hardware_id"],
-                "version": snapshot.versions["firmware"],
-                "build_id": snapshot.versions["build_id"],
-            },
-            _TEST_SIGNING_KEY,
-        )
-    )
+    snapshot = replace(snapshot, versions={**snapshot.versions, "build_id":snapshot.versions.get("build_id", "20260901.01-g12345678")})
+    vm._firmware_release_history.remember(sign_manifest({
+        "product_id":snapshot.identity["product_id"], "hardware_id":snapshot.identity["hardware_id"],
+        "version":snapshot.versions["firmware"], "build_id":snapshot.versions["build_id"],
+    }, _TEST_SIGNING_KEY))
     return snapshot

@@ -19,8 +19,8 @@ from controller_config.views.main_window import MainWindow
 @pytest.fixture
 def edited_catalog(tmp_path, monkeypatch):
     data = json.loads(files("controller_config.translations").joinpath("ui_text.json").read_text())
-    data["messages"]["设置"].update(zh_CN="偏好", en_US="Prefs")
-    data["messages"]["打开诊断"].update(zh_CN="检查", en_US="Check")
+    data["messages"]["固件与系统"].update(zh_CN="系统中心", en_US="System Center")
+    data["messages"]["切换到官方版本"].update(zh_CN="切换", en_US="Switch")
     data["messages"]["仅保存本地草稿"].update(zh_CN="存草稿", en_US="Save Draft")
     data["dynamic"]["prompt.slot_pending"].update(
         zh_CN="请先写入提示词 {v1}", en_US="Write prompt {v1} first"
@@ -68,14 +68,18 @@ def test_real_window_uses_edited_copy_after_repeated_language_switches(
     qtbot.addWidget(window, before_close_func=lambda _: vm.shutdown())
     window.show()
     vm.start()
-    qtbot.waitUntil(lambda: window._nav_buttons["settings"].accessibleName() == "偏好")
-    for language, name, button in (("en_US", "Prefs", "Check"), ("zh_CN", "偏好", "检查"),
-                                   ("en_US", "Prefs", "Check")):
+    qtbot.waitUntil(lambda: window._nav_buttons["settings"].accessibleName() == "系统中心")
+    for language, name, button in (
+        ("en_US", "System Center", "Switch"),
+        ("zh_CN", "系统中心", "切换"),
+        ("en_US", "System Center", "Switch"),
+    ):
         language_manager.set_language(language)
         vm.navigate("settings")
         qtbot.waitUntil(lambda: window._nav_buttons["settings"].accessibleName() == name)
-        qtbot.waitUntil(lambda: window.findChild(QPushButton, "openDiagnosticsSettings") is not None)
-        assert window.findChild(QPushButton, "openDiagnosticsSettings").text() == button
+        window._select_settings_section("system")
+        qtbot.waitUntil(lambda: window.findChild(QPushButton, "switchOfficialVersion") is not None)
+        assert window.findChild(QPushButton, "switchOfficialVersion").text() == button
 
 
 def test_shortened_or_empty_copy_round_trips_without_reinterpreting_source(
@@ -109,11 +113,11 @@ def test_invalid_placeholder_is_reported_with_entry_name():
         }}, {"rules": [{"message": "example", "match": r"value (.+)"}]})
 
 
-def test_fixed_copy_preserves_named_parameters_in_both_languages():
+def test_fixed_copy_preserves_named_parameters_in_all_languages():
     catalog = TextCatalog.load()
     fields = lambda text: set(re.findall(r"\{[A-Za-z_]\w*\}", text))
     for source, entry in catalog.messages.items():
-        for language in ("zh_CN", "en_US"):
+        for language in ("zh_CN", "en_US", "ja_JP"):
             assert fields(entry[language]) == fields(source), (source, language)
 
 
@@ -154,3 +158,47 @@ def test_local_p0_and_update_copy_preserves_identity_and_meaning(language):
     assert serial in catalog.translate(source, language)
     assert catalog.translate(source, language) != source
     assert "0.1.18" in catalog.translate("有新版本 {version}", language).format(version="0.1.18")
+
+
+@pytest.mark.parametrize("language", ["en_US", "ja_JP"])
+def test_voice_setup_stage_copy_is_translated(language):
+    catalog = TextCatalog.load()
+    for source in (
+        "设置要求与帮助…",
+        "使用其他快捷键…",
+        "1  设备快捷键 · 待保存",
+        "2  输入软件绑定 · 保存设备后继续",
+        "练习完成，内容未发送到 AI。",
+        "更换语音输入软件",
+        "从 Mac 顶部输入法菜单切换到千问，打开千问设置 → 语音输入，将快捷键设为右 Option，并开启“短按也唤起语音输入”。",
+    ):
+        assert catalog.translate(source, language) != source
+
+
+@pytest.mark.parametrize("language,expected", [
+    ("zh_CN", "单击 F14 / 双击 Enter"),
+    ("en_US", "Press once: F14 / Press twice quickly: Enter"),
+    ("ja_JP", "1回押す：F14 / 素早く2回押す：Enter"),
+])
+def test_custom_voice_gesture_distinguishes_double_press(language, expected):
+    from controller_config.actions import describe_action
+    action = {"type": "key_gesture", "usage": 105, "modifiers": [],
+              "double_usage": 40, "double_modifiers": [], "double_window_ms": 300}
+    # Use a custom voice shortcut to exercise the generic gesture summary.
+    source = describe_action(action, platform="macos")
+    assert TextCatalog.load().translate(source, language) == expected
+
+
+@pytest.mark.parametrize('language, expected', [
+    ('zh_CN', ('发送超时', '尚未保存')),
+    ('en_US', ('while sending', 'has not been saved')),
+    ('ja_JP', ('送信がタイムアウト', 'まだ保存されていません')),
+])
+def test_bluetooth_send_and_validation_timeout_copy(language, expected):
+    catalog = TextCatalog.load()
+    for source, phrase in zip((
+        '蓝牙请求发送超时，请重新连接后重试。',
+        '设备校验回复超时，配置尚未保存，请重试。',
+        '设备校验未完成，配置尚未保存，请查看详情后重试。',
+    ), (*expected, expected[1])):
+        assert phrase in catalog.translate(source, language)

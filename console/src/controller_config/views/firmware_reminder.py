@@ -14,7 +14,7 @@ class FirmwareReminderUi(QObject):
         self.vm = window._view_model
         self.reminders = reminders if reminders is not None else UpdateReminders()
         self._manual_scope = None
-        self._refresh_signature = None
+        self._acknowledged: set[tuple[str, str]] = set()
         self.row = window._firmware_update_footer
         layout = QHBoxLayout(self.row)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -33,9 +33,9 @@ class FirmwareReminderUi(QObject):
         window._language_manager.language_changed.connect(self.refresh)
         self._timer = QTimer(self)
         self._timer.setInterval(60000)
-        self._timer.timeout.connect(lambda: self.refresh(force=True))
+        self._timer.timeout.connect(self.refresh)
         self._timer.start()
-        self.refresh(force=True)
+        self.refresh()
 
     def context(self):
         identity = self.vm.remote_firmware_device
@@ -54,31 +54,12 @@ class FirmwareReminderUi(QObject):
             return None
         return scope, f'{release.version}|{release.build_id}'
 
-    def refresh(self, *_, force=False):
-        snapshot = self.vm.model.snapshot
-        release = self.vm.remote_firmware.release
-        signature = (
-            self.vm.model.state,
-            tuple(str(snapshot.identity.get(field, "")) for field in ("serial", "product_id", "hardware_id"))
-            if snapshot is not None else None,
-            tuple(str(snapshot.versions.get(field, "")) for field in ("firmware", "build_id"))
-            if snapshot is not None else None,
-            self.vm.firmware_origin,
-            self.vm.remote_firmware.state,
-            self.vm.remote_firmware.restoration,
-            (release.version, release.build_id) if release is not None else None,
-            self.vm.firmware_update.is_busy,
-            self.vm.page,
-            self.window._language_manager.language,
-            self._manual_scope,
-        )
-        if not force and signature == self._refresh_signature:
-            return
-        self._refresh_signature = signature
+    def refresh(self, *_):
         context = self.context()
         if context is None:
             self.window._nav_buttons['settings'].set_update_notice(firmware=False)
             self.row.hide()
+            snapshot = self.vm.model.snapshot
             current_scope = ('firmware:' + ':'.join(str(snapshot.identity[k])
                              for k in ('serial', 'product_id', 'hardware_id'))
                              if snapshot is not None and self.vm.model.state is AppState.READY else None)
@@ -90,6 +71,7 @@ class FirmwareReminderUi(QObject):
         # Progress and failures remain in their existing transaction view.
         visible = remote.state in {RemoteFirmwareState.AVAILABLE, RemoteFirmwareState.DOWNLOADED}
         visible = visible and not self.vm.firmware_update.is_busy
+        visible = visible and context not in self._acknowledged
         if remote.state == RemoteFirmwareState.AVAILABLE:
             visible = visible and (self._manual_scope == scope or not self.reminders.is_snoozed(scope, target))
         translate = self.window._language_manager.translate
@@ -112,16 +94,20 @@ class FirmwareReminderUi(QObject):
             if snapshot is not None:
                 identity = tuple(str(snapshot.identity[k]) for k in ('serial', 'product_id', 'hardware_id'))
                 self._manual_scope = 'firmware:' + ':'.join(identity)
-        self.refresh(force=True)
+        self.refresh()
 
     def snooze_update(self):
         context = self.context()
         if context and self.vm.remote_firmware.state == RemoteFirmwareState.AVAILABLE:
             self.reminders.snooze(*context)
             self._manual_scope = None
-            self.refresh(force=True)
+            self.refresh()
 
     def open_update(self):
-        if self.context() is None or self.vm.firmware_update.is_busy:
+        context = self.context()
+        if context is None or self.vm.firmware_update.is_busy:
             return
+        self._acknowledged.add(context)
+        self._manual_scope = None
+        self.refresh()
         self.window._navigate('firmware')

@@ -12,23 +12,12 @@
     "inputs_neutral": true,
     "platform": "macos",
     "operating_mode": "normal",
-    "codex_agent_press": {
-      "sequence": 0,
-      "agent": null,
-      "transport": null
-    },
+    "codex_agent_press": {"sequence": 0, "agent": null, "transport": null},
     "claude_code_status": {
       "active": false,
       "selected": false,
       "lease_ms": 5000,
-      "states": [
-        "idle",
-        "idle",
-        "idle",
-        "idle",
-        "idle",
-        "idle"
-      ]
+      "states": ["idle", "idle", "idle", "idle", "idle", "idle"]
     },
     "active_controls": [],
     "action_engine": {
@@ -74,21 +63,9 @@
       "mode": "normal",
       "active_slot": 1,
       "slots": [
-        {
-          "slot": 1,
-          "paired": true,
-          "connected": false
-        },
-        {
-          "slot": 2,
-          "paired": false,
-          "connected": false
-        },
-        {
-          "slot": 3,
-          "paired": false,
-          "connected": false
-        }
+        {"slot": 1, "paired": true, "connected": false},
+        {"slot": 2, "paired": false, "connected": false},
+        {"slot": 3, "paired": false, "connected": false}
       ]
     }
   }

@@ -1,0 +1,18 @@
+{
+  "version": "0.2.1",
+  "from_version": "0.1.46",
+  "highlights": {
+    "zh_CN": [
+      "同步 0.2.1 控制台的配置、语音设置和草稿恢复功能。",
+      "社区版使用独立设置、系统字体和简化设备示意。"
+    ],
+    "en_US": [
+      "Sync Console 0.2.1 configuration, voice setup and draft recovery.",
+      "Community builds use separate settings, system fonts and a schematic device view."
+    ],
+    "ja_JP": [
+      "Console 0.2.1 の設定、音声入力設定、下書き復元を同期。",
+      "コミュニティ版は独立した設定、システムフォント、簡易デバイス表示を使用。"
+    ]
+  }
+}

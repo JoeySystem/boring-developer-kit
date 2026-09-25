@@ -3,14 +3,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from PySide6.QtCore import QRectF, Qt, Signal
-from PySide6.QtGui import QPainter
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QFormLayout,
     QBoxLayout,
     QFrame,
-    QGraphicsScene,
-    QGraphicsView,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -31,7 +27,7 @@ from controller_config.prompt_library import (
     PromptLibrary,
     PromptLibraryError,
 )
-from controller_config.i18n import translate_ui_text
+from controller_config.i18n import translate_ui_text, set_translatable_text
 from controller_config.prompt_device import (
     PromptEventLogEntry,
     PromptListenerState,
@@ -39,48 +35,34 @@ from controller_config.prompt_device import (
 )
 from controller_config.views.v4_widgets import V4Card
 from controller_config.views.digital_label import Boring5RLabel
+from controller_config.views.draft_dialog import confirm_local_draft
 from controller_config.appearance import V4_STYLE
 
 
-class PromptDevicePreview(QGraphicsView):
-    """A live crop of the shared device renderer with four direction controls."""
+class PromptDevicePreview(QWidget):
+    """The full shared 3D model with controls anchored around its joystick."""
 
     def __init__(self, shell: QWidget, buttons: dict[int, QPushButton]) -> None:
         super().__init__()
         self.setObjectName("promptDevicePreview")
-        self.setFrameShape(QFrame.NoFrame)
-        self.setRenderHint(QPainter.SmoothPixmapTransform)
-        self.setStyleSheet("QGraphicsView { background: transparent; border: none; }")
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.setMinimumSize(280, 520)
-        scene = QGraphicsScene(self)
-        self.setScene(scene)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setMinimumSize(320, 360)
         shell.ensurePolished()
         shell.adjustSize()
-        if shell.layout() is not None:
-            shell.layout().activate()
         shell.setAttribute(Qt.WA_TranslucentBackground)
-        joystick = shell.findChild(QWidget, "joystickControl")
-        if joystick is not None:
-            center = joystick.mapTo(shell, joystick.rect().center())
-            cx, cy = center.x(), center.y()
-        else:
-            cx, cy = shell.width() * .8, shell.height() * .8
-        crop_x, crop_y = max(0, cx - 145), max(0, cy - 195)
-        shell_proxy = scene.addWidget(shell)
-        shell_proxy.setPos(-crop_x, -crop_y)
-        shell_proxy.setZValue(0)
         self._device_shell = shell
+        self._device_shell.setParent(self)
         model_canvas = shell.findChild(QWidget, "deviceModelCanvas")
-        positions = {1: (0, -65), 2: (65, 0), 3: (0, 65), 4: (-65, 0)}
+        if model_canvas is not None and hasattr(model_canvas, "set_preset"):
+            model_canvas.set_preset("prompt")
+        self._model_canvas = model_canvas
+        self._buttons = buttons
+        self._positions = {1: (0, -58), 2: (58, 0), 3: (0, 58), 4: (-58, 0)}
         control_ids = {
-            1: "joystick.up",
-            2: "joystick.right",
-            3: "joystick.down",
-            4: "joystick.left",
+            prompt_id: control_id
+            for control_id, prompt_id, _arrow, _label in QUICK_PROMPT_DIRECTIONS
         }
-        for prompt_id, (dx, dy) in positions.items():
+        for prompt_id in self._positions:
             buttons[prompt_id].setAttribute(Qt.WA_TranslucentBackground)
             buttons[prompt_id].setStyleSheet(V4_STYLE)
             if model_canvas is not None and hasattr(model_canvas, "preview_control"):
@@ -89,14 +71,32 @@ class PromptDevicePreview(QGraphicsView):
                     value=control_ids[prompt_id],
                     canvas=model_canvas: canvas.preview_control(value)
                 )
-            item = scene.addWidget(buttons[prompt_id])
-            item.setPos(cx - crop_x + dx - 16, cy - crop_y + dy - 16)
-            item.setZValue(1)
-        self.setSceneRect(QRectF(0, 0, 270, 360))
+            if model_canvas is not None and hasattr(model_canvas, "attach_prompt_direction"):
+                model_canvas.attach_prompt_direction(prompt_id, buttons[prompt_id])
+            buttons[prompt_id].setParent(self)
+            buttons[prompt_id].setVisible(
+                not bool(getattr(model_canvas, "_realtime_enabled", False))
+            )
+            buttons[prompt_id].raise_()
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
-        self.fitInView(self.sceneRect(), Qt.KeepAspectRatio)
+        if hasattr(self._device_shell, "scale_to"):
+            self._device_shell.scale_to(min(420, self.width(), self.height()))
+        shell_x = (self.width() - self._device_shell.width()) // 2
+        shell_y = (self.height() - self._device_shell.height()) // 2
+        self._device_shell.move(shell_x, shell_y)
+        if self._model_canvas is not None and hasattr(self._model_canvas, "control_rect"):
+            center = self._model_canvas.control_rect("joystick").center()
+            cx = shell_x + round(center.x())
+            cy = shell_y + round(center.y())
+        else:
+            cx = shell_x + round(self._device_shell.width() * .75)
+            cy = shell_y + round(self._device_shell.height() * .75)
+        for prompt_id, (dx, dy) in self._positions.items():
+            button = self._buttons[prompt_id]
+            button.move(cx + dx - button.width() // 2, cy + dy - button.height() // 2)
+            button.raise_()
 
 
 @dataclass(frozen=True)
@@ -129,7 +129,9 @@ class PromptLibraryEditor(QScrollArea):
         refresh_device: Callable[[], None],
         write_device: Callable[[int], None],
         delete_device: Callable[[int], None],
+        save_and_write_device: Callable[[int, str, str], None] | None = None,
         device_preview: QWidget | None = None,
+        hardware_id: str | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -140,10 +142,12 @@ class PromptLibraryEditor(QScrollArea):
         self._refresh_device = refresh_device
         self._write_device = write_device
         self._delete_device = delete_device
+        self._save_and_write_device = save_and_write_device
         self._selected_prompt_id_value = QUICK_PROMPT_IDS[0]
         self._direction_buttons: dict[int, QPushButton] = {}
         self._preview_buttons: dict[int, QPushButton] = {}
         self._device_preview = device_preview
+        self._supports_prompt_palette = hardware_id == "WMP-S3-MATRIX12-POWER-V2"
         self._preserve_fields_on_render = True
         self._device_storage_available = device_storage_available
         self._device_busy = device_busy
@@ -172,6 +176,49 @@ class PromptLibraryEditor(QScrollArea):
         layout.addStretch(1)
         self.setWidget(page)
 
+    def update_runtime(self, *, available, busy, message, helper_message, listener, event_log, background_message) -> None:
+        inputs = (available, busy, message, helper_message, listener, event_log, background_message)
+        if inputs == getattr(self, "_runtime_inputs", None):
+            return
+        self._runtime_inputs = inputs
+        self._device_storage_available = available
+        self._device_busy = busy
+        self._protocol_message = message
+        self._helper_message = helper_message
+        self._listener_status = listener
+        self._event_log = event_log
+        self._background_message = background_message
+        set_translatable_text(self._storage_status, "设备存储可用" if available else "设备存储不可用")
+        self._storage_status.setObjectName("statusReady" if available else "statusWarn")
+        self._storage_status.setToolTip(message)
+        self._storage_status.style().unpolish(self._storage_status)
+        self._storage_status.style().polish(self._storage_status)
+        for name, text in (("promptHelperOnlineState", listener.label),
+                           ("promptListenerStatus", listener.message),
+                           ("promptHelperStatus", helper_message),
+                           ("promptBackgroundStatus", background_message),
+                           ("promptProtocolBoundary", message)):
+            set_translatable_text(self.findChild(QLabel, name), text)
+        badge = self.findChild(QLabel, "promptHelperOnlineState")
+        badge.setProperty("listenerOnline", listener.state is PromptListenerState.READY)
+        badge.setToolTip(translate_ui_text(background_message))
+        detail = self.findChild(QLabel, "promptListenerStatus")
+        detail.setToolTip(listener.technical)
+        detail.setVisible(listener.state is not PromptListenerState.READY)
+        has_result = helper_message not in {"", "尚无设备触发记录"}
+        self._recent_result_caption.setVisible(has_result)
+        self.findChild(QLabel, "promptHelperStatus").setVisible(has_result)
+        log = self.findChild(QPlainTextEdit, "promptEventLog")
+        text = _event_log_text(event_log)
+        if log.toPlainText() != text:
+            position = log.verticalScrollBar().value()
+            log.setPlainText(text)
+            log.verticalScrollBar().setValue(position)
+        if self._library is not None:
+            self._write_device_button.setVisible(available)
+            self._save_draft_button.setVisible(not available)
+            self._refresh_primary_action()
+
     def _summary_card(
         self, device_storage_available: bool, protocol_message: str
     ) -> QWidget:
@@ -184,9 +231,14 @@ class PromptLibraryEditor(QScrollArea):
         title = QVBoxLayout()
         if self._library is None:
             title.addWidget(QLabel("QUICK PROMPTS", objectName="eyebrow"))
-            title.addWidget(QLabel("四向提示词盘", objectName="inspectorTitle"))
+            title.addWidget(QLabel(
+                "四向提示词盘" if self._supports_prompt_palette else "快捷提示词",
+                objectName="inspectorTitle",
+            ))
         note = QLabel(
-            "为提示词盘准备四条常用提示词：先打开，再选择，最后确认；移动摇杆仅选择，不直接触发。",
+            "为提示词盘准备四条常用提示词：先打开，再选择，最后确认；移动摇杆仅选择，不直接触发。"
+            if self._supports_prompt_palette else
+            "保存提示词后，在按键配置中将摇杆方向绑定到对应提示词。",
             objectName="muted",
         )
         note.setWordWrap(True)
@@ -197,17 +249,20 @@ class PromptLibraryEditor(QScrollArea):
         guide = QLabel(
             "打开：长按 Key12 约 0.8 秒。\n"
             "选择：摇杆上 / 右 / 下 / 左对应提示词 1 / 2 / 3 / 4；旋钮短按确认。\n"
-            "退出：Key3 取消；10 秒无操作自动退出。",
+            "退出：Key3 取消；10 秒无操作自动退出。"
+            if self._supports_prompt_palette else
+            "普通模式下，拨动已绑定的摇杆方向会直接触发对应提示词。",
             objectName="promptPaletteGuide",
         )
         guide.setWordWrap(True)
         instructions_box.addWidget(guide)
-        behavior = QLabel(
-            "Key12 短按保留当前模式原功能。提示词盘打开期间由设备接管输入，不向电脑发送按键、滚动或提示词事件；确认后才触发所选提示词。",
-            objectName="muted",
-        )
-        behavior.setWordWrap(True)
-        instructions_box.addWidget(behavior)
+        if self._supports_prompt_palette:
+            behavior = QLabel(
+                "Key12 短按保留当前模式原功能。提示词盘打开期间由设备接管输入，不向电脑发送按键、滚动或提示词事件；确认后才触发所选提示词。",
+                objectName="muted",
+            )
+            behavior.setWordWrap(True)
+            instructions_box.addWidget(behavior)
         instructions.setVisible(False)
         show_guide = QPushButton("查看设备操作步骤", objectName="promptGuideToggle")
         show_guide.setProperty("buttonRole", "ghost")
@@ -220,6 +275,7 @@ class PromptLibraryEditor(QScrollArea):
             "设备存储可用" if device_storage_available else "设备存储不可用",
             objectName="statusReady" if device_storage_available else "statusWarn",
         )
+        self._storage_status = status
         status.setToolTip(protocol_message)
         title.addWidget(status, 0, Qt.AlignmentFlag.AlignLeft)
         return card
@@ -242,14 +298,14 @@ class PromptLibraryEditor(QScrollArea):
         card = QWidget(objectName="promptWorkspace")
         self._workspace_layout = QBoxLayout(QBoxLayout.Direction.LeftToRight, card)
         self._workspace_layout.setContentsMargins(0, 0, 0, 0)
-        self._workspace_layout.setSpacing(16)
+        self._workspace_layout.setSpacing(12)
         choices = V4Card(role="primary", dots=True)
         choices.setObjectName("promptChoicesCard")
         choices_box = QVBoxLayout(choices)
         choices_box.setContentsMargins(16, 16, 16, 16)
         choices_box.setSpacing(10)
         self._choices_heading = Boring5RLabel("PROMPTS", scale=.9, color="#A5A195")
-        choices_box.addWidget(self._choices_heading)
+        self._choices_heading.hide()
         focus = V4Card(role="focus")
         focus.setObjectName("promptFocusCard")
         box = QVBoxLayout(focus)
@@ -259,40 +315,45 @@ class PromptLibraryEditor(QScrollArea):
         focus_header = QHBoxLayout()
         focus_header.addWidget(self._focus_direction_title)
         self._slot_title = QLabel(objectName="promptSlotTitle")
+        self._slot_title.hide()
         focus_header.addWidget(self._slot_title)
         focus_header.addStretch(1)
         box.addLayout(focus_header)
         left = QWidget(objectName="promptLeftColumn")
         left_box = QVBoxLayout(left)
+        self._left_box = left_box
+        self._left_column = left
         left_box.setContentsMargins(0, 0, 0, 0)
-        left_box.setSpacing(16)
-        left_box.addWidget(choices, 3)
+        left_box.setSpacing(12)
+        left_box.addWidget(choices)
         right = QWidget(objectName="promptRightColumn")
         right_box = QVBoxLayout(right)
+        self._right_box = right_box
+        self._right_column = right
         right_box.setContentsMargins(0, 0, 0, 0)
-        right_box.setSpacing(16)
-        right_box.addWidget(focus, 3)
-        self._workspace_layout.addWidget(left, 5)
-        self._workspace_layout.addWidget(right, 5)
+        right_box.setSpacing(12)
+        right_box.addWidget(focus)
+        self._workspace_layout.addWidget(left, 4)
+        self._workspace_layout.addWidget(right, 7)
 
         header = QHBoxLayout()
         configured = sum(
-            self._library.draft_entry(prompt_id) is not None
+            self._library.confirmed_entry(prompt_id) is not None
             for prompt_id in QUICK_PROMPT_IDS
         )
-        total = QLabel(
-            f"{configured}/4 个方向已配置",
+        self._quick_count = QLabel(
+            translate_ui_text("设备已保存 {v1}/4").format(v1=configured),
             objectName="muted",
         )
-        total.setObjectName("promptQuickCount")
-        header.addWidget(total)
+        self._quick_count.setObjectName("promptQuickCount")
+        header.addWidget(self._quick_count)
         choices_box.addLayout(header)
 
         direction_grid = QVBoxLayout()
         direction_grid.setSpacing(4)
         for control_id, prompt_id, arrow, label in QUICK_PROMPT_DIRECTIONS:
             button = QPushButton(objectName="promptDirectionCard")
-            button.setMinimumHeight(44)
+            button.setMinimumHeight(54)
             button.setMinimumWidth(0)
             button.setProperty("directionControlId", control_id)
             button.setProperty("promptId", prompt_id)
@@ -310,117 +371,163 @@ class PromptLibraryEditor(QScrollArea):
             self._preview_buttons[prompt_id] = direction
         if self._device_preview is not None:
             stage = QWidget(objectName="promptDirectionStage")
+            self._stage = stage
             stage_box = QVBoxLayout(stage)
-            stage_box.setContentsMargins(0, 30, 0, 30)
+            stage_box.setContentsMargins(0, 0, 0, 0)
+            stage_box.setSpacing(8)
+            preview = PromptDevicePreview(self._device_preview, self._preview_buttons)
+            preview.setFixedHeight(360)
+            stage_box.addWidget(preview)
+            stage_box.addWidget(self._device_operation_guide())
             stage_box.addStretch(1)
-            stage_box.addWidget(PromptDevicePreview(self._device_preview, self._preview_buttons), 5)
-            caption = QLabel("点击方向编辑提示词", objectName="muted")
-            caption.setAlignment(Qt.AlignCenter)
-            stage_box.addWidget(caption)
-            stage_box.addStretch(1)
-            self._workspace_layout.insertWidget(1, stage, 9)
+            self._workspace_layout.insertWidget(1, stage, 6)
         else:
             for button in self._preview_buttons.values():
                 button.setParent(card)
                 button.hide()
         choices_box.addLayout(direction_grid)
-        choices_note = QLabel("摇杆选择\n旋钮确认", objectName="promptJoystickCenter")
-        choices_note.setWordWrap(True)
-        choices_box.addWidget(choices_note)
+        self._refresh_button = QPushButton("重新读取全部槽位", objectName="refreshPromptDevice")
+        self._refresh_button.setProperty("buttonRole", "ghost")
+        self._refresh_button.clicked.connect(self._refresh_from_device)
+        choices_box.addWidget(self._refresh_button)
+        if self._device_preview is None:
+            choices_box.addWidget(self._device_operation_guide())
         choices_box.addWidget(self._summary_card(self._device_storage_available, self._protocol_message))
-        choices_box.addStretch(1)
 
-        form = QFormLayout()
-        form.setRowWrapPolicy(QFormLayout.WrapAllRows)
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
         self._direction_selection = QLabel(objectName="promptDirectionSelection")
         self._direction_selection.setParent(focus)
         self._direction_selection.hide()
 
         self._sync_state = QLabel(objectName="promptSyncState")
-        form.addRow(self._sync_state)
+        focus_header.addWidget(self._sync_state)
+        self._sync_state.setWordWrap(True)
 
         self._name = QLineEdit(objectName="promptNameEditor")
         self._name.setMinimumHeight(42)
         self._name.setProperty("pill", True)
         self._name.setPlaceholderText("例如：代码审查")
-        form.addRow("名称", self._name)
         self._name_bytes = QLabel(objectName="muted")
-        form.addRow(self._name_bytes)
+        name_heading = QHBoxLayout()
+        name_label = QLabel("名称")
+        name_label.setBuddy(self._name)
+        name_heading.addWidget(name_label)
+        name_heading.addStretch(1)
+        name_heading.addWidget(self._name_bytes)
+        box.addLayout(name_heading)
+        box.addWidget(self._name)
 
         self._body = QPlainTextEdit(objectName="promptBodyEditor")
         self._body.setPlaceholderText(translate_ui_text("输入中文、英文、换行和常用符号；不会自动按 Enter 提交。"))
-        self._body.setFixedHeight(150)
-        form.addRow("正文", self._body)
+        self._body.setFixedHeight(200)
         self._body_bytes = QLabel(objectName="muted")
-        form.addRow(self._body_bytes)
-        box.addLayout(form)
+        body_heading = QHBoxLayout()
+        body_label = QLabel("正文")
+        body_label.setBuddy(self._body)
+        body_heading.addWidget(body_label)
+        body_heading.addStretch(1)
+        body_heading.addWidget(self._body_bytes)
+        box.addLayout(body_heading)
+        box.addWidget(self._body)
 
-        more = QWidget(objectName="promptMoreActions")
-        buttons = QGridLayout(more)
-        buttons.setContentsMargins(0, 0, 0, 0)
-        save = QPushButton("保存本地草稿", objectName="primary")
-        save.setObjectName("savePromptDraft")
-        save.clicked.connect(self._save)
-        save.setProperty("buttonRole", "secondary")
-        discard = QPushButton("丢弃本方向修改", objectName="secondary")
-        discard.setObjectName("discardPromptDraft")
-        discard.clicked.connect(self._discard)
-        buttons.addWidget(discard, 0, 0)
-        delete = QPushButton("从本地草稿删除", objectName="secondary")
-        delete.setObjectName("deletePromptDraft")
-        delete.clicked.connect(self._delete)
-        delete.setProperty("buttonRole", "ghost")
-        buttons.addWidget(delete, 1, 0)
-
+        self._save_draft_button = QPushButton("保存本地草稿", objectName="primary")
+        self._save_draft_button.setObjectName("savePromptDraft")
+        self._save_draft_button.clicked.connect(self._save)
+        self._save_draft_button.setProperty("buttonRole", "primary")
         device_buttons = QGridLayout()
-        self._write_device_button = QPushButton(
-            "写入设备并读回确认", objectName="primary"
-        )
+        self._write_device_button = QPushButton("保存到设备", objectName="primary")
         self._write_device_button.setObjectName("writePromptDevice")
         self._write_device_button.clicked.connect(self._write_to_device)
         self._write_device_button.setProperty("buttonRole", "primary")
-        self._write_device_button.setText("写入设备并读回")
-        device_buttons.addWidget(self._write_device_button, 0, 0)
-        device_buttons.addWidget(save, 0, 1)
-        refresh = QPushButton("从设备重新读取", objectName="secondary")
-        refresh.setObjectName("refreshPromptDevice")
-        refresh.setEnabled(self._device_storage_available and not self._device_busy)
-        refresh.clicked.connect(self._refresh_from_device)
-        buttons.addWidget(refresh, 2, 0)
-        self._delete_device_button = QPushButton(
-            "从设备删除", objectName="secondary"
-        )
+        device_buttons.addWidget(self._write_device_button, 0, 0, 1, 2)
+        device_buttons.addWidget(self._save_draft_button, 0, 0, 1, 2)
+        secondary_actions = QHBoxLayout()
+        secondary_actions.setSpacing(8)
+        self._discard_button = QPushButton("恢复设备版本", objectName="discardPromptDraft")
+        self._discard_button.setProperty("buttonRole", "secondary")
+        self._discard_button.clicked.connect(self._discard)
+        secondary_actions.addWidget(self._discard_button)
+        self._delete_draft_button = QPushButton("删除本地草稿", objectName="deletePromptDraft")
+        self._delete_draft_button.setProperty("buttonRole", "ghost")
+        self._delete_draft_button.clicked.connect(self._delete)
+        secondary_actions.addWidget(self._delete_draft_button)
+        self._delete_device_button = QPushButton("从设备删除此提示词", objectName="deletePromptDevice")
         self._delete_device_button.setObjectName("deletePromptDevice")
         self._delete_device_button.clicked.connect(self._delete_from_device)
         self._delete_device_button.setProperty("buttonRole", "ghost")
-        device_buttons.addWidget(self._delete_device_button, 1, 0, 1, 2)
+        secondary_actions.addWidget(self._delete_device_button)
         box.addLayout(device_buttons)
-        toggle = QPushButton("更多操作", objectName="promptMoreToggle")
-        toggle.setProperty("buttonRole", "ghost")
-        toggle.setCheckable(True)
-        toggle.toggled.connect(more.setVisible)
-        more.hide()
-        box.addWidget(toggle)
-        box.addWidget(more)
-
-        boundary = QLabel(
-            "提示词盘固定使用槽位 1–4，与配置方案中的普通摇杆映射无关；此页不会修改这些映射。保存草稿后，仍需写入设备并读回确认才会在设备上生效。",
-            objectName="roleContext",
-        )
-        boundary.setWordWrap(True)
-        buttons.addWidget(boundary, 3, 0)
-
+        self._action_hint = QLabel(objectName="promptActionHint")
+        self._action_hint.setWordWrap(True)
+        box.addWidget(self._action_hint)
+        box.addLayout(secondary_actions)
+        # Set visibility after parenting: an unparented visible button creates
+        # a native top-level window while this page is still being constructed.
+        self._write_device_button.setVisible(self._device_storage_available)
+        self._save_draft_button.setVisible(not self._device_storage_available)
         helper = self._helper_card()
-        left_box.addWidget(helper.findChild(QWidget, "promptPasteCard"), 1)
-        right_box.addWidget(helper.findChild(QWidget, "promptEventsCard"), 1)
+        self._paste_card = helper.findChild(QWidget, "promptPasteCard")
+        left_box.addWidget(self._paste_card)
+        left_box.addStretch(1)
+        right_box.addWidget(helper.findChild(QWidget, "promptEventsCard"))
+        right_box.addStretch(1)
         helper.deleteLater()
         del self._helper_layout
 
         self._name.textChanged.connect(self._update_byte_counts)
         self._body.textChanged.connect(self._update_byte_counts)
+        self._name.textChanged.connect(self._refresh_primary_action)
+        self._body.textChanged.connect(self._refresh_primary_action)
         self._load_selected()
         return card
+
+    def _device_operation_guide(self) -> QWidget:
+        guide = QWidget(objectName="promptOperationGuide")
+        layout = QVBoxLayout(guide)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        if not self._supports_prompt_palette:
+            note = QLabel(
+                translate_ui_text("普通模式下，拨动已绑定的摇杆方向会直接触发对应提示词。"),
+                objectName="promptDirectTriggerGuide",
+            )
+            note.setWordWrap(True)
+            layout.addWidget(note)
+            return guide
+        self._operation_buttons: list[QPushButton] = []
+        steps = (
+            ("① 长按 12 号键 · 打开", "key.12"),
+            ("② 拨动摇杆 · 选择", "joystick.up"),
+            ("③ 短按旋钮 · 确认", "encoder.press"),
+        )
+        for label, control_id in steps:
+            button = QPushButton(translate_ui_text(label), objectName="promptOperationStep")
+            button.setProperty("guideControl", control_id)
+            button.setProperty("buttonRole", "ghost")
+            button.setMinimumHeight(38)
+            button.setEnabled(self._device_preview is not None)
+            button.setToolTip(translate_ui_text("点击在模型上演示；长按约 0.8 秒打开提示词盘。"))
+            button.clicked.connect(
+                lambda _checked=False, control=control_id: self._preview_operation(control)
+            )
+            self._operation_buttons.append(button)
+            layout.addWidget(button)
+        return guide
+
+    def _preview_operation(self, control_id: str) -> None:
+        if self._device_preview is None:
+            return
+        canvas = self._device_preview.findChild(QWidget, "deviceModelCanvas")
+        if canvas is None:
+            return
+        # Only animate the existing model. Demonstrating a step must never
+        # activate a prompt, switch its draft, or send a device command.
+        selected_control = (
+            control_id.split(".")[0]
+            if control_id.startswith(("joystick.", "encoder."))
+            else control_id
+        )
+        canvas.set_selected_control(selected_control)
+        canvas.preview_control(control_id)
 
     def _helper_card(self) -> QWidget:
         card = QWidget(objectName="promptHelperWorkspace")
@@ -434,10 +541,10 @@ class PromptLibraryEditor(QScrollArea):
         self._helper_layout.addWidget(paste, 1)
         self._helper_layout.addWidget(events, 1)
         box = QVBoxLayout(paste)
-        box.setContentsMargins(24, 20, 24, 22)
+        box.setContentsMargins(16, 14, 16, 14)
         box.setSpacing(8)
         self._paste_heading = Boring5RLabel("PASTE", scale=.9, color="#A5A195")
-        box.addWidget(self._paste_heading)
+        self._paste_heading.hide()
         detail = QLabel(
             "后台核心已经使用系统剪贴板和 Command+V 插入 UTF-8 正文，且不会自动按 Enter。首次实际粘贴时 macOS 可能要求辅助功能权限；失败时正文仍保留在剪贴板，不会发送乱码。",
             objectName="muted",
@@ -469,40 +576,53 @@ class PromptLibraryEditor(QScrollArea):
         if self._listener_status.technical:
             listener_detail.setToolTip(self._listener_status.technical)
         box.addWidget(listener_detail)
+        listener_detail.setVisible(
+            self._listener_status.state is not PromptListenerState.READY
+        )
 
-        box.addWidget(QLabel("最近结果", objectName="eyebrow"))
+        recent_label = QLabel("最近结果", objectName="eyebrow")
+        self._recent_result_caption = recent_label
         helper_status = QLabel(
             translate_ui_text(self._helper_message), objectName="muted"
         )
         helper_status.setObjectName("promptHelperStatus")
         helper_status.setWordWrap(True)
+        has_result = self._helper_message not in {"", "尚无设备触发记录"}
+        box.addWidget(recent_label)
         box.addWidget(helper_status)
+        recent_label.setVisible(has_result)
+        helper_status.setVisible(has_result)
 
         background = QLabel(
             translate_ui_text(self._background_message), objectName="roleContext"
         )
         background.setObjectName("promptBackgroundStatus")
         background.setWordWrap(True)
+        background.hide()
+        status_badge.setToolTip(translate_ui_text(self._background_message))
         box.addWidget(background)
-        box.addWidget(detail_toggle)
+        help_actions = QHBoxLayout()
+        help_actions.setContentsMargins(0, 0, 0, 0)
+        help_actions.setSpacing(4)
+        help_actions.addWidget(detail_toggle)
+        box.addLayout(help_actions)
         box.addWidget(detail)
-        box.addStretch(1)
+        events_toggle = QPushButton("操作记录", objectName="promptEventDetailsToggle")
+        events_toggle.setProperty("buttonRole", "ghost")
+        events_toggle.setCheckable(True)
+        events_toggle.toggled.connect(events.setVisible)
+        help_actions.addWidget(events_toggle)
 
         box = QVBoxLayout(events)
-        box.setContentsMargins(24, 20, 24, 22)
+        box.setContentsMargins(16, 14, 16, 14)
         box.setSpacing(8)
         self._events_heading = Boring5RLabel("EVENTS", scale=.9, color="#A5A195")
-        box.addWidget(self._events_heading)
+        self._events_heading.hide()
         event_log = QPlainTextEdit(objectName="promptEventLog")
         event_log.setReadOnly(True)
         event_log.setMaximumHeight(100)
         event_log.setMinimumHeight(100)
         event_log.setPlainText(_event_log_text(self._event_log))
-        log_toggle = QPushButton("操作记录", objectName="promptEventDetailsToggle")
-        log_toggle.setCheckable(True)
-        event_log.hide()
-        log_toggle.toggled.connect(event_log.setVisible)
-        box.addWidget(log_toggle)
         box.addWidget(event_log)
         boundary = QLabel(
             self._protocol_message,
@@ -512,11 +632,14 @@ class PromptLibraryEditor(QScrollArea):
         boundary.setWordWrap(True)
         box.addWidget(boundary)
         box.addStretch(1)
+        # Prompt history remains available on demand without occupying the
+        # ordinary edit flow.
+        events.hide()
         return card
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
-        if hasattr(self, "_workspace_layout"):
+        if hasattr(self, "_workspace_layout") and hasattr(self, "_paste_card"):
             direction = (
                 QBoxLayout.Direction.TopToBottom
                 if self.viewport().width() < 1060
@@ -524,6 +647,20 @@ class PromptLibraryEditor(QScrollArea):
             )
             if self._workspace_layout.direction() != direction:
                 self._workspace_layout.setDirection(direction)
+                if direction == QBoxLayout.Direction.TopToBottom:
+                    self._left_box.removeWidget(self._paste_card)
+                    self._right_box.insertWidget(1, self._paste_card)
+                    if hasattr(self, "_stage"):
+                        self._workspace_layout.removeWidget(self._stage)
+                        self._workspace_layout.addWidget(self._stage)
+                else:
+                    self._right_box.removeWidget(self._paste_card)
+                    self._left_box.insertWidget(1, self._paste_card)
+                    if hasattr(self, "_stage"):
+                        self._workspace_layout.removeWidget(self._stage)
+                        self._workspace_layout.insertWidget(1, self._stage)
+                    for index, factor in enumerate((4, 6, 7) if hasattr(self, "_stage") else (4, 7)):
+                        self._workspace_layout.setStretch(index, factor)
         if hasattr(self, "_helper_layout"):
             self._helper_layout.setDirection(
                 QBoxLayout.Direction.TopToBottom
@@ -575,9 +712,7 @@ class PromptLibraryEditor(QScrollArea):
         self._body.setPlainText(state.body)
         self._name.blockSignals(False)
         self._body.blockSignals(False)
-        draft = self._library.draft_entry(state.prompt_id) if self._library is not None else None
-        if draft is None or state.name != draft.name or state.body != draft.body:
-            self._sync_state.setText("尚未保存到本地草稿")
+        self._refresh_primary_action()
         self._update_byte_counts()
         if state.focused_field == "name":
             self._name.setFocus()
@@ -597,22 +732,24 @@ class PromptLibraryEditor(QScrollArea):
     def has_unsaved_fields(self) -> bool:
         if self._library is None or not hasattr(self, "_name"):
             return False
-        entry = self._library.draft_entry(self._selected_prompt_id())
-        return (self._name.text(), self._body.toPlainText()) != (
+        entry = self._library.draft_entry(self._selected_prompt_id()) or self._library.confirmed_entry(self._selected_prompt_id())
+        return (self._name.text().strip(), self._body.toPlainText()) != (
             entry.name if entry else "", entry.body if entry else ""
         )
 
     def confirm_leave(self) -> bool:
         if not self.has_unsaved_fields():
             return True
-        choice = QMessageBox.warning(
+        choice = confirm_local_draft(
             self, "提示词输入尚未保存",
-            "当前输入尚未保存到本地草稿。保存后仅保留在电脑，不会写入设备。",
-            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel, QMessageBox.Cancel,
+            "保留草稿后会保存在这台电脑，尚未应用到设备。",
         )
         if choice == QMessageBox.Save:
             return self._save()
-        return choice == QMessageBox.Discard
+        if choice == QMessageBox.Discard:
+            self._load_selected()
+            return True
+        return False
 
     def _load_direction(self, prompt_id: int) -> None:
         self._selected_prompt_id_value = prompt_id
@@ -630,8 +767,8 @@ class PromptLibraryEditor(QScrollArea):
         direction_title = {1: "UP", 2: "RIGHT", 3: "DOWN", 4: "LEFT"}[prompt_id]
         self._focus_direction_title.setText(direction_title)
         self._slot_title.setText(f"PROMPT {prompt_id}")
-        entry = self._library.draft_entry(prompt_id)
         confirmed = self._library.confirmed_entry(prompt_id)
+        entry = self._library.draft_entry(prompt_id) or confirmed
         self._direction_selection.setText(
             f"{arrow} {direction_label} · 快捷提示词 {prompt_id}"
         )
@@ -641,26 +778,13 @@ class PromptLibraryEditor(QScrollArea):
         self._body.setPlainText(entry.body if entry is not None else "")
         self._name.blockSignals(False)
         self._body.blockSignals(False)
-        if entry == confirmed and entry is not None:
-            state = "与设备读回缓存一致"
-        elif entry is None and confirmed is None:
-            state = "空槽位"
-        else:
-            state = "有尚未写入设备的本地修改"
-        self._sync_state.setText(state)
-        dirty = entry != confirmed
-        self._write_device_button.setEnabled(
-            self._device_storage_available
-            and not self._device_busy
-            and entry is not None
-            and dirty
-        )
-        self._delete_device_button.setEnabled(
-            self._device_storage_available
-            and not self._device_busy
-            and confirmed is not None
-        )
+        self._refresh_primary_action()
         self._refresh_direction_cards()
+        if self._device_preview is not None:
+            canvas = self._device_preview.findChild(QWidget, "deviceModelCanvas")
+            if canvas is not None:
+                canvas.set_selected_control(None)
+                canvas.set_selected_prompt_direction(prompt_id)
         for candidate, button in self._preview_buttons.items():
             button.setProperty("selected", candidate == prompt_id)
             button.style().unpolish(button)
@@ -670,27 +794,35 @@ class PromptLibraryEditor(QScrollArea):
     def _refresh_direction_cards(self) -> None:
         if self._library is None:
             return
+        configured = sum(self._library.confirmed_entry(prompt_id) is not None for prompt_id in QUICK_PROMPT_IDS)
+        self._quick_count.setText(translate_ui_text("设备已保存 {v1}/4").format(v1=configured))
         for _control_id, prompt_id, arrow, direction_label in QUICK_PROMPT_DIRECTIONS:
-            entry = self._library.draft_entry(prompt_id)
+            draft = self._library.draft_entry(prompt_id)
+            confirmed = self._library.confirmed_entry(prompt_id)
+            entry = draft or confirmed
+            status = (
+                "仅本地草稿" if confirmed is None and draft is not None
+                else "待保存到设备" if draft != confirmed
+                else "设备已保存" if confirmed is not None
+                else "未设置"
+            )
             name = (
                 entry.name
                 if entry is not None
                 else translate_ui_text("未设置提示词")
             )
             button = self._direction_buttons[prompt_id]
-            configured = entry is not None
+            configured = confirmed is not None
             if button.property("configured") != configured:
                 button.setProperty("configured", configured)
                 button.style().unpolish(button)
                 button.style().polish(button)
             slot_label = translate_ui_text(f"提示词槽位 {prompt_id}")
-            button.setToolTip(f"{translate_ui_text(direction_label)} · {slot_label}\n{name}")
+            button.setToolTip(f"{translate_ui_text(direction_label)} · {slot_label}\n{name} · {translate_ui_text(status)}")
             short_name = button.fontMetrics().elidedText(
                 name, Qt.TextElideMode.ElideRight, max(60, min(120, button.width() - 24))
             )
-            button.setText(
-                f"{arrow}  {translate_ui_text(direction_label)}   {short_name}"
-            )
+            button.setText(f"{arrow}  {translate_ui_text(direction_label)}   {short_name}\n      {translate_ui_text(status)}")
 
     @staticmethod
     def _direction(prompt_id: int) -> tuple[str, int, str, str]:
@@ -702,14 +834,91 @@ class PromptLibraryEditor(QScrollArea):
     def _update_byte_counts(self) -> None:
         name_bytes = len(self._name.text().encode("utf-8"))
         body_bytes = len(self._body.toPlainText().encode("utf-8"))
-        self._name_bytes.setText(f"{name_bytes}/{PROMPT_NAME_MAX_BYTES} UTF-8 字节")
-        self._body_bytes.setText(f"{body_bytes}/{PROMPT_BODY_MAX_BYTES} UTF-8 字节")
+        self._name_bytes.setText(
+            translate_ui_text("已用 {v1}/{v2}").format(
+                v1=name_bytes, v2=PROMPT_NAME_MAX_BYTES
+            )
+        )
+        self._body_bytes.setText(
+            translate_ui_text("已用 {v1}/{v2}").format(
+                v1=body_bytes, v2=PROMPT_BODY_MAX_BYTES
+            )
+        )
         self._name_bytes.setStyleSheet(
             "color: #8b2f24;" if name_bytes > PROMPT_NAME_MAX_BYTES else ""
         )
         self._body_bytes.setStyleSheet(
             "color: #8b2f24;" if body_bytes > PROMPT_BODY_MAX_BYTES else ""
         )
+
+    def _refresh_primary_action(self) -> None:
+        if self._library is None or not hasattr(self, "_name"):
+            return
+        prompt_id = self._selected_prompt_id()
+        draft = self._library.draft_entry(prompt_id)
+        confirmed = self._library.confirmed_entry(prompt_id)
+        current = (self._name.text().strip(), self._body.toPlainText())
+        saved_value = (draft.name, draft.body) if draft is not None else (
+            (confirmed.name, confirmed.body) if confirmed is not None else ("", "")
+        )
+        confirmed_value = (
+            (confirmed.name, confirmed.body) if confirmed is not None else ("", "")
+        )
+        name_bytes = len(current[0].encode("utf-8"))
+        body_bytes = len(current[1].encode("utf-8"))
+        valid_shape = (
+            bool(current[0])
+            and bool(current[1])
+            and name_bytes <= PROMPT_NAME_MAX_BYTES
+            and body_bytes <= PROMPT_BODY_MAX_BYTES
+        )
+        changed_in_editor = current != saved_value
+        changed_on_device = current != confirmed_value
+        if changed_in_editor:
+            state = "正在编辑，尚未保存"
+        elif confirmed is not None and draft is None:
+            state = "本地草稿已移除，设备内容仍在"
+        elif draft != confirmed:
+            state = "仅本地草稿，设备仍使用旧版本" if confirmed is not None else "仅本地草稿，尚未写入设备"
+        elif confirmed is not None:
+            state = "设备已保存"
+        else:
+            state = "未设置"
+        set_translatable_text(self._sync_state, state)
+        if not current[0] or not current[1]:
+            hint = "填写名称和正文后保存到设备。"
+        elif not self._device_storage_available:
+            hint = "设备未连接；草稿只保存在这台电脑，连接后再保存到设备。"
+        elif changed_on_device or draft != confirmed:
+            hint = "保存后实体键才会使用新内容；当前修改不会自动生效。"
+        else:
+            hint = "实体键使用设备中的版本；粘贴由控制台完成。"
+        set_translatable_text(self._action_hint, hint)
+        if not changed_on_device and confirmed is not None:
+            label = "已保存到设备"
+        elif not changed_in_editor and draft is not None:
+            label = "将草稿保存到设备"
+        else:
+            label = "保存更改到设备" if confirmed is not None else "保存到设备"
+        set_translatable_text(self._write_device_button, label)
+        set_translatable_text(
+            self._save_draft_button,
+            "草稿已保存" if not changed_in_editor and draft is not None else "保存本地草稿",
+        )
+        self._write_device_button.setEnabled(
+            self._device_storage_available
+            and not self._device_busy
+            and valid_shape
+            and changed_on_device
+        )
+        self._save_draft_button.setEnabled(not self._device_busy and valid_shape and changed_in_editor)
+        self._refresh_button.setEnabled(self._device_storage_available and not self._device_busy)
+        self._discard_button.setVisible(confirmed is not None and (changed_on_device or draft != confirmed))
+        self._discard_button.setEnabled(not self._device_busy)
+        self._delete_draft_button.setVisible(confirmed is None and draft is not None)
+        self._delete_draft_button.setEnabled(not self._device_busy)
+        self._delete_device_button.setVisible(confirmed is not None)
+        self._delete_device_button.setEnabled(self._device_storage_available and not self._device_busy)
 
     def _save(self) -> bool:
         self._preserve_fields_on_render = False
@@ -727,6 +936,14 @@ class PromptLibraryEditor(QScrollArea):
             self._preserve_fields_on_render = True
 
     def _discard(self) -> None:
+        if self.has_unsaved_fields() and QMessageBox.question(
+            self,
+            translate_ui_text("恢复设备版本"),
+            translate_ui_text("尚未保存的输入会丢失。确定恢复设备中的版本吗？"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        ) != QMessageBox.StandardButton.Yes:
+            return
         self._preserve_fields_on_render = False
         try:
             self._discard_draft(self._selected_prompt_id())
@@ -736,6 +953,14 @@ class PromptLibraryEditor(QScrollArea):
             self._preserve_fields_on_render = True
 
     def _delete(self) -> None:
+        if QMessageBox.question(
+            self,
+            translate_ui_text("删除本地草稿"),
+            translate_ui_text("将删除这台电脑上此槽位的草稿和未保存输入；设备内容不受影响。是否继续？"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        ) != QMessageBox.StandardButton.Yes:
+            return
         self._preserve_fields_on_render = False
         try:
             self._delete_draft(self._selected_prompt_id())
@@ -745,6 +970,14 @@ class PromptLibraryEditor(QScrollArea):
             self._preserve_fields_on_render = True
 
     def _refresh_from_device(self) -> None:
+        if self.has_unsaved_fields() and QMessageBox.question(
+            self,
+            translate_ui_text("重新读取全部槽位"),
+            translate_ui_text("尚未保存的输入会丢失。本地已保存的草稿会保留，是否继续？"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        ) != QMessageBox.StandardButton.Yes:
+            return
         self._preserve_fields_on_render = False
         try:
             self._refresh_device()
@@ -755,17 +988,17 @@ class PromptLibraryEditor(QScrollArea):
 
     def _write_to_device(self) -> None:
         prompt_id = self._selected_prompt_id()
-        choice = QMessageBox.warning(
-            self,
-            "确认写入提示词",
-            f"将覆盖设备的{self._direction(prompt_id)[3]}方向快捷提示词，随后立即读回全文确认。是否继续？",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
-            QMessageBox.StandardButton.Cancel,
-        )
-        if choice != QMessageBox.StandardButton.Yes:
-            return
         try:
-            self._write_device(prompt_id)
+            if self._save_and_write_device is not None:
+                self._save_and_write_device(
+                    prompt_id,
+                    self._name.text(),
+                    self._body.toPlainText(),
+                )
+            else:
+                if not self._save():
+                    return
+                self._write_device(prompt_id)
         except (PromptLibraryError, OSError) as exc:
             QMessageBox.warning(self, "无法写入设备提示词", str(exc))
 
@@ -773,8 +1006,8 @@ class PromptLibraryEditor(QScrollArea):
         prompt_id = self._selected_prompt_id()
         choice = QMessageBox.warning(
             self,
-            "确认删除设备提示词",
-            f"将删除设备的{self._direction(prompt_id)[3]}方向快捷提示词。该方向在重新配置前不会执行提示词。是否继续？",
+            translate_ui_text("确认删除设备提示词"),
+            translate_ui_text("将从设备删除当前方向的提示词，并删除这台电脑上该方向的草稿。该方向在重新配置前不会执行提示词。是否继续？"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel,
         )

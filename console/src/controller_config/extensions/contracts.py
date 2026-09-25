@@ -10,6 +10,7 @@ from typing import TypeAlias
 
 from controller_config.device_events import (
     DEVICE_EVENT_SCHEMA_VERSION,
+    HOST_ACTION_EVENT,
     PROMPT_TRIGGERED_EVENT,
     DeviceEvent,
     DeviceEventContractError,
@@ -18,7 +19,7 @@ from controller_config.protocol.contract import Contract, ContractError
 
 
 API_MAJOR = 1
-API_MINOR = 0
+API_MINOR = 1
 PUBLIC_SCHEMA_VERSION = DEVICE_EVENT_SCHEMA_VERSION
 PROMPT_EVENT_KIND = PROMPT_TRIGGERED_EVENT
 
@@ -141,12 +142,14 @@ class ExtensionManifest:
         observer_events = _string_tuple(
             raw["observer_events"], "manifest observer_events"
         )
-        unsupported_events = set(observer_events) - {PROMPT_EVENT_KIND}
+        unsupported_events = set(observer_events) - {PROMPT_EVENT_KIND, HOST_ACTION_EVENT}
         if unsupported_events:
             raise ExtensionContractError(
                 "manifest 声明了不支持的 observer event："
                 + ", ".join(sorted(unsupported_events))
             )
+        if HOST_ACTION_EVENT in observer_events and api_version.minor < 1:
+            raise ExtensionContractError("host_action.triggered 需要扩展 API 1.1")
         action_values = _array(raw["actions"], "manifest actions")
         actions = tuple(
             ExtensionActionDeclaration.from_mapping(item) for item in action_values
@@ -449,6 +452,8 @@ class ActionInvocation:
                 f"action {action_id} 未在 manifest 中声明"
             )
         event = SemanticEvent.from_mapping(raw["event"])
+        if event.kind == HOST_ACTION_EVENT and manifest.api_version.minor < 1:
+            raise ExtensionContractError("独立电脑任务需要扩展 API 1.1")
         device_serial = _non_empty_string(
             raw["device_serial"], "invocation device_serial"
         )

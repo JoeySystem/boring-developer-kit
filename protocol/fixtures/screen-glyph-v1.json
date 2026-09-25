@@ -1,230 +1,39 @@
 {
   "version": 1,
-  "message_types": {
-    "SCREEN_GLYPH_LIST": 87,
-    "SCREEN_GLYPH_GET": 88,
-    "SCREEN_GLYPH_SET": 89,
-    "SCREEN_GLYPH_RESET": 90
-  },
-  "capability": {
-    "features": {
-      "custom_glyph_icons": true
-    },
-    "screen_glyphs": {
-      "version": 1,
-      "format": "alpha8",
-      "count": 28
-    }
-  },
+  "message_types": {"SCREEN_GLYPH_LIST": 87, "SCREEN_GLYPH_GET": 88, "SCREEN_GLYPH_SET": 89, "SCREEN_GLYPH_RESET": 90},
+  "capability": {"features": {"custom_glyph_icons": true}, "screen_glyphs": {"version": 1, "format": "alpha8", "count": 28}},
   "icons": [
-    {
-      "id": "timer",
-      "resource_id": 0,
-      "width": 11,
-      "height": 12,
-      "editable": true
-    },
-    {
-      "id": "settings",
-      "resource_id": 1,
-      "width": 13,
-      "height": 11,
-      "editable": true
-    },
-    {
-      "id": "macos",
-      "resource_id": 2,
-      "width": 13,
-      "height": 5,
-      "editable": true
-    },
-    {
-      "id": "windows_linux",
-      "resource_id": 3,
-      "width": 14,
-      "height": 5,
-      "editable": true
-    },
-    {
-      "id": "back",
-      "resource_id": 4,
-      "width": 7,
-      "height": 7,
-      "editable": true
-    },
-    {
-      "id": "confirm",
-      "resource_id": 5,
-      "width": 10,
-      "height": 7,
-      "editable": true
-    },
-    {
-      "id": "power",
-      "resource_id": 6,
-      "width": 7,
-      "height": 7,
-      "editable": true
-    },
-    {
-      "id": "warning",
-      "resource_id": 7,
-      "width": 6,
-      "height": 12,
-      "editable": false
-    },
-    {
-      "id": "play",
-      "resource_id": 8,
-      "width": 7,
-      "height": 7,
-      "editable": true
-    },
-    {
-      "id": "pause",
-      "resource_id": 9,
-      "width": 7,
-      "height": 7,
-      "editable": true
-    },
-    {
-      "id": "cancel",
-      "resource_id": 10,
-      "width": 7,
-      "height": 7,
-      "editable": true
-    },
-    {
-      "id": "error",
-      "resource_id": 11,
-      "width": 9,
-      "height": 9,
-      "editable": false
-    },
-    {
-      "id": "config",
-      "resource_id": 12,
-      "width": 7,
-      "height": 7,
-      "editable": true
-    },
-    {
-      "id": "lighting",
-      "resource_id": 13,
-      "width": 13,
-      "height": 12,
-      "editable": true
-    },
-    {
-      "id": "haptic",
-      "resource_id": 14,
-      "width": 13,
-      "height": 11,
-      "editable": true
-    },
-    {
-      "id": "standby",
-      "resource_id": 15,
-      "width": 7,
-      "height": 8,
-      "editable": true
-    },
-    {
-      "id": "exit",
-      "resource_id": 16,
-      "width": 7,
-      "height": 7,
-      "editable": true
-    },
-    {
-      "id": "normal_small",
-      "resource_id": 17,
-      "width": 5,
-      "height": 5,
-      "editable": true
-    },
-    {
-      "id": "codex_small",
-      "resource_id": 18,
-      "width": 5,
-      "height": 5,
-      "editable": true
-    },
-    {
-      "id": "ble_link",
-      "resource_id": 19,
-      "width": 13,
-      "height": 7,
-      "editable": true
-    },
-    {
-      "id": "restart",
-      "resource_id": 20,
-      "width": 13,
-      "height": 13,
-      "editable": true
-    },
-    {
-      "id": "system",
-      "resource_id": 21,
-      "width": 11,
-      "height": 10,
-      "editable": true
-    },
-    {
-      "id": "normal_mode",
-      "resource_id": 22,
-      "width": 13,
-      "height": 13,
-      "editable": true
-    },
-    {
-      "id": "codex_mode",
-      "resource_id": 23,
-      "width": 15,
-      "height": 15,
-      "editable": true
-    },
-    {
-      "id": "claude_code_mode",
-      "resource_id": 24,
-      "width": 15,
-      "height": 15,
-      "editable": true
-    },
-    {
-      "id": "usb",
-      "resource_id": 25,
-      "width": 13,
-      "height": 15,
-      "editable": true
-    },
-    {
-      "id": "bluetooth",
-      "resource_id": 26,
-      "width": 9,
-      "height": 15,
-      "editable": true
-    },
-    {
-      "id": "battery",
-      "resource_id": 27,
-      "width": 13,
-      "height": 9,
-      "editable": true
-    }
+    {"id":"timer","resource_id":0,"width":11,"height":12,"editable":true},
+    {"id":"settings","resource_id":1,"width":13,"height":11,"editable":true},
+    {"id":"macos","resource_id":2,"width":13,"height":5,"editable":true},
+    {"id":"windows_linux","resource_id":3,"width":14,"height":5,"editable":true},
+    {"id":"back","resource_id":4,"width":7,"height":7,"editable":true},
+    {"id":"confirm","resource_id":5,"width":10,"height":7,"editable":true},
+    {"id":"power","resource_id":6,"width":7,"height":7,"editable":true},
+    {"id":"warning","resource_id":7,"width":6,"height":12,"editable":false},
+    {"id":"play","resource_id":8,"width":7,"height":7,"editable":true},
+    {"id":"pause","resource_id":9,"width":7,"height":7,"editable":true},
+    {"id":"cancel","resource_id":10,"width":7,"height":7,"editable":true},
+    {"id":"error","resource_id":11,"width":9,"height":9,"editable":false},
+    {"id":"config","resource_id":12,"width":7,"height":7,"editable":true},
+    {"id":"lighting","resource_id":13,"width":13,"height":12,"editable":true},
+    {"id":"haptic","resource_id":14,"width":13,"height":11,"editable":true},
+    {"id":"standby","resource_id":15,"width":7,"height":8,"editable":true},
+    {"id":"exit","resource_id":16,"width":7,"height":7,"editable":true},
+    {"id":"normal_small","resource_id":17,"width":5,"height":5,"editable":true},
+    {"id":"codex_small","resource_id":18,"width":5,"height":5,"editable":true},
+    {"id":"ble_link","resource_id":19,"width":13,"height":7,"editable":true},
+    {"id":"restart","resource_id":20,"width":13,"height":13,"editable":true},
+    {"id":"system","resource_id":21,"width":11,"height":10,"editable":true},
+    {"id":"normal_mode","resource_id":22,"width":13,"height":13,"editable":true},
+    {"id":"codex_mode","resource_id":23,"width":15,"height":15,"editable":true},
+    {"id":"claude_code_mode","resource_id":24,"width":15,"height":15,"editable":true},
+    {"id":"usb","resource_id":25,"width":13,"height":15,"editable":true},
+    {"id":"bluetooth","resource_id":26,"width":9,"height":15,"editable":true},
+    {"id":"battery","resource_id":27,"width":13,"height":9,"editable":true}
   ],
-  "get_example": {
-    "id": "back"
-  },
-  "reset_example": {
-    "id": "back",
-    "base_revision": 1
-  },
-  "storage": {
-    "partition": "prompt_nvs",
-    "namespace": "screen_glyph",
-    "independent_revision": true
-  },
-  "legacy_behavior": "Absent custom_glyph_icons capability means no glyph commands; SCREEN_ICON v1 remains independent."
+  "get_example":{"id":"back"},
+  "reset_example":{"id":"back","base_revision":1},
+  "storage":{"partition":"prompt_nvs","namespace":"screen_glyph","independent_revision":true},
+  "legacy_behavior":"Absent custom_glyph_icons capability means no glyph commands; SCREEN_ICON v1 remains independent."
 }

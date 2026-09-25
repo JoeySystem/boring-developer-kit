@@ -83,33 +83,58 @@ class ScreenIconEditor(QWidget):
             layout.addWidget(widget)
             return widget
 
-        label("NORMAL 首页图片 · 彩色")
-        label("仅替换 NORMAL 模式的空闲首页，不覆盖 CODEX／CC、菜单、番茄钟、提示词盘或系统警告。", "screenIconScope")
-        self.device_label = label("设备当前图标：尚未读取")
+        label("首页图片", "screenIconHeading")
+        label("这张图片会显示在设备待机首页，其他页面不受影响。", "screenIconScope")
+        self.device_label = label("当前：尚未读取")
         self.device_preview = QLabel(objectName="screenIconDevicePreview")
         self.device_preview.setAlignment(Qt.AlignCenter)
+        self.device_preview.setFixedHeight(128)
+        self.device_preview.hide()
         layout.addWidget(self.device_preview)
-        self.preview = _CropPreview()
-        layout.addWidget(self.preview, alignment=Qt.AlignHCenter)
-        self.filename = label("尚未选择图片")
-        self.filename.setObjectName("screenIconFilename")
-        self.filename.setTextFormat(Qt.PlainText)
-        label("本地预览 · 尚未写入设备")
-        label("素材要求", "screenIconRequirementsTitle")
-        label("静态 PNG、JPG/JPEG · 最大 10 MiB · 总像素不超过 1600 万", "screenIconFormats")
-        label("不支持 GIF、APNG 动图、SVG 或视频。", "screenIconUnsupportedFormats")
-        label("支持彩色图片。屏幕面板是方形，可见区域为圆形；圆外内容不显示，重要内容请放在圆内。", "screenIconCropHint")
-        label("拖动预览或使用下方滑杆调整裁切；确认效果后再写入设备。", "screenIconPreviewHint")
         self.import_button = QPushButton(objectName="screenIconImport")
-        set_translatable_text(self.import_button, "导入图片…")
+        set_translatable_text(self.import_button, "选择首页图片")
+        self.import_button.setProperty("buttonRole", "primary")
         self.import_button.clicked.connect(self._choose_image)
         layout.addWidget(self.import_button)
         self.material_review = IconMaterialReview()
         self.material_review.changed.connect(self._sync_transfer)
         self.material_review.check.accepted.connect(self._accept_checked_image)
         layout.addWidget(self.material_review)
+
+        self.requirements_toggle = QPushButton(objectName="screenIconRequirementsToggle")
+        self.requirements_toggle.setCheckable(True)
+        self.requirements_toggle.setProperty("buttonRole", "ghost")
+        set_translatable_text(self.requirements_toggle, "查看图片要求")
+        layout.addWidget(self.requirements_toggle, alignment=Qt.AlignLeft)
+        requirements = QWidget(objectName="screenIconRequirements")
+        requirements_layout = QVBoxLayout(requirements)
+        requirements_layout.setContentsMargins(0, 4, 0, 4)
+        requirements_layout.setSpacing(6)
+
+        def requirement(source: str, name: str) -> None:
+            widget = QLabel(objectName=name)
+            widget.setWordWrap(True)
+            set_translatable_text(widget, source)
+            requirements_layout.addWidget(widget)
+
+        requirement("静态 PNG、JPG/JPEG · 最大 10 MiB · 总像素不超过 1600 万", "screenIconFormats")
+        requirement("不支持 GIF、APNG 动图、SVG 或视频。", "screenIconUnsupportedFormats")
+        requirement("支持彩色图片。屏幕面板是方形，可见区域为圆形；圆外内容不显示，重要内容请放在圆内。", "screenIconCropHint")
+        requirement("拖动预览或使用下方滑杆调整裁切；确认效果后再写入设备。", "screenIconPreviewHint")
+        self.requirements_toggle.toggled.connect(requirements.setVisible)
+        layout.addWidget(requirements)
+        requirements.hide()
+
+        self.filename = label("尚未选择图片", "screenIconFilename")
+        self.filename.setTextFormat(Qt.PlainText)
+        self.local_preview_label = label("本地预览 · 尚未写入设备", "screenIconLocalPreviewLabel")
+        self.preview = _CropPreview()
+        layout.addWidget(self.preview, alignment=Qt.AlignHCenter)
+        self.crop_controls = QWidget(objectName="screenIconCropControls")
+        crop_layout = QVBoxLayout(self.crop_controls)
+        crop_layout.setContentsMargins(0, 0, 0, 0)
         form = QFormLayout()
-        layout.addLayout(form)
+        crop_layout.addLayout(form)
         self.zoom = self._slider(form, "缩放", "screenIconZoom", 100, 400)
         self.horizontal = self._slider(form, "水平位置", "screenIconHorizontal", 0, 1000)
         self.vertical = self._slider(form, "垂直位置", "screenIconVertical", 0, 1000)
@@ -117,40 +142,57 @@ class ScreenIconEditor(QWidget):
             slider.valueChanged.connect(self._adjust)
         self.preview.moved.connect(self._pan)
         self.discard = QPushButton(objectName="screenIconDiscard")
-        set_translatable_text(self.discard, "丢弃本地图标")
+        self.discard.setProperty("buttonRole", "ghost")
+        set_translatable_text(self.discard, "取消选择")
         self.discard.clicked.connect(self.discard_candidate)
-        layout.addWidget(self.discard)
+        crop_layout.addWidget(self.discard)
+        layout.addWidget(self.crop_controls)
         row = QHBoxLayout()
         self.device_buttons = {}
-        for name, source in (("screenIconWrite", "写入首页图片"), ("screenIconReset", "恢复默认首页")):
+        for name, source in (("screenIconWrite", "应用到设备"), ("screenIconReset", "恢复默认首页")):
             button = QPushButton(objectName=name)
             set_translatable_text(button, source)
             button.setEnabled(False)
             row.addWidget(button)
             self.device_buttons[name] = button
+        self.device_buttons["screenIconWrite"].setProperty("buttonRole", "primary")
+        self.device_buttons["screenIconReset"].setProperty("buttonRole", "secondary")
         layout.addLayout(row)
         self.device_buttons["screenIconWrite"].clicked.connect(self._confirm_upload)
         self.device_buttons["screenIconReset"].clicked.connect(self._confirm_reset)
-        label("恢复默认首页只移除首页自定义图片，不恢复出厂设置，也不改变其他小图标、按键映射或提示词。", "screenIconResetScope")
+        self.reset_scope = label(
+            "恢复默认首页只移除首页自定义图片，不恢复出厂设置，也不改变其他小图标、按键映射或提示词。",
+            "screenIconResetScope",
+        )
+        self.device_buttons["screenIconReset"].hide()
+        self.reset_scope.hide()
         self.transfer_status = label("控制台图标协议接入尚未完成，暂不能写入或恢复默认。" if device_supported else
               "当前固件尚未支持自定义图标，可先导入并预览。")
+        self.transfer_status.hide()
         self.transfer_progress = QProgressBar(objectName="screenIconProgress")
         self.transfer_progress.setRange(0, 100)
         self.transfer_progress.hide()
         layout.addWidget(self.transfer_progress)
         row = QHBoxLayout()
         self.refresh_button = QPushButton(objectName="screenIconRefresh")
-        set_translatable_text(self.refresh_button, "读取设备图标")
+        self.refresh_button.setProperty("buttonRole", "secondary")
+        set_translatable_text(self.refresh_button, "重新读取")
         self.refresh_button.setEnabled(False)
         self.refresh_button.clicked.connect(self.refresh_requested)
+        self.refresh_button.hide()
         row.addWidget(self.refresh_button)
         self.cancel_button = QPushButton(objectName="screenIconCancel")
+        self.cancel_button.setProperty("buttonRole", "ghost")
         set_translatable_text(self.cancel_button, "取消上传")
         self.cancel_button.setEnabled(False)
         self.cancel_button.clicked.connect(self.cancel_requested)
+        self.cancel_button.hide()
         row.addWidget(self.cancel_button)
         layout.addLayout(row)
-        label("本地图标只在本次运行中保留，不包含在配置方案或配置导出中。")
+        self.local_retention = label(
+            "尚未应用到设备，退出软件后不会保留。",
+            "screenIconLocalRetention",
+        )
         self._refresh_controls()
 
     def bind_transfer(self, transfer) -> None:
@@ -169,24 +211,51 @@ class ScreenIconEditor(QWidget):
         if transfer.verified_upload is not None and self.payload == transfer.verified_upload:
             self.draft.clear()
             self._refresh_controls()
-        set_translatable_text(self.transfer_status, transfer.status)
+        if transfer.supported:
+            set_translatable_text(self.transfer_status, transfer.status)
+        else:
+            set_translatable_text(
+                self.transfer_status,
+                "当前固件尚未支持自定义图标，可先导入并预览。",
+            )
         self.transfer_progress.setVisible(transfer.busy)
         self.transfer_progress.setValue(transfer.progress)
         metadata = transfer.metadata
         set_translatable_text(self.device_label, (
-            "设备当前图标：内置默认" if metadata and metadata["source"] == "default"
-            else "设备当前图标：自定义（已读回）" if transfer.pixels is not None
-            else "设备当前图标：尚未读取"
+            "当前：默认图片" if metadata and metadata["source"] == "default"
+            else "当前：自定义图片" if transfer.pixels is not None
+            else "当前：尚未读取"
         ))
         if transfer.pixels is not None:
             self.device_preview.setPixmap(QPixmap.fromImage(icon_preview(transfer.pixels)))
         else:
             self.device_preview.clear()
+        self.device_preview.setVisible(transfer.pixels is not None)
         ready = transfer.supported and transfer.writable and not transfer.busy and not self.material_review.check.busy
         self.device_buttons["screenIconWrite"].setEnabled(ready and self.payload is not None)
         self.device_buttons["screenIconReset"].setEnabled(ready)
+        custom_on_device = bool(
+            metadata
+            and metadata.get("source") == "custom"
+            and transfer.state not in {"error", "unknown"}
+        )
+        self.device_buttons["screenIconReset"].setVisible(custom_on_device and not transfer.busy)
+        self.reset_scope.setVisible(custom_on_device and not transfer.busy)
         self.refresh_button.setEnabled(transfer.supported and not transfer.busy)
+        self.refresh_button.setVisible(
+            transfer.supported
+            and not transfer.busy
+            and transfer.metadata is None
+            and transfer.state in {"error", "unknown"}
+        )
         self.cancel_button.setEnabled(transfer.can_cancel)
+        self.cancel_button.setVisible(transfer.can_cancel)
+        self.transfer_status.setVisible(
+            not transfer.supported
+            or transfer.busy
+            or transfer.state in {"error", "unknown"}
+            or transfer.verified_upload is not None
+        )
         self.import_button.setEnabled(not transfer.busy)
         self.discard.setEnabled(self.draft.is_dirty and not transfer.busy)
         for control in (self.zoom, self.horizontal, self.vertical, self.preview):
@@ -197,8 +266,8 @@ class ScreenIconEditor(QWidget):
             return
         pixels = self.payload
         epoch = self._transfer.connection_epoch if self._transfer is not None else None
-        if QMessageBox.question(self, translate_ui_text("写入首页图片"), translate_ui_text(
-            "将替换当前设备的 NORMAL 首页图标，其他设置不变。是否继续？"
+        if QMessageBox.question(self, translate_ui_text("应用到设备"), translate_ui_text(
+            "将把这张图片保存到设备首页，其他设置不变。是否继续？"
         ), QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel) == QMessageBox.Yes:
             if self._confirm_same_connection(epoch):
                 self.upload_requested.emit(pixels)
@@ -206,7 +275,7 @@ class ScreenIconEditor(QWidget):
     def _confirm_reset(self) -> None:
         epoch = self._transfer.connection_epoch if self._transfer is not None else None
         if QMessageBox.question(self, translate_ui_text("恢复默认首页"), translate_ui_text(
-            "仅恢复内置首页图标，不恢复出厂设置，也不修改按键和提示词。是否继续？"
+            "将恢复设备默认首页图片，其他设置不变。是否继续？"
         ), QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel) == QMessageBox.Yes:
             if self._confirm_same_connection(epoch):
                 self.reset_requested.emit()
@@ -255,7 +324,7 @@ class ScreenIconEditor(QWidget):
     def _choose_image(self) -> None:
         context = self._import_context()
         path, _ = QFileDialog.getOpenFileName(
-            self, translate_ui_text("导入图片…"), "", "PNG / JPEG (*.png *.jpg *.jpeg)"
+            self, translate_ui_text("选择首页图片"), "", "PNG / JPEG (*.png *.jpg *.jpeg)"
         )
         if path and context == self._import_context():
             self.review_image(path)
@@ -266,23 +335,42 @@ class ScreenIconEditor(QWidget):
         self._refresh_controls()
 
     def _refresh_controls(self) -> None:
+        has_candidate = self.draft.is_dirty
+        for widget in (
+            self.filename,
+            self.local_preview_label,
+            self.preview,
+            self.crop_controls,
+            self.device_buttons["screenIconWrite"],
+            self.local_retention,
+        ):
+            widget.setVisible(has_candidate)
+        self._set_button_role(self.import_button, "secondary" if has_candidate else "primary")
         for slider, value in ((self.zoom, round(self.draft.zoom * 100)),
                               (self.horizontal, round(self.draft.center_x * 1000)),
                               (self.vertical, round(self.draft.center_y * 1000))):
             slider.blockSignals(True)
             slider.setValue(value)
             slider.blockSignals(False)
-            slider.setEnabled(self.draft.is_dirty)
-        self.discard.setEnabled(self.draft.is_dirty)
-        self.preview.setEnabled(self.draft.is_dirty)
-        self.filename.setProperty("boringI18nSkip", self.draft.is_dirty)
-        if self.draft.is_dirty:
+            slider.setEnabled(has_candidate)
+        self.discard.setEnabled(has_candidate)
+        self.preview.setEnabled(has_candidate)
+        self.filename.setProperty("boringI18nSkip", has_candidate)
+        if has_candidate:
             self.filename.setText(self.draft.filename)
         else:
             set_translatable_text(self.filename, "尚未选择图片")
         self._render()
         if self._transfer is not None:
             self._sync_transfer()
+
+    @staticmethod
+    def _set_button_role(button: QPushButton, role: str) -> None:
+        if button.property("buttonRole") == role:
+            return
+        button.setProperty("buttonRole", role)
+        button.style().unpolish(button)
+        button.style().polish(button)
 
     def _adjust(self) -> None:
         self.draft.zoom = self.zoom.value() / 100

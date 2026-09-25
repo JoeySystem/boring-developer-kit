@@ -21,24 +21,24 @@ def _page(qtbot, contract, tmp_path):
     return vm, page
 
 
-def test_playground_library_tools_reuse_existing_editors(qtbot, contract, tmp_path, monkeypatch):
+def test_automation_empty_state_defers_editor_and_keeps_specialized_imports(qtbot, contract, tmp_path):
     vm, page = _page(qtbot, contract, tmp_path)
-    calls = []
-    monkeypatch.setattr(page._workflow_page, "_new_workflow", lambda: calls.append("new"))
-    monkeypatch.setattr(page._workflow_page, "_import", lambda: calls.append("json"))
-    monkeypatch.setattr(page._developer._automation_page, "_choose_script", lambda: calls.append("script"))
     for name in ("playgroundNew", "playgroundImportJson", "playgroundImportScript"):
-        page.findChild(QPushButton, name).click()
-    assert calls == ["new", "json", "script"]
+        assert page.findChild(QPushButton, name) is None
+    assert page._workflow_page.findChild(QWidget, "workflowWorkspace").isHidden()
+    page.findChild(QPushButton, "createAction").click()
+    assert not page._workflow_page.findChild(QWidget, "workflowWorkspace").isHidden()
+    page.show_section(ActionsPage.DEVELOP_ACTIONS)
     assert page._stack.currentIndex() == ActionsPage.DEVELOP_ACTIONS
     assert page._developer._stack.currentIndex() == page._developer.LOCAL_SCRIPT
     assert page._developer._group.button(page._developer.LOCAL_SCRIPT).text() == "脚本导入"
-    assert page._developer._group.button(page._developer.EXTENSION).text() == "Codex 工作流"
+    assert page._developer._group.button(page._developer.EXTENSION).text() == "扩展"
     vm.shutdown()
 
 
 def test_codex_workflow_guide_is_instructional_and_preserves_proposal_review(qtbot, contract, tmp_path):
     vm, page = _page(qtbot, contract, tmp_path)
+    page.show_developer_lane(1)
     extensions = page._developer._extensions_page
     steps = extensions.findChildren(QLabel, "workflowGuideStep")
     assert [label.text() for label in steps] == [f"{number:02}" for number in range(1, 8)]
@@ -58,6 +58,7 @@ def test_codex_workflow_guide_is_instructional_and_preserves_proposal_review(qtb
 
 def test_codex_workflow_copy_button_keeps_real_development_prompt(qtbot, contract, tmp_path):
     vm, page = _page(qtbot, contract, tmp_path)
+    page.show_developer_lane(1)
     extensions = page._developer._extensions_page
     old_clipboard = QApplication.clipboard().text()
     try:

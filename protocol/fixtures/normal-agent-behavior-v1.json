@@ -1,0 +1,20 @@
+{
+  "message_types": {"NORMAL_AGENT_BEHAVIOR_GET": 42, "NORMAL_AGENT_BEHAVIOR_SET": 43},
+  "legacy_capability_fixture": "capabilities-v1.json",
+  "valid_behaviors": ["open_conversation", "status_only"],
+  "exchanges": [
+    {"case": "no saved choice", "command": "NORMAL_AGENT_BEHAVIOR_GET", "request": {}, "result": {"behavior": null}},
+    {"case": "choose conversation", "command": "NORMAL_AGENT_BEHAVIOR_SET", "request": {"behavior": "open_conversation"}, "result": {"behavior": "open_conversation"}},
+    {"case": "read conversation", "command": "NORMAL_AGENT_BEHAVIOR_GET", "request": {}, "result": {"behavior": "open_conversation"}},
+    {"case": "choose status only", "command": "NORMAL_AGENT_BEHAVIOR_SET", "request": {"behavior": "status_only"}, "result": {"behavior": "status_only"}},
+    {"case": "read status only", "command": "NORMAL_AGENT_BEHAVIOR_GET", "request": {}, "result": {"behavior": "status_only"}}
+  ],
+  "invalid_set_requests": [
+    {"case": "unset is not writable", "request": {"behavior": null}},
+    {"case": "unknown behavior", "request": {"behavior": "legacy"}},
+    {"case": "missing behavior", "request": {}},
+    {"case": "extra field", "request": {"behavior": "status_only", "agent": 0}},
+    {"case": "wrong type", "request": {"behavior": 1}}
+  ],
+  "errors": {"invalid_input": {"name": "VALIDATION_FAILED", "code": 9}, "busy": {"name": "BUSY", "code": 11}, "storage": {"name": "STORAGE_FAILURE", "code": 12}}
+}

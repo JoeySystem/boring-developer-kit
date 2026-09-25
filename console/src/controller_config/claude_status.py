@@ -248,7 +248,7 @@ class ClaudeStatusBridge(QObject):
             self._last_states = tuple(command.payload["states"])
             cleared = [index for index in self.registry.pending_clear_slots if self._last_states[index] == "idle"]
             self.registry.acknowledge_cleared(cleared)
-            self.message = "USB 状态快照已接收；灯光与震动待实机验收"
+            self.message = "状态联动已开启"
         self._flush()
         self._notify()
 

@@ -5,9 +5,18 @@ import sys
 import pytest
 from PySide6.QtCore import QCoreApplication, QEvent, QObject, QSettings, Qt, QTimer
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QComboBox, QDialog, QLabel, QMenu, QPushButton
+from PySide6.QtWidgets import (
+    QComboBox,
+    QDialog,
+    QLabel,
+    QMenu,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from controller_config.actions import action_definitions
+from controller_config.build_identity import BuildIdentity
 from controller_config.i18n import (
     ENGLISH,
     LANGUAGE_SETTING_KEY,
@@ -22,6 +31,7 @@ from controller_config.prompt_library import PromptLibraryStore
 from controller_config.viewmodels.main import MainViewModel
 from controller_config.views.main_window import MainWindow
 from controller_config.views.action_editor import ActionEditor
+from controller_config.views.actions import ActionsPage
 
 
 @pytest.fixture(autouse=True)
@@ -68,6 +78,58 @@ def test_language_choice_is_persisted(qapp, tmp_path) -> None:
     assert restored.language == ENGLISH
 
 
+def test_show_event_translates_each_widget_without_rewalking_subtree(
+    qapp, qtbot, tmp_path, monkeypatch
+) -> None:
+    manager = LanguageManager(
+        qapp,
+        settings=_settings(tmp_path),
+        initial_language=ENGLISH,
+    )
+    subtree_walks = []
+    monkeypatch.setattr(
+        manager,
+        "retranslate_widget_tree",
+        lambda root: subtree_walks.append(root),
+    )
+    parent = QWidget()
+    layout = QVBoxLayout(parent)
+    label = QLabel("设置")
+    layout.addWidget(label)
+    qtbot.addWidget(parent)
+
+    parent.show()
+    qtbot.waitUntil(lambda: label.text() == "Settings")
+
+    assert subtree_walks == []
+
+
+def test_only_latest_language_manager_filters_application_events(
+    qapp, qtbot, tmp_path, monkeypatch
+) -> None:
+    first = LanguageManager(
+        qapp,
+        settings=_settings(tmp_path),
+        initial_language=SIMPLIFIED_CHINESE,
+    )
+    second = LanguageManager(
+        qapp,
+        settings=_settings(tmp_path),
+        initial_language=ENGLISH,
+    )
+    first_widgets = []
+    second_widgets = []
+    monkeypatch.setattr(first, "_translate_widget", first_widgets.append)
+    monkeypatch.setattr(second, "_translate_widget", second_widgets.append)
+    label = QLabel("设置")
+    qtbot.addWidget(label)
+
+    label.show()
+    qtbot.waitUntil(lambda: bool(second_widgets))
+
+    assert first_widgets == []
+
+
 def test_dynamic_text_can_update_in_english_and_return_to_chinese(
     qapp, tmp_path
 ) -> None:
@@ -91,7 +153,7 @@ def test_dynamic_text_can_update_in_english_and_return_to_chinese(
     )
     assert label.text().startswith("4 steps · 18/256 bytes")
     assert translate_ui_text("1/4 条按键序列\n12/1024 字节") == (
-        "1/4 key sequences\n12/1024 bytes"
+        "1/4 key macros\n12/1024 bytes"
     )
 
     manager.set_language(SIMPLIFIED_CHINESE)
@@ -171,21 +233,65 @@ def test_device_prompt_copy_round_trips_without_prototype_wording(qapp, tmp_path
         assert translate_ui_text(source) == chinese_copy.get(source, source)
 
 
-def test_white_key_lighting_copy_is_available_in_english(qapp, tmp_path) -> None:
+def test_function_key_lighting_copy_is_available_in_english(qapp, tmp_path) -> None:
     manager = LanguageManager(
         qapp,
         settings=_settings(tmp_path),
         initial_language=ENGLISH,
     )
 
-    assert translate_ui_text("白色动作键灯") == "White Key Lighting"
-    assert translate_ui_text("透明 Agent 状态键灯") == (
-        "Agent Status Lights"
+    assert translate_ui_text("功能键灯光") == "Function Key Lighting"
+    assert translate_ui_text("功能键 8") == "Function Key 8"
+    assert translate_ui_text("状态灯键 1") == "Status Light Key 1"
+    assert translate_ui_text("STATUS KEYS · 状态灯键") == (
+        "STATUS KEYS · STATUS LIGHTS"
     )
     assert translate_ui_text(
-        "透明键灯由 Agent 状态语义接管，不在这里作为普通 RGB 灯编辑；现有配置值保持不变。"
-    )== "Status key lights follow task status."
+        "状态灯键由 Agent 状态语义接管，不在这里作为普通 RGB 灯编辑；现有配置值保持不变。"
+    ).startswith("Status light keys follow Agent status")
+    assert translate_ui_text(
+        "每颗功能键灯可以单独设置 RGB；设为 0, 0, 0 可关闭该键灯。"
+    ).startswith("Click a function key to choose its light color")
 
+    manager.set_language("ja_JP")
+    assert translate_ui_text("功能键 8") == "機能キー 8"
+    assert translate_ui_text("状态灯键 1") == "ステータスライトキー 1"
+    assert "機能キーをクリック" in translate_ui_text(
+        "每颗功能键灯可以单独设置 RGB；设为 0, 0, 0 可关闭该键灯。"
+    )
+
+    manager.set_language(SIMPLIFIED_CHINESE)
+
+
+def test_firmware_update_actions_are_distinct_in_all_languages(qapp, tmp_path) -> None:
+    manager = LanguageManager(
+        qapp, settings=_settings(tmp_path), initial_language=SIMPLIFIED_CHINESE
+    )
+    expectations = {
+        SIMPLIFIED_CHINESE: (
+            "在线更新（推荐）",
+            "从文件安装（高级）",
+            "安装下载的固件更新",
+        ),
+        ENGLISH: (
+            "Online update (recommended)",
+            "Install from file (advanced)",
+            "Install downloaded firmware update",
+        ),
+        "ja_JP": (
+            "オンライン更新（推奨）",
+            "ファイルからインストール（詳細）",
+            "ダウンロードした更新をインストール",
+        ),
+    }
+    sources = (
+        "在线更新（推荐）",
+        "从文件安装（高级）",
+        "安装下载的固件更新",
+    )
+    for language, expected in expectations.items():
+        manager.set_language(language)
+        assert tuple(translate_ui_text(source) for source in sources) == expected
     manager.set_language(SIMPLIFIED_CHINESE)
 
 
@@ -261,7 +367,11 @@ def test_prompt_palette_guide_and_fixed_slots_switch_languages(
         contract,
         prompt_library_store=PromptLibraryStore(tmp_path / "prompts"),
     )
-    window = MainWindow(view_model, language_manager=manager)
+    window = MainWindow(
+        view_model,
+        language_manager=manager,
+        build_identity=BuildIdentity("official"),
+    )
     def cleanup(_window):
         manager.set_language(SIMPLIFIED_CHINESE)
         view_model.shutdown()
@@ -271,9 +381,8 @@ def test_prompt_palette_guide_and_fixed_slots_switch_languages(
     qtbot.waitUntil(lambda: view_model.prompt_library is not None, timeout=1000)
     view_model.save_prompt_draft(1, "代码审查", "保持用户输入原样。")
     view_model.navigate("prompts")
-    assert window.findChild(QLabel, "promptJoystickCenter").text() == (
-        "Joystick: select\nKnob: confirm"
-    )
+    qtbot.waitUntil(lambda: bool(window.findChildren(QPushButton, "promptOperationStep")))
+    assert "Hold key 12" in window.findChildren(QPushButton, "promptOperationStep")[0].text()
     guide = window.findChild(QLabel, "promptPaletteGuide").text()
     assert "Hold key 12 for about 0.8 seconds" in guide
     assert "press the knob to confirm" in guide
@@ -285,8 +394,8 @@ def test_prompt_palette_guide_and_fixed_slots_switch_languages(
     assert "代码审查" in first.text()
 
     manager.set_language(SIMPLIFIED_CHINESE)
-    assert window.findChild(QLabel, "promptJoystickCenter").text() == "摇杆选择\n旋钮确认"
-    assert "3 号按键取消" in window.findChild(QLabel, "promptPaletteGuide").text()
+    assert "长按 12 号键" in window.findChildren(QPushButton, "promptOperationStep")[0].text()
+    assert "按 3 号按键取消" in window.findChild(QLabel, "promptPaletteGuide").text()
     assert window.findChild(QPushButton, "bindPromptDirection") is None
     view_model.shutdown()
 
@@ -337,7 +446,7 @@ def test_shortcut_recorder_is_available_in_english(
     record = editor.findChild(QPushButton, "shortcutRecordButton")
     labels = {label.text() for label in editor.findChildren(QLabel)}
     assert record is not None and record.text() == "Record New Shortcut"
-    assert "Enter Shortcut" in labels
+    assert "Shortcut" in labels
     assert "Select Record, then press a key or shortcut on your keyboard." in labels
 
     manager.set_language(SIMPLIFIED_CHINESE)
@@ -360,7 +469,11 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
         settings=_settings(tmp_path),
         initial_language=ENGLISH,
     )
-    window = MainWindow(view_model, language_manager=manager)
+    window = MainWindow(
+        view_model,
+        language_manager=manager,
+        build_identity=BuildIdentity("official"),
+    )
     def cleanup(_window):
         manager.set_language(SIMPLIFIED_CHINESE)
         view_model.shutdown()
@@ -378,16 +491,14 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
     assert navigation_names == {
         "Key Mapping",
         "Quick Prompts",
-        "Playground",
         "Appearance & Feedback",
-        "Settings",
+        "Firmware & System",
     }
-    assert window._nav_buttons["overview"].text() == (
-        "" if window._nav_buttons["overview"].property("compactNavigation") else "Key Mapping"
-    )
+    def expected_navigation_text(button: QPushButton) -> str:
+        return "" if button.property("compactNavigation") else button.accessibleName()
+
     assert all(
-        button.text() == button.accessibleName()
-        or (button.text() == "" and button.property("compactNavigation"))
+        button.text() == expected_navigation_text(button)
         for button in window._nav_buttons.values()
     )
     assert {
@@ -397,12 +508,12 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
     }
     assert {
         button.accessibleDescription() for button in window._nav_buttons.values()
-    } == {"Switch View", "Settings"}
+    } == {"Switch View", "Firmware & System"}
     qtbot.waitUntil(
         lambda: window._device_auth_summary.text() == "Development · Unverified [ DEV ]",
         timeout=1000,
     )
-    assert window.windowTitle() == "BORING Console Community"
+    assert window.windowTitle() == "BORING Console"
     assert {
         button.accessibleName()
         for button in window.findChildren(QPushButton, "windowControl")
@@ -412,17 +523,16 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
     english_action = window.findChild(QAction, "languageAction_en_US")
     assert english_action is not None and english_action.isChecked()
     qtbot.mouseClick(window._nav_buttons["settings"], Qt.LeftButton)
-    assert window._nav_buttons["settings"].text() in {"", "Settings"}
-    if window._nav_buttons["settings"].text() == "":
-        assert window._nav_buttons["settings"].property("compactNavigation")
-    assert window._nav_buttons["overview"].text() == (
-        "" if window._nav_buttons["overview"].property("compactNavigation") else "Key Mapping"
+    assert all(
+        button.text() == expected_navigation_text(button)
+        for button in window._nav_buttons.values()
     )
-    assert window.findChild(QPushButton, "openDiagnosticsSettings").text() == (
-        "Open Diagnostics"
-    )
-    assert window.findChild(QPushButton, "openFirmwareSettings").text() == (
-        "Open Firmware Maintenance"
+    assert window.findChild(QPushButton, "openDiagnosticsSettings") is None
+    qtbot.waitUntil(
+        lambda: any(
+            button.isVisible() and button.text() == "Firmware Update"
+            for button in window.findChildren(QPushButton, "settingsGroup")
+        )
     )
     language_buttons = {
         button.text(): button
@@ -432,6 +542,11 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
     assert language_buttons["English"].property("active") is True
     assert language_buttons["简体中文"].property("active") is False
     view_model.navigate("overview")
+    assert window.findChild(QLabel, "devicePanelLive").text() == "Connected"
+    assert window.findChild(QLabel, "deviceConnectionSummary").text() == "USB-C · Connected"
+    bluetooth_management = window.findChild(QPushButton, "bleSlotsDisclosure")
+    assert bluetooth_management.text() == "Bluetooth & Computers…"
+    assert bluetooth_management.accessibleName() == "Open Bluetooth and computer management"
     overview_text = set()
 
     def inspect_ble_details() -> None:
@@ -442,13 +557,10 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
 
     QTimer.singleShot(0, inspect_ble_details)
     window.findChild(QPushButton, "bleSlotsDisclosure").click()
-    assert "Device Shortcuts" in overview_text
-    assert "KEY 3 + KEY 8 → Slot 1" in overview_text
-    assert "KEY 3 + KEY 9 → Slot 2" in overview_text
-    assert "KEY 3 + KEY 10 → Slot 3" in overview_text
-    assert (
-        "Press the shortcut to switch slots. Hold for about 3 seconds to clear the slot and pair again."
-    ) in overview_text
+    assert "Bluetooth connection" in overview_text
+    assert "Computer 1" in overview_text
+    assert "Selected · Not connected" in overview_text
+    assert not any("KEY 3" in text for text in overview_text)
 
     profile_pill = window.findChild(QPushButton, "profilePill")
     assert profile_pill is not None and profile_pill.menu() is not None
@@ -458,42 +570,37 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
     create_profile = profile_pill.menu().findChild(QAction, "createProfileAction")
     assert create_profile is not None
     assert create_profile.text() == "New Blank Profile"
-    sequence_action = profile_pill.menu().findChild(
+    save_as_action = profile_pill.menu().findChild(QAction, "saveProfileAsAction")
+    assert save_as_action is not None
+    assert save_as_action.text() == "Save as New Profile…"
+    assert profile_pill.menu().findChild(
         QAction, "manageDeviceKeySequencesAction"
-    )
-    assert sequence_action is not None
-    assert sequence_action.text() == "Manage Key Sequences…"
-    sequence_action.trigger()
-    qtbot.waitUntil(lambda: view_model.page == "sequences", timeout=1000)
+    ) is not None
 
     view_model.navigate("actions")
     qtbot.waitUntil(
         lambda: any(
-            label.text() == "Workflows and Scripts"
+            label.text() == "Advanced Customization"
             for label in window.findChildren(QLabel)
         ),
         timeout=1000,
     )
-    catalog_status = window.findChild(QLabel, "actionCatalogStatus")
-    assert catalog_status is not None
-    assert catalog_status.text() == (
-        "Total: 0 · Available: 0 · Bound: 0"
-    )
-    develop_tab = next(
-        button
-        for button in window.findChildren(QPushButton, "actionTab")
-        if button.text() == "Workflows and Scripts"
-    )
-    develop_tab.click()
+    actions_page = window.findChild(ActionsPage, "actionsPage")
+    assert actions_page is not None
+    assert window.findChild(QPushButton, "createAction").text() == "Create Custom Action"
+    sequence_action = window.findChild(QAction, "manageDeviceKeySequencesAction")
+    assert sequence_action is not None
+    assert sequence_action.text() == "Manage device key macros"
+    actions_page.show_developer_lane(1)
     extension_tab = next(
         button
         for button in window.findChildren(QPushButton, "developerLaneTab")
-        if button.text() == "Codex Workflow"
+        if button.text() == "Extensions"
     )
     extension_tab.click()
     qtbot.waitUntil(
         lambda: any(
-            label.text() == "Codex Workflow"
+            label.text() == "Install extension package"
             for label in window.findChildren(QLabel)
         ),
         timeout=1000,
@@ -530,7 +637,7 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
     view_model.navigate("diagnostics")
     qtbot.waitUntil(
         lambda: any(
-            label.text() == "Diagnostics & Live Input"
+            label.text() == "Device Check"
             for label in window.findChildren(QLabel)
         ),
         timeout=1000,
@@ -581,9 +688,9 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
         timeout=1000,
     )
     assert manager.language == SIMPLIFIED_CHINESE
-    assert window._nav_buttons["settings"].text() in {"", "设置"}
-    if window._nav_buttons["settings"].text() == "":
-        assert window._nav_buttons["settings"].property("compactNavigation")
+    assert window._nav_buttons["settings"].text() == expected_navigation_text(
+        window._nav_buttons["settings"]
+    )
     language_buttons = {
         button.text(): button
         for button in window.findChildren(QPushButton, "settingsLanguageButton")

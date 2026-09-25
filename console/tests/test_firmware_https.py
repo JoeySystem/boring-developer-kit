@@ -18,13 +18,7 @@ import controller_config.firmware_release as releases
 from controller_config.i18n import translate_ui_text
 from controller_config.firmware_update import FirmwareUpdateState
 from controller_config.viewmodels.main import MainViewModel
-from test_firmware_release import (
-    _bundle,
-    _resign,
-    RecordingDemoGateway,
-    official_demo_release,
-    trust_test_signing_key,
-)
+from test_firmware_release import _bundle, _resign, RecordingDemoGateway, trust_test_signing_key, official_demo_release, remember_test_snapshot
 
 
 @pytest.fixture
@@ -91,7 +85,8 @@ def https_server(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("corrupt", [False, True])
-def test_https_discovery_download_validation_install_and_reconnect(qtbot, contract, https_server, corrupt):
+@pytest.mark.parametrize("origin", ["official", "custom", "unknown"])
+def test_https_discovery_download_validation_install_and_reconnect(qtbot, contract, https_server, corrupt, origin):
     root, base_url, requests = https_server
     bundle = _bundle(contract, validation_state="sample-verified", git_dirty=True, build_id="0.3.0-alpha.2")
     bundle.manifest.update(
@@ -110,10 +105,17 @@ def test_https_discovery_download_validation_install_and_reconnect(qtbot, contra
     source = releases.HttpFirmwareReleaseSource(base_url + "/firmware-manifest.json", channel="sample")
     gateway = RecordingDemoGateway(contract, "ready")
     model = MainViewModel(gateway, contract, firmware_release_source=source)
+    if origin != "official":
+        gateway._installed_firmware = {"firmware":"99.0.0", "build_id":"custom-https" if origin == "custom" else "local-unidentified"}
     try:
         model.start()
-        qtbot.waitUntil(lambda: model.remote_firmware.state in {releases.RemoteFirmwareState.AVAILABLE, releases.RemoteFirmwareState.FAILED}, timeout=5000)
-        assert model.remote_firmware.state is releases.RemoteFirmwareState.AVAILABLE, model.remote_firmware.technical
+        qtbot.waitUntil(lambda: model.model.snapshot is not None)
+        if origin != "official":
+            assert requests == []
+            model.check_remote_firmware()
+        expected = releases.RemoteFirmwareState.AVAILABLE if origin == "official" else releases.RemoteFirmwareState.RESTORE_AVAILABLE
+        qtbot.waitUntil(lambda: model.remote_firmware.state in {expected, releases.RemoteFirmwareState.FAILED}, timeout=5000)
+        assert model.remote_firmware.state is expected, model.remote_firmware.technical
         assert requests == ["/firmware-manifest.json"]
         # Check the ordinary maintenance page exposes current and target data.
         from PySide6.QtWidgets import QLabel
@@ -122,10 +124,12 @@ def test_https_discovery_download_validation_install_and_reconnect(qtbot, contra
         qtbot.addWidget(window)
         model.navigate("firmware")
         texts = "\n".join(label.text() for label in window.findChildren(QLabel))
-        assert translate_ui_text(f"当前固件版本：{model.model.snapshot.versions['firmware']}。") in texts
-        assert translate_ui_text(f"当前构建：{model.model.snapshot.versions['build_id']}。") in texts
-        assert translate_ui_text(f"版本：{bundle.manifest['version']}") in texts
-        assert f"build_id: {bundle.manifest['build_id']}" in texts
+        current_text = window.findChild(QLabel, "firmwareCurrentVersion").text()
+        release_text = window.findChild(QLabel, "remoteFirmwareReleaseSummary").text()
+        assert model.model.snapshot.versions['firmware'] in current_text
+        assert model.model.snapshot.versions['build_id'] in texts
+        assert bundle.manifest['version'] in release_text
+        assert bundle.manifest['build_id'] in release_text
         # The surrounding release block is translated; server-provided notes
         # must remain present and unchanged in the maintenance page.
         assert "HTTPS integration test" in texts
@@ -146,7 +150,7 @@ def test_https_discovery_download_validation_install_and_reconnect(qtbot, contra
         assert model.remote_firmware.state is releases.RemoteFirmwareState.CURRENT
         assert model.model.snapshot.versions["firmware"] == bundle.manifest["version"]
         assert model.model.snapshot.versions["build_id"] == bundle.manifest["build_id"]
-        assert gateway.commands[-1].name == "FW_STATUS"
+        assert [command.name for command in gateway.commands if command.name.startswith("FW_")][-1] == "FW_STATUS"
     finally:
         model.shutdown()
 
@@ -211,8 +215,14 @@ def test_untrusted_https_certificate_is_rejected_before_manifest(qtbot, contract
         model.shutdown()
 
 
-def test_public_default_source_is_unconfigured():
-    assert releases.default_firmware_source() == {'manifest_url': '', 'channel': 'stable'}
+def test_engineering_default_source_resolves_deployed_sample_entry(contract):
+    from controller_config.transport.demo import _power_v2_snapshot
+    config = releases.default_firmware_source()
+    assert config['channel'] == 'sample'
+    assert releases.manifest_url_for_snapshot(config['manifest_url'], _power_v2_snapshot(contract, read_only=False)).toString() == (
+        'https://updates.boringconcept.com/firmware/wired-macro-pad-v1/'
+        'WMP-S3-MATRIX12-POWER-V2/sample/firmware-manifest.json'
+    )
 
 
 def test_missing_image_is_download_failure_not_empty_channel(qtbot, contract, https_server):

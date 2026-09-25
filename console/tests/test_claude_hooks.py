@@ -37,44 +37,6 @@ def test_inspection_never_installs_or_writes(installation):
     assert not installation.record_path.exists()
 
 
-def test_default_endpoint_and_installation_record_are_community_specific(tmp_path, monkeypatch):
-    monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    installation = ClaudeHookInstallation(settings_path=tmp_path / "claude/settings.json")
-    directory = tmp_path / ".boring/community/claude-status"
-    assert installation.endpoint_path == directory / "endpoint.json"
-    assert installation.record_path == directory / "installation.json"
-    assert not directory.exists()
-
-
-@pytest.mark.parametrize("removed", ["official", "community"])
-def test_official_and_community_hook_installations_do_not_remove_each_other(
-    installation, tmp_path, monkeypatch, removed
-):
-    monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    official = ClaudeHookInstallation(
-        installation.settings_path, tmp_path / ".boring/claude-status/endpoint.json"
-    )
-    community = ClaudeHookInstallation(settings_path=installation.settings_path)
-    assert official.install().installed
-    official_record = official.record_path.read_text()
-    official_hooks = json.loads(installation.settings_path.read_text())["hooks"]
-    assert not community.inspect().installed
-    assert community.install().installed
-    assert community.install().installed
-    assert official.record_path.read_text() == official_record
-    settings = json.loads(installation.settings_path.read_text())
-    for event, groups in official_hooks.items():
-        for group in groups:
-            assert group in settings["hooks"][event]
-    removed_installation, kept_installation = (
-        (official, community) if removed == "official" else (community, official)
-    )
-    kept_record = kept_installation.record_path.read_text()
-    assert not removed_installation.uninstall().installed
-    assert kept_installation.inspect().installed
-    assert kept_installation.record_path.read_text() == kept_record
-
-
 def test_install_merges_and_uninstall_preserves_other_hooks(installation):
     original = {"model": "sonnet", "permissions": {"allow": ["Read"]},
                 "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "echo unrelated"}]}]}}
@@ -88,6 +50,171 @@ def test_install_merges_and_uninstall_preserves_other_hooks(installation):
     assert json.loads(installation.settings_path.read_text()) == once
     assert not installation.uninstall().installed
     assert json.loads(installation.settings_path.read_text()) == original
+
+
+def test_install_record_identifies_owner_origin_and_endpoint(tmp_path, monkeypatch):
+    monkeypatch.setattr(claude_hooks, "_detect_claude", lambda: ("/test/claude", "2.1.63", ""))
+    monkeypatch.setattr(claude_hooks, "_host_platform", lambda: "macos")
+    endpoint = tmp_path / "boring-diy/endpoint.json"
+    install = ClaudeHookInstallation(
+        tmp_path / "claude/settings.json",
+        endpoint,
+        owner_id="com.boring.controller-config.diy",
+        origin="custom",
+        official_build_probe=lambda: (("0.1.52", "official"),),
+    )
+
+    assert install.install().installed
+    record = json.loads(install.record_path.read_text())
+    assert record["owner"] == "com.boring.controller-config.diy"
+    assert record["origin"] == "custom"
+    assert record["endpoint_path"] == str(endpoint.absolute())
+
+
+def test_other_owner_hooks_are_not_overwritten_or_duplicated(tmp_path, monkeypatch):
+    monkeypatch.setattr(claude_hooks, "_detect_claude", lambda: ("/test/claude", "2.1.63", ""))
+    monkeypatch.setattr(claude_hooks, "_host_platform", lambda: "macos")
+    settings_path = tmp_path / "claude/settings.json"
+    official_endpoint = tmp_path / "official/endpoint.json"
+    diy_endpoint = tmp_path / "diy/endpoint.json"
+    official = ClaudeHookInstallation(
+        settings_path,
+        official_endpoint,
+        owner_id="com.boring.controller-config",
+        origin="official",
+    )
+    diy = ClaudeHookInstallation(
+        settings_path,
+        diy_endpoint,
+        owner_id="com.boring.controller-config.diy",
+        origin="custom",
+        official_build_probe=lambda: (("0.1.52", "official"),),
+    )
+    official.install()
+    before = settings_path.read_text()
+
+    with pytest.raises(ValueError, match="另一版本"):
+        diy.install()
+
+    assert settings_path.read_text() == before
+    assert not diy.record_path.exists()
+
+    official.uninstall()
+    assert diy.install().installed
+    settings = json.loads(settings_path.read_text())
+    commands = json.dumps(settings)
+    assert str(diy_endpoint.absolute()) in commands
+    assert str(official_endpoint.absolute()) not in commands
+
+
+def test_legacy_hook_record_is_rejected_without_mutating_settings(tmp_path, monkeypatch):
+    monkeypatch.setattr(claude_hooks, "_detect_claude", lambda: ("/test/claude", "2.1.63", ""))
+    monkeypatch.setattr(claude_hooks, "_host_platform", lambda: "macos")
+    settings_path = tmp_path / "claude/settings.json"
+    endpoint = tmp_path / "legacy/endpoint.json"
+    install = ClaudeHookInstallation(
+        settings_path,
+        endpoint,
+        owner_id="com.boring.controller-config.diy",
+        origin="custom",
+        official_build_probe=lambda: (("0.1.52", "official"),),
+    )
+    handler = claude_hooks._handler(endpoint, "2.1.63", "macos")
+    settings = {"hooks": {"Stop": [{"hooks": [handler]}]}}
+    _write(settings_path, settings)
+    _write(install.record_path, {"settings_path": str(settings_path.absolute()), "hooks": settings["hooks"]})
+    before = settings_path.read_text()
+
+    with pytest.raises(ValueError, match="旧版"):
+        install.install()
+
+    assert settings_path.read_text() == before
+
+
+def test_official_owner_can_remove_its_legacy_default_hooks(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(claude_hooks, "_detect_claude", lambda: ("/test/claude", "2.1.63", ""))
+    monkeypatch.setattr(claude_hooks, "_host_platform", lambda: "macos")
+    claude_hooks.reset_default_identity()
+    endpoint = tmp_path / ".boring/claude-status/endpoint.json"
+    settings_path = tmp_path / "claude/settings.json"
+    install = ClaudeHookInstallation(settings_path)
+    handler = claude_hooks._handler(endpoint, "2.1.63", "macos")
+    settings = {"hooks": {"Stop": [{"hooks": [handler]}]}}
+    _write(settings_path, settings)
+    _write(
+        install.record_path,
+        {"settings_path": str(settings_path.absolute()), "hooks": settings["hooks"]},
+    )
+    legacy_record = install.record_path.read_text()
+
+    assert install.inspect().installed
+    assert install.record_path.read_text() == legacy_record
+    assert not install.uninstall().installed
+    assert json.loads(settings_path.read_text()) == {}
+    migrated = json.loads(install.record_path.read_text())
+    assert migrated["owner"] == "com.boring.controller-config"
+    assert migrated["origin"] == "official"
+
+
+@pytest.mark.parametrize(
+    "installed_builds",
+    [(("0.1.50", None),), (("0.1.51", "official"),), ((None, None),)],
+)
+def test_diy_rejects_legacy_installed_official_even_when_hooks_are_empty(
+    tmp_path, monkeypatch, installed_builds
+):
+    monkeypatch.setattr(
+        claude_hooks, "_detect_claude", lambda: ("/test/claude", "2.1.63", "")
+    )
+    monkeypatch.setattr(claude_hooks, "_host_platform", lambda: "macos")
+    settings_path = tmp_path / "claude/settings.json"
+    endpoint = tmp_path / "diy/endpoint.json"
+    install = ClaudeHookInstallation(
+        settings_path,
+        endpoint,
+        owner_id="com.boring.controller-config.diy",
+        origin="custom",
+        official_build_probe=lambda: installed_builds,
+    )
+
+    with pytest.raises(ValueError, match="先升级官方版"):
+        install.install()
+
+    assert not settings_path.exists()
+    assert not install.record_path.exists()
+
+
+def test_diy_allows_hooks_after_owner_aware_official_upgrade(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        claude_hooks, "_detect_claude", lambda: ("/test/claude", "2.1.63", "")
+    )
+    monkeypatch.setattr(claude_hooks, "_host_platform", lambda: "macos")
+    install = ClaudeHookInstallation(
+        tmp_path / "claude/settings.json",
+        tmp_path / "diy/endpoint.json",
+        owner_id="com.boring.controller-config.diy",
+        origin="custom",
+        official_build_probe=lambda: (("0.1.52", "official"),),
+    )
+
+    assert install.install().installed
+
+
+def test_configured_default_hook_identity_uses_separate_endpoint(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    claude_hooks.configure_default_identity(
+        owner_id="com.boring.controller-config.diy",
+        origin="custom",
+        endpoint_path=tmp_path / ".boring/claude-status-diy/endpoint.json",
+    )
+    try:
+        install = ClaudeHookInstallation(tmp_path / "claude/settings.json")
+        assert install.owner_id == "com.boring.controller-config.diy"
+        assert install.origin == "custom"
+        assert install.endpoint_path == tmp_path / ".boring/claude-status-diy/endpoint.json"
+    finally:
+        claude_hooks.reset_default_identity()
 
 
 def test_uninstall_preserves_later_edits_inside_own_group(installation):

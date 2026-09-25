@@ -503,3 +503,51 @@ def test_unknown_reconcile_to_unchanged_base_allows_edit_without_retry(contract)
     view_model.rename_profile(snapshot.active_profile_id, "Retry after reconciliation")
     assert view_model.write_transaction.state is ConfigTransactionState.IDLE
     assert [command.name for command in gateway.commands].count("SET_CONFIG") == 1
+
+
+def test_validation_timeout_is_not_device_rejection(contract):
+    view_model, gateway, _ = _dirty_view_model(contract)
+    view_model.prepare_device_write()
+    gateway.command_failed.emit("VALIDATE_CONFIG", BootstrapError(
+        BootstrapKind.READ_FAILED, "设备命令响应超时", "VALIDATE_CONFIG timeout",
+        error_name="TRANSPORT_TIMEOUT"))
+    assert view_model.write_transaction.state is ConfigTransactionState.FAILED
+    assert "超时" in view_model.write_transaction.message
+    assert "拒绝" not in view_model.write_transaction.message
+    assert view_model.draft.is_dirty
+    assert [command.name for command in gateway.commands] == ["VALIDATE_CONFIG"]
+    view_model.shutdown()
+
+
+def test_validation_failure_card_exposes_details_on_demand(contract, qtbot):
+    from types import SimpleNamespace
+    from PySide6.QtWidgets import QLabel, QPushButton
+    from controller_config.views.main_window import MainWindow
+    view_model, gateway, snapshot = _dirty_view_model(contract)
+    view_model.prepare_device_write()
+    gateway.command_failed.emit("VALIDATE_CONFIG", BootstrapError(
+        BootstrapKind.READ_FAILED, "设备命令执行失败", "VALIDATION_FAILED: profiles.0.name",
+        error_name="VALIDATION_FAILED"))
+    assert view_model.write_transaction.message == "设备拒绝候选配置"
+    card = MainWindow._write_transaction_card(SimpleNamespace(_view_model=view_model),
+                                              snapshot, False, show_prepare=False)
+    qtbot.addWidget(card)
+    card.show()
+    detail = card.findChild(QLabel, "configurationWriteTechnical")
+    assert detail.isHidden()
+    card.findChild(QPushButton, "configurationWriteDetailsToggle").click()
+    assert detail.isVisible()
+    assert "VALIDATION_FAILED" in detail.text()
+    view_model.shutdown()
+
+
+def test_invalid_validation_reply_is_not_device_rejection(contract):
+    view_model, gateway, _ = _dirty_view_model(contract)
+    view_model.prepare_device_write()
+    gateway.command_failed.emit("VALIDATE_CONFIG", BootstrapError(
+        BootstrapKind.READ_FAILED, "设备命令执行失败", "响应 command 不匹配"))
+    assert "校验未完成" in view_model.write_transaction.message
+    assert "拒绝" not in view_model.write_transaction.message
+    assert view_model.draft.is_dirty
+    assert [command.name for command in gateway.commands] == ["VALIDATE_CONFIG"]
+    view_model.shutdown()

@@ -18,16 +18,23 @@ def test_capsule_reaches_native_sparkle_and_restart_guard(update_session, native
     button = window._nav_buttons['settings']
     callbacks.found_stage_(driver, 0)
     button.click()
+    assert callbacks.choice() == -1
+    assert vm.page == 'settings'
+    ui.action.click()
     assert callbacks.choice() == 1  # Actual escaping Objective-C block accepted download.
     callbacks.progress_(driver)
     assert ui.progress.value() == 37
     monkeypatch.setattr(ui, 'blocked_reason', lambda: '设备写入尚未结束')
     callbacks.ready_(driver)
+    assert callbacks.choice() == -1
+    ui.action.click()
     qtbot.waitUntil(lambda: ui.message.text() == '设备写入尚未结束')
     assert callbacks.choice() == -1  # OS install choice has NOT been sent.
     assert window.isEnabled()
     monkeypatch.setattr(ui, 'blocked_reason', lambda: '')
     button.click()
+    assert callbacks.choice() == -1
+    ui.action.click()
     assert callbacks.choice() == 1
     assert backend.status.state == 'installing'
     assert ui.store.load()['workspace']['page'] == vm.page
@@ -43,6 +50,7 @@ def test_capsule_cancel_prevents_native_install(update_session, native_driver, q
     ui.attach(backend)
     callbacks.found_stage_(driver, 0)
     window._nav_buttons['settings'].click()
+    ui.action.click()
     callbacks.progress_(driver)
     ui.cancel_button.click()
     assert callbacks.acknowledged()
@@ -68,10 +76,17 @@ def test_capsule_windows_verifies_bytes_before_install_handoff(update_session, u
     backend.check()
     backend._network.reply.deliver(json.dumps(release).encode())
     window._nav_buttons['settings'].click()
+    assert backend.status.state == 'available'
+    ui.action.click()
     assert backend._network.request.url().toString() == release['url']
     assert events == []
     backend._network.reply.deliver(payload)
-    qtbot.waitUntil(lambda: backend.status.state == 'installing')
+    qtbot.waitUntil(lambda: backend.status.state == 'ready')
+    assert events == []
+    window._nav_buttons['settings'].click()
+    assert events == []
+    ui.action.click()
+    assert backend.status.state == 'installing'
     assert events == [('launch', payload, True), ('quit',)]
     assert ui.store.load()['workspace']['page'] == vm.page
     backend._cleanup()
@@ -89,9 +104,10 @@ def test_capsule_windows_rejects_tampered_download(update_session, update, qtbot
     backend.check()
     backend._network.reply.deliver(json.dumps(release).encode())
     window._nav_buttons['settings'].click()
+    ui.action.click()
     backend._network.reply.deliver(b'X' + payload[1:])
     qtbot.waitUntil(lambda: backend.status.state == 'failed')
     assert events == []
     assert backend._installer is None
     assert window.isEnabled() and not ui.row.isHidden()
-    assert window._nav_buttons['settings'].text() == '设置'
+    assert window._nav_buttons['settings'].text() == '固件与系统'

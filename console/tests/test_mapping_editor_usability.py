@@ -3,7 +3,7 @@ from dataclasses import replace
 from copy import deepcopy
 
 import pytest
-from PySide6.QtCore import QRect, Qt
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QLineEdit, QPushButton, QScrollArea, QWidget
 
 from test_session_recovery import session
@@ -12,8 +12,7 @@ from controller_config.views.action_editor import ShortcutRecorder
 
 
 @pytest.mark.parametrize('language', ['zh_CN', 'en_US', 'ja_JP'])
-@pytest.mark.parametrize('mode', ['normal', 'codex'])
-def test_key_recording_visible_on_open_and_after_resize(session, qtbot, monkeypatch, tmp_path, language, mode):
+def test_key_recording_visible_on_open_and_after_resize(session, qtbot, monkeypatch, tmp_path, language):
     window, vm, gateway, snapshot, _ = session
     monkeypatch.setattr('controller_config.views.main_window.sys.platform', 'darwin')
     window._language_manager.set_language(language)
@@ -25,14 +24,11 @@ def test_key_recording_visible_on_open_and_after_resize(session, qtbot, monkeypa
         'action': {'type': 'key', 'usage': 17, 'modifiers': [224]},
     })
     snapshot = replace(snapshot, config_result=config_result)
-    gateway.snapshot_ready.emit(replace(snapshot, status={**snapshot.status, 'platform': 'windows_linux', 'operating_mode': mode}))
+    gateway.snapshot_ready.emit(replace(snapshot, status={**snapshot.status, 'platform': 'windows_linux', 'operating_mode': 'normal'}))
     window.resize(1100, 700)
     window.show()
-    window._fit_window_to_available_area(QRect(0, 0, 1100, 700))
-    window.resize(1100, 700)
     window._select_physical_control('key.8')
     for width, height in ((1100, 700), (1920, 1050), (1280, 800), (1100, 700)):
-        window._fit_window_to_available_area(QRect(0, 0, width, height))
         window.resize(width, height)
         qtbot.wait(150)
         body = window.findChild(QScrollArea, 'mappingEditorBody')
@@ -42,12 +38,16 @@ def test_key_recording_visible_on_open_and_after_resize(session, qtbot, monkeypa
         assert actual.width() >= actual.fontMetrics().horizontalAdvance(actual.text())
         assert actual.height() >= actual.fontMetrics().height(), actual.geometry()
         assert window.grab().save(str(tmp_path / f'editor-{width}-{height}.png'))
-        for name in ('shortcutRecorderPreview', 'shortcutRecordButton', 'shortcutManualToggle'):
+        for name in ('shortcutRecorderPreview', 'shortcutRecordButton'):
             widget = window.findChild(QLabel if name == 'shortcutRecorderPreview' else QPushButton, name)
-            assert _visible_inside(widget, body.viewport()), (language, mode, width, height, name)
+            assert _visible_inside(widget, body.viewport()), (language, width, height, name)
             assert _visible_inside(widget, outer.viewport())
-        for name in ('applyMappingToDevice', 'saveMappingDraft'):
-            assert _visible_inside(window.findChild(QPushButton, name), outer.viewport())
+        assert window.findChild(QPushButton, 'shortcutManualToggle') is None
+        assert not window.findChild(QWidget, 'manualActionEditor').isVisible()
+        assert _visible_inside(
+            window.findChild(QPushButton, 'applyMappingToDevice'), outer.viewport()
+        )
+        assert window.findChild(QPushButton, 'saveMappingDraft').isHidden()
     assert window.findChild(QLabel, 'devicePlatformNotice') is None
     recorder = window.findChild(ShortcutRecorder)
     recorder.start_recording()
@@ -57,26 +57,40 @@ def test_key_recording_visible_on_open_and_after_resize(session, qtbot, monkeypa
     assert _visible_inside(window.findChild(QPushButton, 'applyMappingToDevice'), outer.viewport())
     sync = window.findChild(QWidget, 'syncSummaryCard')
     pending = sync.findChild(QLabel, 'syncDraftState')
-    assert _visible_inside(pending, sync)
+    assert sync.isVisible()
+    assert not pending.isVisible()
     assert sync.findChild(QPushButton, 'ghostOnDark') is None
-    window.findChild(QPushButton, 'saveMappingDraft').click()
+    gateway.disconnected.emit('unplugged')
+    local_save = window.findChild(QPushButton, 'saveMappingDraft')
+    assert _visible_inside(local_save, outer.viewport())
+    local_save.click()
+    qtbot.wait(30)
+    sync = window.findChild(QWidget, 'syncSummaryCard')
+    pending = sync.findChild(QLabel, 'syncDraftState')
+    assert sync.isVisible()
+    assert _visible_inside(pending, sync)
     window._language_manager.set_language('zh_CN')
 
 
-def test_more_settings_remain_available_and_survive_same_device_refresh(session, qtbot):
+def test_shortcut_name_is_immediately_available_and_survives_same_device_refresh(session, qtbot):
     window, vm, gateway, snapshot, _ = session
+    gateway.snapshot_ready.emit(replace(snapshot, status={
+        **snapshot.status,
+        'operating_mode': 'normal',
+    }))
     window.show()
     window._select_physical_control('key.8')
     qtbot.wait(150)
-    extra = window.findChild(QWidget, 'mappingMoreSettings')
-    assert not extra.isVisible()
-    window.findChild(QPushButton, 'mappingMoreSettingsToggle').click()
-    assert extra.isVisible()
     name = window.findChild(QLineEdit, 'mappingShortNameEditor')
+    assert name.isVisible()
+    assert window.findChild(QPushButton, 'mappingMoreSettingsToggle') is None
+    assert window.findChild(QWidget, 'mappingMoreSettings') is None
     name.setText('保留名称')
-    gateway.snapshot_ready.emit(snapshot)
+    gateway.snapshot_ready.emit(replace(snapshot, status={
+        **snapshot.status,
+        'operating_mode': 'normal',
+    }))
     qtbot.wait(150)
-    assert window.findChild(QWidget, 'mappingMoreSettings').isVisible()
     assert window.findChild(QLineEdit, 'mappingShortNameEditor').text() == '保留名称'
     window.findChild(QPushButton, 'saveMappingDraft').click()
     assert vm.draft.mapping(vm.draft.config['active_profile'], 'key.8')['short_name'] == '保留名称'

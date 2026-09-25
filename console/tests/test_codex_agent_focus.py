@@ -4,10 +4,11 @@ import copy
 from dataclasses import replace
 
 import pytest
-from PySide6.QtCore import QProcess
+from PySide6.QtCore import QProcess, QSettings
+from pathlib import Path
 
 from controller_config.codex_agent_focus import (
-    CodexAgentFocus, MacChatGPTActivator,
+    AGENT_CLIENT_KEY, CodexAgentFocus, MacChatGPTActivator,
 )
 from controller_config.protocol.contract import ContractError, validate_agent_press
 from controller_config.protocol.device_auth import DeviceTrust, DeviceTrustState
@@ -119,6 +120,115 @@ def test_ble_transport_and_counter_wrap(qtbot, snapshot):
     assert received == [0]
 
 
+@pytest.mark.parametrize("transport", ["usb", "ble"])
+def test_normal_open_requires_live_read_and_fresh_matching_press(qtbot, snapshot, transport):
+    snapshot.capabilities["features"]["normal_agent_key_behavior"] = True
+    snapshot.status["operating_mode"] = "normal"
+    if transport == "ble":
+        snapshot = replace(snapshot, port_name="ble:test")
+    listener = CodexAgentFocus()
+    received = []
+    listener.requested.connect(received.append)
+    listener.bind(snapshot)
+    listener.consume(press(snapshot, sequence=1, transport=transport))
+    assert received == []  # Capability alone is not the saved choice.
+    listener.set_normal_behavior("open_conversation")
+    listener.consume(press(snapshot, sequence=2, transport=transport))
+    assert received == []  # Establish a status baseline after the GET result.
+    listener.consume(press(snapshot, sequence=3, agent=4, transport=transport))
+    listener.consume(press(snapshot, sequence=3, agent=4, transport=transport))
+    assert received == [4]
+    listener.consume(press(snapshot, sequence=4, transport="usb" if transport == "ble" else "ble"))
+    listener.consume(press(snapshot, sequence=4, transport=transport))
+    assert received == [4]  # Wrong-computer events are consumed, not replayed.
+    listener.set_normal_behavior("open_conversation")
+    listener.consume(press(snapshot, sequence=5, agent=2, transport=transport))
+    assert received == [4, 2]  # Repeated readback doesn't suppress a fresh press.
+
+
+@pytest.mark.parametrize("behavior", [None, "status_only", "open_conversation"])
+@pytest.mark.parametrize("supported", [False, True])
+def test_normal_preference_is_gated_by_firmware_capability(qtbot, snapshot, behavior, supported):
+    snapshot.capabilities["features"]["normal_agent_key_behavior"] = supported
+    snapshot.status["operating_mode"] = "normal"
+    listener = CodexAgentFocus()
+    received = []
+    listener.requested.connect(received.append)
+    listener.bind(snapshot)
+    listener.set_normal_behavior(behavior)
+    listener.consume(snapshot.status)
+    listener.consume(press(snapshot))
+    assert received == ([0] if supported and behavior == "open_conversation" else [])
+
+
+def test_normal_disable_reenable_and_reconnect_never_replay(qtbot, snapshot):
+    snapshot.capabilities["features"]["normal_agent_key_behavior"] = True
+    snapshot.status["operating_mode"] = "normal"
+    listener = CodexAgentFocus()
+    received = []
+    listener.requested.connect(received.append)
+    listener.bind(snapshot)
+    listener.set_normal_behavior("open_conversation")
+    listener.consume(snapshot.status)
+    listener.consume(press(snapshot, sequence=1))
+    listener.set_normal_behavior("status_only")
+    listener.consume(press(snapshot, sequence=2))
+    listener.set_normal_behavior("open_conversation")
+    listener.consume(press(snapshot, sequence=3))
+    listener.consume(press(snapshot, sequence=4))
+    assert received == [0, 0]
+    listener.bind(replace(snapshot, status=press(snapshot, sequence=4)))
+    listener.consume(press(snapshot, sequence=5))
+    assert received == [0, 0]  # Connection/readback clears the old device choice.
+    listener.set_normal_behavior("open_conversation")
+    listener.consume(press(snapshot, sequence=6))
+    listener.consume(press(snapshot, sequence=7))
+    assert received == [0, 0, 0]
+    listener.unbind()
+    listener.set_normal_behavior("open_conversation")
+    listener.consume(press(snapshot, sequence=8))
+    assert received == [0, 0, 0]
+
+
+@pytest.mark.parametrize("reason", ["claude_code", "local", "capture", "standby", "busy", "expired"])
+def test_normal_preserves_existing_suppression(qtbot, snapshot, reason):
+    snapshot.capabilities["features"]["normal_agent_key_behavior"] = True
+    snapshot.status["operating_mode"] = "normal"
+    listener = CodexAgentFocus()
+    received = []
+    listener.requested.connect(received.append)
+    listener.bind(snapshot)
+    listener.set_normal_behavior("open_conversation")
+    listener.consume(snapshot.status)
+    status = press(snapshot)
+    if reason == "claude_code":
+        status["operating_mode"] = reason
+    elif reason == "local":
+        status["action_engine"]["local_page"] = "settings"
+    elif reason == "capture":
+        status["diagnostic_capture"]["active"] = True
+    elif reason == "standby":
+        status["action_engine"]["usb_standby_active"] = True
+    elif reason == "expired":
+        status["codex_agent_press"].update(agent=None, transport=None)
+    listener.consume(status, allowed=reason != "busy")
+    listener.consume(press(snapshot))
+    assert received == []
+    listener.consume(press(snapshot, sequence=2))
+    assert received == [0]
+
+
+def test_enabling_normal_does_not_drop_codex_press(qtbot, snapshot):
+    snapshot.capabilities["features"]["normal_agent_key_behavior"] = True
+    listener = CodexAgentFocus()
+    received = []
+    listener.requested.connect(received.append)
+    listener.bind(snapshot)
+    listener.set_normal_behavior("open_conversation")
+    listener.consume(press(snapshot))
+    assert received == [0]
+
+
 @pytest.mark.parametrize("event", [None, {}, {"sequence": True, "agent": None, "transport": None},
     {"sequence": 1, "agent": 6, "transport": "usb"},
     {"sequence": 1, "agent": 0, "transport": []},
@@ -150,20 +260,27 @@ def test_gateway_viewmodel_signal_chain_does_not_rebuild_ui(qtbot, contract, sna
     vm.shutdown()
 
 
-def test_activator_uses_launchservices_without_background_or_new_instance(qtbot, monkeypatch):
-    activator = MacChatGPTActivator()
+@pytest.fixture
+def client_settings(tmp_path, monkeypatch):
+    monkeypatch.setattr("controller_config.codex_agent_focus.installed_agent_clients",
+                        lambda: {"Codex": Path("/Applications/Codex.app")})
+    return QSettings(str(tmp_path / "client.ini"), QSettings.IniFormat)
+
+
+def test_activator_uses_launchservices_without_background_or_new_instance(qtbot, monkeypatch, client_settings):
+    activator = MacChatGPTActivator(settings=client_settings)
     calls = []
     monkeypatch.setattr(activator._process, "start", lambda *args: calls.append(args))
     activator.activate(4)
     activator.activate(5)
-    assert calls == [("/usr/bin/open", ["-a", "ChatGPT"])]
+    assert calls == [("/usr/bin/open", ["-a", "/Applications/Codex.app"])]
     activator._finished(0, QProcess.ExitStatus.NormalExit)
     assert not activator._deadline.isActive()
     activator.shutdown()
 
 
-def test_activator_failure_timeout_and_shutdown_are_bounded(qtbot, monkeypatch):
-    activator = MacChatGPTActivator()
+def test_activator_failure_timeout_and_shutdown_are_bounded(qtbot, monkeypatch, client_settings):
+    activator = MacChatGPTActivator(settings=client_settings)
     failures = []
     activator.failed.connect(failures.append)
     monkeypatch.setattr(activator._process, "start", lambda *args: None)
@@ -178,3 +295,33 @@ def test_activator_failure_timeout_and_shutdown_are_bounded(qtbot, monkeypatch):
     activator.shutdown()
     activator._finished(1, QProcess.ExitStatus.CrashExit)
     assert len(failures) == 2
+
+
+def test_multiple_clients_require_choice_and_read_the_saved_choice(qtbot, monkeypatch, client_settings):
+    clients = {"Codex": Path("/Applications/Codex.app"),
+               "ChatGPT": Path("/Applications/ChatGPT.app")}
+    monkeypatch.setattr("controller_config.codex_agent_focus.installed_agent_clients", lambda: clients)
+    activator = MacChatGPTActivator(settings=client_settings)
+    calls, failures = [], []
+    monkeypatch.setattr(activator._process, "start", lambda *args: calls.append(args))
+    activator.failed.connect(failures.append)
+    activator.activate()
+    assert not calls and len(failures) == 1
+    client_settings.setValue(AGENT_CLIENT_KEY, "ChatGPT")
+    activator.activate()
+    assert calls == [("/usr/bin/open", ["-a", str(clients['ChatGPT'])])]
+    activator.shutdown()
+
+
+@pytest.mark.parametrize("selected", ["", "ChatGPT"])
+def test_missing_client_does_not_launch_a_different_app(qtbot, monkeypatch, client_settings, selected):
+    client_settings.setValue(AGENT_CLIENT_KEY, selected)
+    if not selected:
+        monkeypatch.setattr("controller_config.codex_agent_focus.installed_agent_clients", lambda: {})
+    activator = MacChatGPTActivator(settings=client_settings)
+    calls, failures = [], []
+    monkeypatch.setattr(activator._process, "start", lambda *args: calls.append(args))
+    activator.failed.connect(failures.append)
+    activator.activate()
+    assert not calls and len(failures) == 1
+    assert not activator._deadline.isActive()

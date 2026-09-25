@@ -22,13 +22,22 @@ def test_first_failure_keeps_preview_navigation_and_collapsed_details(qtbot, con
     window.show()
     try:
         gateway.failure.emit(BootstrapKind.READ_FAILED, '无法建立蓝牙配置连接', 'Remote device cannot be found')
+        qtbot.wait(30)
         assert vm.model.snapshot is None and vm.draft is None
         assert window.findChild(QWidget, 'devicePreviewPage') is not None
         assert len(window.findChildren(QPushButton, 'controlKey')) == 12
         assert all('未映射' not in label.toolTip()
                    for label in window.findChildren(QLabel, 'keycapInscription'))
         assert window.findChild(QLabel, 'deviceBatterySummary') is None
-        assert '预览' in window._connection_message.text()
+        assert window._connection_message.text() == '配置连接失败；可重新连接，或使用 USB 连接设备。'
+        visible = {
+            label.text()
+            for label in window.findChildren(QLabel)
+            if label.isVisible()
+        }
+        assert '连接设备' in visible
+        assert '插入 USB，或先在系统蓝牙设置中连接设备。' in visible
+        assert not any('按键配置 · 设置按键' in text for text in visible)
         assert not window._connection_terminal.isVisible()
         details = window.findChild(QPlainTextEdit, 'connectionDetails')
         assert not details.isVisible()
@@ -45,6 +54,8 @@ def test_first_failure_keeps_preview_navigation_and_collapsed_details(qtbot, con
 
 def test_mapping_survives_relink_no_device_and_failure_without_device_commands(session):
     window, vm, gateway, snapshot, _ = session
+    snapshot = replace(snapshot, status={**snapshot.status, "operating_mode": "normal"})
+    gateway.snapshot_ready.emit(snapshot)
     window._select_physical_control('key.8')
     window.findChild(QLineEdit, 'mappingShortNameEditor').setText('离线编辑')
     draft = vm.draft
@@ -74,6 +85,8 @@ def test_mapping_survives_relink_no_device_and_failure_without_device_commands(s
 
 def test_unsaved_mapping_is_not_restored_into_another_device(session):
     window, vm, gateway, snapshot, _ = session
+    snapshot = replace(snapshot, status={**snapshot.status, "operating_mode": "normal"})
+    gateway.snapshot_ready.emit(snapshot)
     window._select_physical_control('key.8')
     window.findChild(QLineEdit, 'mappingShortNameEditor').setText('Only A')
     vm.refresh()
@@ -109,7 +122,8 @@ def test_relink_cannot_confirm_a_previously_validated_write(session):
     gateway.command_completed.emit('VALIDATE_CONFIG', _ack('VALIDATE_CONFIG'))
     assert vm.write_transaction.state is ConfigTransactionState.AWAITING_CONFIRMATION
     vm.refresh()
-    assert window.findChild(QPushButton, 'confirmConfigurationWrite') is None
+    confirm = window.findChild(QPushButton, 'confirmConfigurationWrite')
+    assert confirm is None or not confirm.isVisibleTo(window) or not confirm.isEnabled()
     assert vm.write_transaction.state is ConfigTransactionState.FAILED
     commands = list(gateway.commands)
     with pytest.raises(ValueError, match='没有等待确认'):

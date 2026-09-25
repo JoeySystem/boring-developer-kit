@@ -105,7 +105,10 @@ def test_manual_test_runs_same_executor_marks_tested_without_bus(qtbot, tmp_path
     host.bind("SERIAL-1")
     host.save_workflow(_workflow())
 
-    result = host.test_workflow("save-selection")
+    results = []
+    host.test_workflow("save-selection", results.append)
+    qtbot.waitUntil(lambda: bool(results))
+    result = results[0]
 
     assert result.succeeded
     assert host.workflows[0].tested is True
@@ -128,8 +131,10 @@ def test_physical_event_runs_enabled_workflow_once(qtbot, tmp_path) -> None:
     result = host.handle_event(_event())
 
     assert result is not None and result.handled and result.succeeded
+    qtbot.waitUntil(lambda: not host.running)
     assert services.calls.count("capture") == 1
-    assert "运行完成" in result.message
+    assert "已开始" in result.message
+    assert host.status == "completed"
 
 
 def test_disabled_or_other_prompt_falls_through(qtbot, tmp_path) -> None:
@@ -153,9 +158,14 @@ def test_failure_stops_later_steps_and_names_failed_step(qtbot, tmp_path) -> Non
     host.bind("SERIAL-1")
     host.save_workflow(_workflow(enabled=True, tested=True))
 
-    result = host.handle_event(_event())
+    results = []
+    host.run_completed.connect(results.append)
+    dispatched = host.handle_event(_event())
+    assert dispatched is not None and dispatched.handled
+    qtbot.waitUntil(lambda: bool(results))
+    result = results[0]
 
-    assert result is not None and result.handled and not result.succeeded
+    assert not result.succeeded
     assert "第 2 步失败" in result.message
     assert all(call != ("notify", "已保存") for call in services.calls)
     assert any(log.level == "error" and log.step_index == 2 for log in host.logs)
@@ -190,6 +200,7 @@ def test_event_bus_stops_after_official_workflow_claims_event(qtbot, tmp_path) -
 
     assert result.handled and result.succeeded
     assert runner.launches == []
+    qtbot.waitUntil(lambda: not workflow_host.running)
 
 
 def test_device_switch_loads_its_own_workflows_and_clears_logs(qtbot, tmp_path) -> None:

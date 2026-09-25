@@ -56,14 +56,7 @@ class DiagnosticsPage(QScrollArea):
         summary_layout = QHBoxLayout(summary)
         summary_layout.setContentsMargins(24, 20, 24, 22)
         heading = QVBoxLayout()
-        heading.addWidget(QLabel("DEVICE DIAGNOSTICS", objectName="eyebrow"))
-        heading.addWidget(QLabel("诊断与实时输入", objectName="inspectorTitle"))
-        intro = QLabel(
-            "集中查看设备身份、协议状态、配置同步、活动控件和摇杆实时数据。所有内容都来自当前读取链路。",
-            objectName="muted",
-        )
-        intro.setWordWrap(True)
-        heading.addWidget(intro)
+        heading.addWidget(QLabel("设备检查", objectName="inspectorTitle"))
         summary_layout.addLayout(heading, 1)
         self._connection_badge = QLabel(objectName="statusWarn")
         self._connection_badge.setAlignment(Qt.AlignCenter)
@@ -76,8 +69,7 @@ class DiagnosticsPage(QScrollArea):
         control_check_layout.setSpacing(10)
         control_heading = QHBoxLayout()
         control_titles = QVBoxLayout()
-        control_titles.addWidget(QLabel("CONTROL CHECK", objectName="eyebrow"))
-        control_titles.addWidget(QLabel("逐项检查实体控件", objectName="inspectorTitle"))
+        control_titles.addWidget(QLabel("检查所有控件", objectName="inspectorTitle"))
         control_heading.addLayout(control_titles, 1)
         self._capture_state = QLabel(objectName="statusWarn")
         self._capture_state.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -98,13 +90,13 @@ class DiagnosticsPage(QScrollArea):
 
         capture_actions = QHBoxLayout()
         self._capture_start = QPushButton(
-            "开始控件诊断", objectName="startDiagnosticCapture"
+            "开始检查", objectName="startDiagnosticCapture"
         )
         self._capture_start.setProperty("buttonRole", "primary")
         self._capture_start.clicked.connect(self._start_capture)
         capture_actions.addWidget(self._capture_start)
         self._capture_stop = QPushButton(
-            "结束诊断", objectName="stopDiagnosticCapture"
+            "结束检查", objectName="stopDiagnosticCapture"
         )
         self._capture_stop.setProperty("buttonRole", "secondary")
         self._capture_stop.clicked.connect(self._stop_capture)
@@ -112,19 +104,20 @@ class DiagnosticsPage(QScrollArea):
         capture_actions.addStretch(1)
         control_check_layout.addLayout(capture_actions)
 
-        capture_boundary = QLabel(
+        self._capture_boundary = QLabel(
             "诊断保护开启后，按键、旋钮和摇杆动作只用于本页检查，不会发送到电脑里的其他程序。结束时请先松开全部控件。",
             objectName="roleContext",
         )
-        capture_boundary.setWordWrap(True)
-        control_check_layout.addWidget(capture_boundary)
+        self._capture_boundary.setWordWrap(True)
+        self._capture_boundary.hide()
+        control_check_layout.addWidget(self._capture_boundary)
         layout.addWidget(control_check)
 
-        calibration = _card()
-        calibration_layout = QVBoxLayout(calibration)
+        self._calibration_card = _card()
+        self._calibration_card.setObjectName("joystickCalibrationCard")
+        calibration_layout = QVBoxLayout(self._calibration_card)
         calibration_layout.setContentsMargins(24, 20, 24, 22)
         calibration_layout.setSpacing(10)
-        calibration_layout.addWidget(QLabel("JOYSTICK RECOVERY", objectName="eyebrow"))
         calibration_layout.addWidget(
             QLabel("摇杆检查与校准", objectName="inspectorTitle")
         )
@@ -148,7 +141,7 @@ class DiagnosticsPage(QScrollArea):
         calibration_actions.addWidget(self._open_calibration)
         calibration_actions.addStretch(1)
         calibration_layout.addLayout(calibration_actions)
-        layout.addWidget(calibration)
+        layout.addWidget(self._calibration_card)
 
         technical_toggle = QPushButton("高级诊断", objectName="diagnosticDetailsToggle")
         technical_toggle.setCheckable(True)
@@ -269,6 +262,8 @@ class DiagnosticsPage(QScrollArea):
             objectName="roleContext",
         )
         boundary.setWordWrap(True)
+        boundary.hide()
+        technical_toggle.toggled.connect(boundary.setVisible)
         layout.addWidget(boundary)
         layout.addStretch(1)
 
@@ -279,6 +274,11 @@ class DiagnosticsPage(QScrollArea):
     def refresh(self) -> None:
         model = self._view_model.model
         snapshot = model.snapshot
+        device_key = tuple(snapshot.identity.get(key) for key in ("serial", "hardware_id")) if snapshot else None
+        if device_key != getattr(self, "_device_key", None):
+            self._device_key = device_key
+            self._joystick_issue_reported = False
+            self._last_static_render = self._last_joystick_render = self._last_event_render = None
         connected = model.state in {AppState.READY, AppState.READ_ONLY}
 
         if snapshot is None:
@@ -474,22 +474,30 @@ class DiagnosticsPage(QScrollArea):
             instruction = (
                 _control_instruction(remaining[0])
                 if remaining
-                else "全部控件均已识别。请松开所有控件，然后点击“结束诊断”。"
+                else "全部控件均已识别。请松开所有控件，然后点击“结束检查”。"
             )
         else:
             state = "尚未开始"
             instruction = (
-                "点击“开始控件诊断”，控制台会暂时接管设备输入，再按页面提示逐项操作。"
+                "点击“开始检查”，再按页面提示操作。"
             )
         _set_text_if_changed(self._capture_state, translate_ui_text(state))
         _set_text_if_changed(
             self._capture_instruction, translate_ui_text(instruction)
         )
+        self._capture_boundary.setVisible(active or bool(pending))
         self._set_capture_state_style(active and not pending and not error)
         self._capture_start.setEnabled(
             supported and not active and not pending and snapshot is not None
         )
         self._capture_stop.setEnabled(active or pending == "starting")
+        completed_or_partial = bool(tested) and not active and not pending
+        self._capture_start.setVisible(not active and not pending)
+        self._capture_start.setText(
+            translate_ui_text("重新检查" if tested else "开始检查")
+        )
+        self._capture_stop.setVisible(active or bool(pending))
+        self._calibration_card.setVisible(completed_or_partial)
 
     def _set_capture_state_style(self, ready: bool) -> None:
         name = "statusReady" if ready else "statusWarn"

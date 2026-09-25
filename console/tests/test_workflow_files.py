@@ -45,21 +45,24 @@ def test_export_import_round_trip_assigns_local_id_and_requires_review(tmp_path)
 
 def test_import_rejects_unknown_package_or_workflow_fields(tmp_path) -> None:
     path = tmp_path / "bad.json"
-    path.write_text(
-        json.dumps({"kind": "other", "version": 1, "workflow": {}}),
-        encoding="utf-8",
+    unsupported_package = json.dumps(
+        {"kind": "other", "version": 1, "workflow": {}}
     )
+    path.write_text(unsupported_package, encoding="utf-8")
     with pytest.raises(WorkflowError, match="不是 BORING"):
         import_workflow(path)
+    assert path.read_text(encoding="utf-8") == unsupported_package
 
     payload = {
         "kind": "boring-workflow",
         "version": 1,
         "workflow": {**_workflow().as_mapping(), "extra": True},
     }
-    path.write_text(json.dumps(payload), encoding="utf-8")
+    malformed_workflow = json.dumps(payload)
+    path.write_text(malformed_workflow, encoding="utf-8")
     with pytest.raises(WorkflowError, match="未知字段"):
         import_workflow(path)
+    assert path.read_text(encoding="utf-8") == malformed_workflow
 
 
 def test_import_without_machine_local_target_does_not_require_review(tmp_path) -> None:

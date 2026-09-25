@@ -1,12 +1,98 @@
 """Exercise restart gating and real Objective-C callback block marshalling."""
 from pathlib import Path
 import os
+import plistlib
 import subprocess
 import sys
 
 import pytest
 
-from controller_config.desktop_update_macos import MacDesktopUpdater, _load_driver_class
+import controller_config.desktop_update_macos as macos_updater
+from controller_config.desktop_update_macos import (
+    MacDesktopUpdater,
+    _load_driver_class,
+    _validate_update_installation,
+)
+
+
+def _app(path: Path, *, bundle_id: str = "com.boring.console") -> Path:
+    app = path
+    info = app / "Contents/Info.plist"
+    info.parent.mkdir(parents=True)
+    info.write_bytes(plistlib.dumps({"CFBundleIdentifier": bundle_id}))
+    return app
+
+
+def test_automatic_update_checks_run_hourly():
+    calls = []
+
+    class NativeUpdater:
+        def setAutomaticallyDownloadsUpdates_(self, value):
+            calls.append(("downloads", value))
+
+        def setAutomaticallyChecksForUpdates_(self, value):
+            calls.append(("checks", value))
+
+        def setUpdateCheckInterval_(self, value):
+            calls.append(("interval", value))
+
+    macos_updater._configure_automatic_checks(NativeUpdater(), {})
+
+    assert calls == [
+        ("downloads", False),
+        ("checks", True),
+        ("interval", 60 * 60),
+    ]
+
+
+def test_update_installation_accepts_single_canonical_app(tmp_path):
+    applications = tmp_path / "Applications"
+    current = _app(applications / "BORING Console.app")
+
+    _validate_update_installation(
+        current,
+        "com.boring.console",
+        application_roots=(applications,),
+    )
+
+
+def test_update_installation_rejects_renamed_running_copy(tmp_path):
+    applications = tmp_path / "Applications"
+    backup = _app(applications / "BORING Console.backup-0.1.50.app")
+
+    with pytest.raises(RuntimeError, match="应用程序"):
+        _validate_update_installation(
+            backup,
+            "com.boring.console",
+            application_roots=(applications,),
+        )
+
+
+def test_update_installation_rejects_multiple_installed_copies(tmp_path):
+    applications = tmp_path / "Applications"
+    current = _app(applications / "BORING Console.app")
+    _app(applications / "BORING Console Old.app")
+
+    with pytest.raises(RuntimeError, match="多个 BORING Console"):
+        _validate_update_installation(
+            current,
+            "com.boring.console",
+            application_roots=(applications,),
+        )
+
+
+def test_update_installation_ignores_unrelated_app_with_invalid_plist(tmp_path):
+    applications = tmp_path / "Applications"
+    current = _app(applications / "BORING Console.app")
+    invalid_info = applications / "Unrelated.app/Contents/Info.plist"
+    invalid_info.parent.mkdir(parents=True)
+    invalid_info.write_bytes(b"not a plist")
+
+    _validate_update_installation(
+        current,
+        "com.boring.console",
+        application_roots=(applications,),
+    )
 
 
 def test_install_waits_for_restart_preparation(qapp):
@@ -209,5 +295,62 @@ def test_native_blocks_round_trip_and_resumed_install_guard(native_driver, qapp,
         host, host, driver, driver)
     success, error = native.startUpdater_(None)
     assert success, str(error)
+    macos_updater._configure_automatic_checks(native, {})
     assert native.canCheckForUpdates()
+    assert native.automaticallyChecksForUpdates()
+    assert int(native.updateCheckInterval()) == 60 * 60
     assert not native.automaticallyDownloadsUpdates()
+
+
+def test_preparation_failure_keeps_install_reply_for_explicit_retry(qapp):
+    calls = []
+    def fail():
+        raise OSError("Unable to save draft")
+    owner = MacDesktopUpdater({}, fail)
+    owner._install_reply = calls.append
+    owner._publish("ready")
+    owner.install()
+    assert owner.status.state == "ready"
+    assert owner.status.retry_action == "install"
+    assert calls == []
+    owner._prepare_restart = lambda: False
+    owner.retry()
+    assert calls == []
+    owner._prepare_restart = lambda: True
+    owner.retry()
+    assert calls == [1]
+    assert owner.status.state == "installing"
+    assert owner.status.retry_action == ""
+
+
+def test_native_failure_discards_callbacks_and_retries_check(qapp):
+    calls = []
+    class NativeUpdater:
+        def canCheckForUpdates(self):
+            return True
+        def checkForUpdates(self):
+            calls.append("check")
+    owner = MacDesktopUpdater({}, lambda: True)
+    owner._updater = NativeUpdater()
+    owner._install_reply = lambda _: pytest.fail("stale callback")
+    owner._download_reply = lambda _: pytest.fail("stale callback")
+    owner._cancel_reply = lambda: pytest.fail("stale callback")
+    owner._fail("network failed")
+    assert owner.status.retry_action == "check"
+    assert owner._install_reply is owner._download_reply is owner._cancel_reply is None
+    owner.retry()
+    assert calls == ["check"]
+
+
+def test_native_install_reply_exception_cannot_reuse_callback(qapp):
+    calls = []
+    def failed_reply(choice):
+        calls.append(choice)
+        raise RuntimeError("installer unavailable")
+    owner = MacDesktopUpdater({}, lambda: True)
+    owner._install_reply = failed_reply
+    owner.install()
+    assert owner.status.retry_action == "check"
+    assert owner._install_reply is None
+    owner.install()
+    assert calls == [1]

@@ -37,14 +37,14 @@ def test_trial_allows_unsigned_complete_installer(tmp_path, public_key):
         public_key=public_key,
     )
 
-    assert _validator()(path) == "trial"
+    assert _validator()(path, build_origin="official") == "trial"
     assert json.loads(path.read_text())["windows"]["public_key"] == public_key
 
 
 def test_default_channel_keeps_unsigned_updates_disabled_development_build(tmp_path):
     path = _config(tmp_path, feed_url="", public_key="")
 
-    assert _validator()(path) == "stable"
+    assert _validator()(path, build_origin="official") == "stable"
 
 
 def test_trial_rejects_skip_installer(tmp_path, public_key):
@@ -56,7 +56,7 @@ def test_trial_rejects_skip_installer(tmp_path, public_key):
     )
 
     with pytest.raises(ValueError, match="installer build"):
-        _validator()(path, skip_installer=True)
+        _validator()(path, build_origin="official", skip_installer=True)
 
 
 @pytest.mark.parametrize(
@@ -77,7 +77,7 @@ def test_trial_requires_https_feed_and_ed25519_key(tmp_path, windows, reason):
     path = _config(tmp_path, **windows)
 
     with pytest.raises(ValueError, match=reason):
-        _validator()(path)
+        _validator()(path, build_origin="official")
 
 
 @pytest.mark.parametrize("channel", [None, "stable"])
@@ -93,8 +93,15 @@ def test_default_and_stable_updates_still_require_authenticode(
     path = _config(tmp_path, **windows)
 
     with pytest.raises(ValueError, match="Authenticode"):
-        _validator()(path)
-    assert _validator()(path, has_signing_certificate=True) == "stable"
+        _validator()(path, build_origin="official")
+    assert (
+        _validator()(
+            path,
+            build_origin="official",
+            has_signing_certificate=True,
+        )
+        == "stable"
+    )
 
 
 def test_unknown_channel_cannot_bypass_authenticode(tmp_path, public_key):
@@ -106,4 +113,36 @@ def test_unknown_channel_cannot_bypass_authenticode(tmp_path, public_key):
     )
 
     with pytest.raises(ValueError, match="stable or trial"):
-        _validator()(path)
+        _validator()(path, build_origin="official")
+
+
+def test_custom_windows_validation_requires_staged_update_configuration(
+    tmp_path, public_key
+):
+    path = _config(
+        tmp_path,
+        channel="trial",
+        feed_url="https://updates.example.com/windows/feed.json",
+        public_key=public_key,
+    )
+
+    with pytest.raises(ValueError, match="stage_app_build.py"):
+        _validator()(path, build_origin="custom")
+
+    document = json.loads(path.read_text())
+    document["windows"].update(feed_url="", public_key="")
+    path.write_text(json.dumps(document), encoding="utf-8")
+    assert _validator()(path, build_origin="custom") == "custom"
+    assert json.loads(path.read_text())["windows"] == {
+        "channel": "trial",
+        "feed_url": "",
+        "public_key": "",
+    }
+
+
+@pytest.mark.parametrize("origin", ["", "community", "OFFICIAL"])
+def test_windows_packaging_rejects_invalid_build_origin(tmp_path, origin):
+    path = _config(tmp_path, feed_url="", public_key="")
+
+    with pytest.raises(ValueError, match="official or custom"):
+        _validator()(path, build_origin=origin)

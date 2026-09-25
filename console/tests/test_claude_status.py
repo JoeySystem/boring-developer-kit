@@ -237,6 +237,17 @@ def test_settings_exposes_opt_in_and_overflow_without_new_top_navigation(qtbot, 
     assert "Key7" in widget.sessions.text()
     assert widget.disable_button.isEnabled()
     assert not widget.enable_button.isEnabled()
+    assert widget.manage_button.isVisible()
+    assert not widget.retry_button.isVisible()
+    assert not widget.management.isVisible()
+    widget.manage_button.click()
+    assert widget.management.isVisible()
+    assert widget.disable_button.isVisible()
+
+    bridge._fault = True
+    widget.refresh()
+    assert widget.retry_button.isVisible()
+    assert not widget.manage_button.isVisible()
 
 
 def test_status_settings_english_labels_fit_and_live_state_is_translated(qapp, qtbot, setup_bridge, tmp_path):
@@ -251,7 +262,7 @@ def test_status_settings_english_labels_fit_and_live_state_is_translated(qapp, q
     widget.resize(1000, 480)
     widget.show()
     try:
-        assert widget.enable_button.text() == "Enable Status…"
+        qtbot.waitUntil(lambda: widget.enable_button.text() == "Enable Status…")
         bridge.consume(event(name="PermissionRequest"))
         assert "Awaiting approval" in widget.sessions.text()
         bridge.consume(event("idle-session", name="SessionStart"))

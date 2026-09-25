@@ -2,14 +2,21 @@ from __future__ import annotations
 
 import uuid
 from collections import deque
+from collections.abc import Callable
+from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import datetime
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 
 from controller_config.automation import EventDispatchResult
 from controller_config.device_events import DeviceEvent
-from controller_config.host_actions import HostActionContext, HostActionRegistry
+from controller_config.host_actions import (
+    HostActionContext,
+    HostActionExecution,
+    HostActionJob,
+    HostActionRegistry,
+)
 from controller_config.workflows import LocalWorkflow, WorkflowError, WorkflowStore
 
 
@@ -31,12 +38,15 @@ class WorkflowRunResult:
     message: str
     failed_step: int | None = None
     technical: str = ""
+    cancelled: bool = False
+    timed_out: bool = False
 
 
 class WorkflowHost(QObject):
     """Persist and execute small, linear, built-in host workflows."""
 
     changed = Signal()
+    run_completed = Signal(object)
 
     def __init__(
         self,
@@ -53,6 +63,22 @@ class WorkflowHost(QObject):
         self._logs: deque[WorkflowRunLog] = deque(maxlen=150)
         self._sequence = 0
         self._load_error = ""
+        self.external_busy: Callable[[], bool] = lambda: False
+        self.running = False
+        self.status = "idle"
+        self.current_step: int | None = None
+        self._active: LocalWorkflow | None = None
+        self._context = HostActionContext()
+        self._step_job: HostActionJob | None = None
+        self._completed: Callable[[WorkflowRunResult], None] | None = None
+        self._cancelled = False
+        self._timed_out = False
+        self._deadline = QTimer(self)
+        self._deadline.setSingleShot(True)
+        self._deadline.timeout.connect(self._timeout)
+        self._advance = QTimer(self)
+        self._advance.setSingleShot(True)
+        self._advance.timeout.connect(self._next_step)
 
     @property
     def serial(self) -> str:
@@ -77,6 +103,7 @@ class WorkflowHost(QObject):
     def bind(self, serial: str) -> None:
         if not serial or serial == self._serial:
             return
+        self.cancel_run()
         self._serial = serial
         self._logs.clear()
         self._sequence = 0
@@ -110,7 +137,7 @@ class WorkflowHost(QObject):
         self,
         *,
         name: str,
-        trigger_prompt_id: int,
+        trigger_prompt_id: int | None,
         steps,
         review_required: bool = False,
     ) -> LocalWorkflow:
@@ -144,15 +171,26 @@ class WorkflowHost(QObject):
         duplicated = self._workflow(workflow_id).duplicate()
         return self.save_workflow(duplicated)
 
-    def test_workflow(self, workflow_id: str) -> WorkflowRunResult:
-        workflow = self._workflow(workflow_id)
-        result = self._execute(workflow, source="manual")
-        if result.succeeded:
-            tested = replace(workflow, tested=True, enabled=False)
-            self._replace_without_log(tested)
-            self._append_log(tested, "success", "手动步骤测试通过；实体触发仍需配置设备提示词槽位")
-        self.changed.emit()
-        return result
+    def test_workflow(
+        self,
+        workflow_id: str,
+        completed: Callable[[WorkflowRunResult], None] | None = None,
+    ) -> None:
+        workflow = deepcopy(self._workflow(workflow_id))
+        serial = self._serial
+
+        def tested(result: WorkflowRunResult) -> None:
+            # A completed trial must not overwrite edits made while it ran.
+            current = next(
+                (item for item in self._workflows if item.workflow_id == workflow_id), None
+            )
+            if result.succeeded and serial == self._serial and current == workflow:
+                self._replace_without_log(replace(current, tested=True))
+                self.changed.emit()
+            if completed is not None:
+                completed(result)
+
+        self.run_definition(workflow, completed=tested)
 
     def handle_event(self, event: DeviceEvent) -> EventDispatchResult | None:
         if event.kind != "prompt.triggered" or event.device_serial != self._serial:
@@ -168,54 +206,163 @@ class WorkflowHost(QObject):
         )
         if workflow is None:
             return None
-        result = self._execute(workflow, source="device")
-        self.changed.emit()
+        try:
+            self.run_definition(workflow, event)
+        except WorkflowError as exc:
+            return EventDispatchResult(True, False, str(exc), str(exc))
         return EventDispatchResult(
             handled=True,
-            succeeded=result.succeeded,
-            message=result.message,
-            technical=result.technical,
+            succeeded=True,
+            message=f"已开始运行：{workflow.name}",
         )
 
     def clear_logs(self) -> None:
         self._logs.clear()
         self.changed.emit()
 
-    def _execute(self, workflow: LocalWorkflow, *, source: str) -> WorkflowRunResult:
+    def run_definition(
+        self,
+        definition: LocalWorkflow,
+        event: DeviceEvent | None = None,
+        completed: Callable[[WorkflowRunResult], None] | None = None,
+        *,
+        timeout_ms: int = 60_000,
+    ) -> None:
+        if self.running or self.external_busy():
+            raise WorkflowError("已有电脑任务正在运行，请先停止或等待完成；不会排队。")
+        definition.validate()
+        if (
+            isinstance(timeout_ms, bool)
+            or not isinstance(timeout_ms, int)
+            or timeout_ms <= 0
+        ):
+            raise WorkflowError("运行时限必须是正整数毫秒")
+        self._active = deepcopy(definition)
+        self._active_serial = self._serial
+        self._context = HostActionContext()
+        self._completed = completed
+        self._cancelled = False
+        self._timed_out = False
+        self.running = True
+        self.status = "running"
+        self.current_step = 0
         self._append_log(
-            workflow,
+            self._active,
             "info",
-            "开始手动测试" if source == "manual" else "收到实体事件，开始运行",
+            "开始手动测试" if event is None else "收到实体事件，开始运行",
         )
-        context = HostActionContext()
-        for index, step in enumerate(workflow.steps, start=1):
-            definition = self._registry.definition(step.action_id)
-            execution = self._registry.execute(step, context)
-            if not execution.succeeded:
-                message = f"第 {index} 步失败：{definition.name}"
-                self._append_log(
-                    workflow,
-                    "error",
-                    message,
-                    step_index=index,
-                    technical=execution.technical or execution.message,
+        self._deadline.start(timeout_ms)
+        self.changed.emit()
+        self._advance.start(0)
+
+    def cancel_run(self) -> None:
+        if not self.running:
+            return
+        self._cancelled = True
+        self.status = "stopping"
+        self._deadline.stop()
+        self.changed.emit()
+        if self._step_job is not None:
+            self._step_job.cancel()
+        else:
+            self._finish_cancelled()
+
+    def _timeout(self) -> None:
+        if not self.running:
+            return
+        self._timed_out = True
+        self.status = "timing_out"
+        self.changed.emit()
+        if self._step_job is not None:
+            self._step_job.cancel()
+        else:
+            self._finish_cancelled()
+
+    def shutdown(self) -> None:
+        self.cancel_run()
+
+    def _next_step(self) -> None:
+        if not self.running:
+            return
+        if self._cancelled or self._timed_out:
+            self._finish_cancelled()
+            return
+        workflow = self._active
+        assert workflow is not None and self.current_step is not None
+        if self.current_step == len(workflow.steps):
+            if all(step.action_id == 'open_target' for step in workflow.steps):
+                message = f"已请求打开 {len(workflow.steps)} 项"
+            else:
+                message = f"任务已完成：{workflow.name}"
+            self._finish(WorkflowRunResult(True, message))
+            return
+        step = workflow.steps[self.current_step]
+        self.current_step += 1
+        self.changed.emit()
+        self._step_job = self._registry.execute_async(
+            step, self._context, self._step_finished, parent=self
+        )
+
+    def _step_finished(self, execution: HostActionExecution) -> None:
+        self._step_job = None
+        if self._cancelled or self._timed_out:
+            self._finish_cancelled()
+            return
+        workflow = self._active
+        assert workflow is not None and self.current_step is not None
+        name = self._registry.definition(
+            workflow.steps[self.current_step - 1].action_id
+        ).name
+        if not execution.succeeded:
+            self._finish(
+                WorkflowRunResult(
+                    False, f"第 {self.current_step} 步失败：{name}",
+                    self.current_step, execution.technical or execution.message,
                 )
-                return WorkflowRunResult(
-                    False,
-                    message,
-                    failed_step=index,
-                    technical=execution.technical or execution.message,
-                )
-            context = execution.context
-            self._append_log(
-                workflow,
-                "success",
-                f"第 {index} 步完成：{definition.name}",
-                step_index=index,
             )
-        message = f"自动化运行完成：{workflow.name}"
-        self._append_log(workflow, "success", message)
-        return WorkflowRunResult(True, message)
+            return
+        self._context = execution.context
+        self._append_active_log(
+            "success", f"第 {self.current_step} 步完成：{name}",
+            step_index=self.current_step,
+        )
+        self._advance.start(0)
+
+    def _finish_cancelled(self) -> None:
+        message = "运行超时" if self._timed_out else "已停止"
+        self._finish(
+            WorkflowRunResult(
+                False, f"{message}；已经写入或打开的内容不会撤销", self.current_step,
+                cancelled=self._cancelled, timed_out=self._timed_out,
+            )
+        )
+
+    def _append_active_log(self, level: str, message: str, **kwargs) -> None:
+        if self._active_serial == self._serial:
+            self._append_log(self._active, level, message, **kwargs)
+
+    def _finish(self, result: WorkflowRunResult) -> None:
+        if not self.running:
+            return
+        self._deadline.stop()
+        self._advance.stop()
+        self.running = False
+        if result.timed_out:
+            self.status = "timed_out"
+        elif result.cancelled:
+            self.status = "cancelled"
+        else:
+            self.status = "completed" if result.succeeded else "failed"
+        self._append_active_log(
+            "success" if result.succeeded else "info" if result.cancelled else "error",
+            result.message, step_index=result.failed_step, technical=result.technical,
+        )
+        completed, self._completed = self._completed, None
+        self._active = None
+        self.changed.emit()
+        self.run_completed.emit(result)
+        if completed is not None:
+            completed(result)
 
     def _replace_without_log(self, workflow: LocalWorkflow) -> None:
         workflows = tuple(

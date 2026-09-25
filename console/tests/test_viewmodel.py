@@ -87,10 +87,29 @@ def test_no_device_state_is_actionable(qtbot) -> None:
     assert "连接设备" in view_model.model.technical_message
 
 
+def test_no_device_keeps_scanning_until_bluetooth_returns(qtbot) -> None:
+    gateway = FakeGateway()
+    view_model = MainViewModel(gateway)
+
+    gateway.candidates_found.emit(tuple())
+
+    assert view_model.model.state is AppState.NO_DEVICE
+    assert view_model._reconnect_timer.isActive()
+    view_model._reconnect_timer.timeout.emit()
+    assert gateway.scan_calls == 1
+
+    gateway.candidates_found.emit((
+        PortCandidate("ble:returned-device", transport="bluetooth"),
+    ))
+
+    assert gateway.connected_ports == ["ble:returned-device"]
+    assert not view_model._reconnect_timer.isActive()
+
+
 def test_glyph_editor_uses_viewmodel_gateway_and_independent_storage(qtbot, contract, monkeypatch):
     import base64
     from PySide6.QtGui import QImage
-    from PySide6.QtWidgets import QMessageBox
+    from PySide6.QtWidgets import QMessageBox, QPushButton
     from controller_config.prompt_library import PromptLibraryError
     from controller_config.views.screen_glyph_editor import GlyphDraft, ScreenGlyphEditor
     from controller_config.views.main_window import MainWindow
@@ -103,6 +122,12 @@ def test_glyph_editor_uses_viewmodel_gateway_and_independent_storage(qtbot, cont
     vm = MainViewModel(gateway, contract)
     snapshot = _power_v2_snapshot(contract, read_only=False)
     caps = copy.deepcopy(snapshot.capabilities)
+    caps["features"]["custom_home_icon"] = True
+    caps["screen_icon"] = {
+        "version": 1, "target": "normal_home", "format": "rgb565_le",
+        "width": 128, "height": 128, "total_bytes": 32768,
+        "max_chunk_bytes": 1024, "session_timeout_ms": 15000,
+    }
     caps["features"]["custom_glyph_icons"] = True
     caps["screen_glyphs"] = {"version": 1, "format": "alpha8", "count": 2}
     gateway.snapshot_ready.emit(replace(snapshot, capabilities=caps))
@@ -110,6 +135,17 @@ def test_glyph_editor_uses_viewmodel_gateway_and_independent_storage(qtbot, cont
     qtbot.addWidget(window)
     vm.navigate("lighting")
     window.show()
+    assert not any(c.name.startswith("SCREEN_ICON_") for c in gateway.commands)
+    assert not any(c.name.startswith("SCREEN_GLYPH_") for c in gateway.commands)
+    window.findChild(QPushButton, "expandScreenIcons").click()
+    qtbot.waitUntil(lambda: any(c.name == "SCREEN_ICON_GET" for c in gateway.commands))
+    window.findChild(QPushButton, "expandScreenGlyphs").click()
+    qtbot.wait(100)
+    assert not any(c.name == "SCREEN_GLYPH_LIST" for c in gateway.commands)
+    gateway.command_completed.emit("SCREEN_ICON_GET", {"result": {
+        "revision": 0, "source": "default", "target": "normal_home",
+        "format": "rgb565_le", "width": 128, "height": 128, "total_bytes": 0,
+    }})
     qtbot.waitUntil(lambda: any(c.name == "SCREEN_GLYPH_LIST" for c in gateway.commands))
     items = [dict(id=id_, resource_id=i, width=2, height=2, editable=True)
              for i, id_ in enumerate(("timer", "settings"))]
@@ -143,7 +179,8 @@ def test_glyph_editor_uses_viewmodel_gateway_and_independent_storage(qtbot, cont
     assert not editor.draft.is_dirty
     editor.selector.setCurrentIndex(1)
     qtbot.waitUntil(lambda: gateway.commands[-1].payload == {"id": "settings"})
-    assert all(c.name.startswith("SCREEN_GLYPH_") or c.name in {"CLEAR_LIGHTING_PREVIEW", "GET_PROMPT_EVENT"}
+    assert all(c.name.startswith(("SCREEN_ICON_", "SCREEN_GLYPH_"))
+               or c.name in {"CLEAR_LIGHTING_PREVIEW", "GET_PROMPT_EVENT"}
                for c in gateway.commands), [c.name for c in gateway.commands]
     epoch = vm.screen_glyphs.connection_epoch
     gateway.disconnected.emit("unplug")
@@ -238,16 +275,16 @@ def test_duplicate_screen_model_does_not_emit_changed(qtbot) -> None:
     gateway = FakeGateway()
     view_model = MainViewModel(gateway)
     with qtbot.assertNotEmitted(view_model.changed):
-        gateway.progress.emit("正在查找 BORING 设备…")
+        gateway.progress.emit("正在查找已连接到此电脑的 BORING 设备…")
 
 
-def test_disconnect_preserves_last_snapshot(qtbot) -> None:
+def test_disconnect_preserves_last_snapshot(qtbot, contract) -> None:
     gateway = FakeGateway()
-    view_model = MainViewModel(gateway)
-    snapshot = SimpleNamespace(is_read_only=False, config_status_label="已同步 · 可配置",
-                               identity={"serial": "test-device", "hardware_id": "test-board"},
-                               capabilities={"features": {}}, port_name="test-port",
-                               trust=SimpleNamespace(is_authenticated=False))
+    view_model = MainViewModel(gateway, contract)
+    snapshot = replace(
+        _power_v2_snapshot(contract, read_only=False),
+        port_name="test-port",
+    )
 
     gateway.snapshot_ready.emit(snapshot)
     assert view_model.model.state is AppState.READY
@@ -257,13 +294,13 @@ def test_disconnect_preserves_last_snapshot(qtbot) -> None:
     assert view_model.model.snapshot is snapshot
 
 
-def test_disconnected_device_is_polled_and_reconnected_when_it_returns(qtbot) -> None:
+def test_disconnected_device_is_polled_and_reconnected_when_it_returns(qtbot, contract) -> None:
     gateway = FakeGateway()
-    view_model = MainViewModel(gateway)
-    snapshot = SimpleNamespace(is_read_only=False, config_status_label="已同步 · 可配置",
-                               identity={"serial": "test-device", "hardware_id": "test-board"},
-                               capabilities={"features": {}}, port_name="test-port",
-                               trust=SimpleNamespace(is_authenticated=False))
+    view_model = MainViewModel(gateway, contract)
+    snapshot = replace(
+        _power_v2_snapshot(contract, read_only=False),
+        port_name="test-port",
+    )
     gateway.snapshot_ready.emit(snapshot)
     gateway.disconnected.emit("port gone")
 
@@ -282,6 +319,29 @@ def test_disconnected_device_is_polled_and_reconnected_when_it_returns(qtbot) ->
     assert view_model.model.state is AppState.CONNECTING
     assert gateway.connected_ports == ["returned"]
     assert not view_model._reconnect_timer.isActive()
+
+
+def test_disconnect_starts_immediate_targeted_reconnect(qtbot, contract) -> None:
+    class ReconnectGateway(FakeGateway):
+        def __init__(self) -> None:
+            super().__init__()
+            self.reconnects: list[tuple[str, bool]] = []
+
+        def scan_reconnect(self, preferred_port: str, *, usb_only: bool = False) -> None:
+            self.reconnects.append((preferred_port, usb_only))
+
+    gateway = ReconnectGateway()
+    view_model = MainViewModel(gateway, contract)
+    snapshot = replace(
+        _power_v2_snapshot(contract, read_only=False),
+        port_name="ble:known-device",
+    )
+    gateway.snapshot_ready.emit(snapshot)
+
+    gateway.disconnected.emit("link lost")
+
+    assert gateway.reconnects == [("ble:known-device", False)]
+    assert view_model._reconnect_timer.interval() <= 500
 
 
 def test_runtime_status_update_changes_mode_without_replacing_config_or_draft(
@@ -434,6 +494,72 @@ def test_lighting_preview_is_cleared_before_config_validation(qtbot, contract) -
     assert view_model.lighting_preview.candidate is None
 
 
+def test_configuration_write_preserves_function_key_mapping_and_custom_light(
+    qtbot, contract
+) -> None:
+    gateway = FakeGateway()
+    view_model = MainViewModel(gateway, contract)
+    gateway.snapshot_ready.emit(_power_v2_snapshot(contract, read_only=False))
+    assert view_model.draft is not None
+    draft = view_model.draft
+    draft.set_mapping(
+        draft.config["active_profile"],
+        "key.3",
+        "Custom",
+        {"type": "key", "usage": 40, "modifiers": []},
+    )
+    draft.config["lighting"]["under_key"][2] = {"r": 255, "g": 0, "b": 0}
+
+    view_model.prepare_device_write()
+
+    candidate = gateway.commands[-1].payload["config"]
+    restored = next(
+        item
+        for item in candidate["profiles"][0]["mappings"]
+        if item["control_id"] == "key.3"
+    )
+    assert restored == {
+        "control_id": "key.3",
+        "short_name": "Custom",
+        "action": {"type": "key", "usage": 40, "modifiers": []},
+    }
+    assert candidate["lighting"]["under_key"][2] == {"r": 255, "g": 0, "b": 0}
+
+
+def test_platform_change_does_not_replace_custom_function_key_mapping(
+    qtbot, contract
+) -> None:
+    gateway = FakeGateway()
+    view_model = MainViewModel(gateway, contract)
+    snapshot = _power_v2_snapshot(contract, read_only=False)
+    snapshot.config_result["config"]["profiles"][0]["mappings"].append(
+        {
+            "control_id": "key.9",
+            "short_name": "Custom",
+            "action": {"type": "key", "usage": 40, "modifiers": []},
+        }
+    )
+    gateway.snapshot_ready.emit(snapshot)
+    assert view_model.draft is not None
+    profile_id = view_model.draft.config["active_profile"]
+    assert view_model.draft.mapping(profile_id, "key.9")["action"] == {
+        "type": "key",
+        "usage": 40,
+        "modifiers": [],
+    }
+    assert not view_model.draft.is_dirty
+
+    gateway.status_updated.emit({**snapshot.status, "platform": "windows_linux"})
+
+    assert view_model.draft.platform == "windows_linux"
+    assert view_model.draft.mapping(profile_id, "key.9")["action"] == {
+        "type": "key",
+        "usage": 40,
+        "modifiers": [],
+    }
+    assert not view_model.draft.is_dirty
+
+
 def test_lighting_preview_stops_on_device_local_lighting_page(qtbot, contract) -> None:
     gateway = FakeGateway()
     view_model = MainViewModel(gateway, contract)
@@ -550,7 +676,7 @@ def test_extension_context_revision_tracks_draft_and_listener_changes(
     assert view_model.extension_context().prompt_listener["state"] == "paused"
 
 
-def test_ble_update_failure_stops_reconnect_and_usb_can_recover(qtbot, contract):
+def test_ble_known_bad_firmware_stops_but_auth_interruption_reconnects(qtbot, contract):
     gateway = FakeGateway()
     vm = MainViewModel(gateway, contract)
     vm._reconnect_timer.start()
@@ -558,6 +684,8 @@ def test_ble_update_failure_stops_reconnect_and_usb_can_recover(qtbot, contract)
     assert vm.model.state is AppState.FIRMWARE_UPDATE_REQUIRED
     assert not vm._reconnect_timer.isActive()
     gateway.failure.emit(BootstrapKind.AUTHENTICATION_INTERRUPTED, '蓝牙认证中断', 'AUTH_CHALLENGE')
-    assert not vm._reconnect_timer.isActive()
+    assert vm.model.state is AppState.DISCONNECTED
+    assert vm._reconnect_timer.isActive()
+    qtbot.waitUntil(lambda: gateway.scan_calls == 1, timeout=1000)
     gateway.snapshot_ready.emit(_power_v2_snapshot(contract, read_only=False))
     assert vm.model.state is AppState.READY

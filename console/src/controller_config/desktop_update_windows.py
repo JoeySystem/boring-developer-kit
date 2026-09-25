@@ -23,7 +23,7 @@ from PySide6.QtCore import QObject, QTimer, QUrl, Signal
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 
 from . import __version__
-from .desktop_update import UpdateStatus
+from .desktop_update import DESKTOP_UPDATE_CHECK_INTERVAL_SECONDS, UpdateStatus
 
 _UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\{7D499724-C0AE-438B-93C1-59E2D01785D7}_is1"
 
@@ -99,7 +99,7 @@ def _launch_installer(installer: Path, directory: Path) -> None:
         "try {\n"
         f"  $Result = Start-Process -FilePath {_powershell_literal(str(installer))} -ArgumentList {_powershell_literal(arguments)} -Wait -PassThru\n"
         "  if ($Result.ExitCode -ne 0) { throw ('Installer exit code: ' + $Result.ExitCode) }\n"
-        f"  Start-Process -FilePath {_powershell_literal(str(directory / 'BORING Console Community.exe'))} -WorkingDirectory {_powershell_literal(str(directory))}\n"
+        f"  Start-Process -FilePath {_powershell_literal(str(directory / 'BORING Console.exe'))} -WorkingDirectory {_powershell_literal(str(directory))}\n"
         "} catch {\n"
         f"  $_ | Out-File -LiteralPath {_powershell_literal(str(installer.parent / 'update-error.txt'))}\n"
         "  Add-Type -AssemblyName System.Windows.Forms\n"
@@ -140,12 +140,16 @@ class WindowsDesktopUpdater(QObject):
         self._poll.setInterval(50)
         self._poll.timeout.connect(self._verified)
         self._periodic = QTimer(self)
-        self._periodic.setInterval(6 * 60 * 60 * 1000)
+        self._periodic.setInterval(
+            int(config.get(
+                "check_interval_seconds", DESKTOP_UPDATE_CHECK_INTERVAL_SECONDS
+            )) * 1000
+        )
         self._periodic.timeout.connect(self.check)
         self._closed = False
 
-    def _set(self, state: str, message: str = "", received: int = 0, total: int = 0):
-        self.status = UpdateStatus(state=state, version=self._release.get("version", ""), received=received, total=total, message=message)
+    def _set(self, state: str, message: str = "", received: int = 0, total: int = 0, *, retry_action: str = ""):
+        self.status = UpdateStatus(state=state, version=self._release.get("version", ""), received=received, total=total, message=message, retry_action=retry_action)
         self.changed.emit(self.status)
 
     def _configured(self) -> bool:
@@ -217,7 +221,13 @@ class WindowsDesktopUpdater(QObject):
         secure = _https(reply.url().toString())
         reply.deleteLater()
         if error != QNetworkReply.NetworkError.NoError or http != 200 or not secure:
-            self._fail(f"更新下载失败：{reason}" if error != QNetworkReply.NetworkError.NoError else f"更新服务返回 HTTP {http}")
+            if not secure:
+                message = "更新连接未使用 HTTPS，已停止下载"
+            elif error != QNetworkReply.NetworkError.NoError:
+                message = f"检查更新失败：{reason}" if self.status.state == "checking" else f"更新下载失败：{reason}"
+            else:
+                message = f"更新服务返回 HTTP {http}"
+            self._fail(message)
             return
         if self.status.state == "checking":
             try:
@@ -242,7 +252,7 @@ class WindowsDesktopUpdater(QObject):
         self._cleanup()
         try:
             self._directory = Path(tempfile.mkdtemp(prefix="boring-console-update-"))
-            self._installer = self._directory / "BORING-Console-Community-Setup.exe"
+            self._installer = self._directory / "BORING-Console-Setup.exe"
             self._file = self._installer.open("wb")
             self._set("downloading", total=self._release["size"])
             self._request(self._release["url"])
@@ -265,17 +275,26 @@ class WindowsDesktopUpdater(QObject):
             return
         directory = _installed_directory()
         if directory is None:
-            self._fail("找不到当前安装位置，请使用 Windows 安装程序重新安装")
+            self._set("unconfigured", "找不到当前安装位置，请使用 Windows 安装程序重新安装")
             return
         try:
             if not self.prepare_restart():
                 return
             _launch_installer(self._installer, directory)
         except Exception as error:
-            self._set("ready", f"无法启动更新程序：{error}")
+            self._set("ready", f"无法启动更新程序：{error}", retry_action="install")
             return
         self._set("installing")
         self.quit_requested.emit()
+
+    def retry(self):
+        action = self.status.retry_action
+        if action == "download":
+            self.download()
+        elif action == "install":
+            self.install()
+        elif action == "check":
+            self.check()
 
     def _abort(self):
         if self._reply is not None:
@@ -298,7 +317,7 @@ class WindowsDesktopUpdater(QObject):
     def _fail(self, message: str):
         self._abort()
         self._cleanup()
-        self._set("failed", message)
+        self._set("failed", message, retry_action="download" if self._release else "check")
 
     def cancel(self):
         if self.status.state not in ("checking", "downloading"):

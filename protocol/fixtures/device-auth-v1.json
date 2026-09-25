@@ -1,7 +1,7 @@
 {
   "fixture_version": 1,
   "test_only": true,
-  "warning": "Public test-only fixture. Signing private keys are intentionally omitted; this test root is not an official production trust root.",
+  "warning": "TEST KEYS ONLY. NEVER USE FOR PRODUCTION PROVISIONING.",
   "signature_algorithm": "rsa-pss-sha256-salt32",
   "test_root": {
     "issuer_key_id": "BORING-TEST-ROOT-2026-09",

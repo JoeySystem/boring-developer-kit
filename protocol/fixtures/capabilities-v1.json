@@ -1,72 +1,10 @@
 {
   "command": "CAPABILITIES",
   "result": {
-    "limits": {
-      "profiles": 8,
-      "controls_per_profile": 15,
-      "macro_bytes": 256,
-      "all_macro_bytes": 4096,
-      "config_bytes": 16384,
-      "prompt_slots": 12,
-      "prompt_name_bytes": 48,
-      "prompt_body_bytes": 4096,
-      "all_prompt_body_bytes": 49152,
-      "frame_payload_bytes": 20480,
-      "firmware_chunk_bytes": 4096,
-      "firmware_image_bytes": 2097152
-    },
-    "controls": [
-      "key.1",
-      "key.2",
-      "key.3",
-      "key.4",
-      "key.5",
-      "key.6",
-      "key.7",
-      "encoder.ccw",
-      "encoder.cw",
-      "encoder.press",
-      "joystick.up",
-      "joystick.down",
-      "joystick.left",
-      "joystick.right",
-      "joystick.press"
-    ],
-    "actions": [
-      "key",
-      "consumer",
-      "mouse",
-      "macro",
-      "prompt",
-      "profile",
-      "device",
-      "none"
-    ],
-    "features": {
-      "display": true,
-      "status_rgb_count": 8,
-      "under_key_rgb_count": 7,
-      "agent_status_under_key_count": 0,
-      "haptic": true,
-      "haptic_channels": true,
-      "joystick_calibration": true,
-      "quick_config": true,
-      "platform_selection": true,
-      "eda_mode": true,
-      "claude_code_mode": false,
-      "claude_code_status": false,
-      "firmware_update": true,
-      "prompt_storage": true,
-      "prompt_trigger_usb": true,
-      "lighting_preview": true,
-      "diagnostic_capture": true,
-      "ble_configuration": false,
-      "device_authentication": false,
-      "firmware_signature_required": false
-    },
-    "device_authentication": {
-      "version": 1,
-      "signature_algorithm": "rsa-pss-sha256-salt32"
-    }
+    "limits": {"profiles": 8, "controls_per_profile": 15, "macro_bytes": 256, "all_macro_bytes": 4096, "config_bytes": 16384, "host_actions": 0, "prompt_slots": 12, "prompt_name_bytes": 48, "prompt_body_bytes": 4096, "all_prompt_body_bytes": 49152, "frame_payload_bytes": 20480, "firmware_chunk_bytes": 4096, "firmware_image_bytes": 2097152},
+    "controls": ["key.1", "key.2", "key.3", "key.4", "key.5", "key.6", "key.7", "encoder.ccw", "encoder.cw", "encoder.press", "joystick.up", "joystick.down", "joystick.left", "joystick.right", "joystick.press"],
+    "actions": ["key", "consumer", "mouse", "macro", "prompt", "profile", "device", "none"],
+    "features": {"display": true, "status_rgb_count": 8, "under_key_rgb_count": 7, "agent_status_under_key_count": 0, "haptic": true, "haptic_channels": true, "joystick_calibration": true, "quick_config": true, "platform_selection": true, "eda_mode": true, "claude_code_mode": false, "claude_code_status": false, "firmware_update": true, "host_action_usb": false, "prompt_storage": true, "prompt_trigger_usb": true, "lighting_preview": true, "diagnostic_capture": true, "ble_configuration": false, "device_authentication": false, "firmware_signature_required": false},
+    "device_authentication": {"version": 1, "signature_algorithm": "rsa-pss-sha256-salt32"}
   }
 }

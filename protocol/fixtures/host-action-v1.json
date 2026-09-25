@@ -1,0 +1,6 @@
+{
+  "mapping": {"control_id":"key.8","short_name":"Save text","action":{"type":"host_action","action_id":1,"task_token":"0123456789abcdef0123456789abcdef"}},
+  "request": {"message_type":30,"payload":{}},
+  "event_response": {"command":"GET_HOST_ACTION_EVENT","result":{"poll_after_ms":100,"event":{"event_id":1,"action_id":1,"task_token":"0123456789abcdef0123456789abcdef"}}},
+  "empty_response": {"command":"GET_HOST_ACTION_EVENT","result":{"poll_after_ms":100,"event":null}}
+}

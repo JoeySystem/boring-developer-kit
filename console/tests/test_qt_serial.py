@@ -121,13 +121,13 @@ def test_scan_merges_macos_tty_and_cu_ports_for_one_physical_device(
             "tty.usbmodem113101",
             contract.usb_vid,
             contract.usb_pid,
-            "CP01-AABBCCDDEEFF",
+            "CP01-E072A1DA05E0",
         ),
         FakePortInfo(
             "cu.usbmodem113101",
             contract.usb_vid,
             contract.usb_pid,
-            "CP01-AABBCCDDEEFF",
+            "CP01-E072A1DA05E0",
         ),
     ]
     monkeypatch.setattr(qt_serial.QSerialPortInfo, "availablePorts", lambda: ports)
@@ -148,7 +148,7 @@ def test_scan_keeps_devices_with_different_usb_serial_numbers(
             "cu.usbmodem113101",
             contract.usb_vid,
             contract.usb_pid,
-            "CP01-AABBCCDDEEFF",
+            "CP01-E072A1DA05E0",
         ),
         FakePortInfo(
             "cu.usbmodem213101",

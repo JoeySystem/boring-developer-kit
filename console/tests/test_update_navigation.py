@@ -10,33 +10,35 @@ from test_session_recovery import session
 from test_firmware_reminder_ui import offer, trust_test_signing_key
 
 
-def test_navigation_update_downloads_then_installs_once(update_session, qtbot, tmp_path):
+def test_navigation_opens_updates_and_install_requires_explicit_click(update_session, qtbot, tmp_path):
     window, vm, _, _, _, ui, updater, _ = update_session
     ui.reminders = UpdateReminders(QSettings(str(tmp_path / 'reminders.ini'), QSettings.IniFormat))
     button = window._nav_buttons['settings']
     updater.publish('available', version='0.2.0')
-    assert button.text() == '更新'
+    assert button.accessibleName() == '固件与系统'
     assert ui.row.isHidden()
     button.click()
+    assert vm.page == 'settings'
+    assert updater.calls == []
+    assert not ui.row.isHidden()
+    ui.action.click()
     assert updater.calls == ['download']
     QApplication.processEvents()
     assert button.property('desktopUpdateProgress') == 25
-    assert button.text() == '25%'
-    assert ui.progress.isHidden()
-    assert ui.row.isHidden()
-    image = button.grab().toImage()
-    scale_x = image.width() / button.width()
-    scale_y = image.height() / button.height()
-    filled = image.pixelColor(int(button.width() * .12 * scale_x), int(button.height() * .5 * scale_y))
-    remaining = image.pixelColor(int(button.width() * .88 * scale_x), int(button.height() * .5 * scale_y))
-    assert filled.blue() > remaining.blue() + 80
-    button.click()  # Repeated clicks while downloading must not start another request.
+    assert button.accessibleName() == '固件与系统'
+    assert not ui.progress.isHidden()
+    button.click()
     assert updater.calls == ['download']
     updater.publish('downloading', version='0.2.0', received=75, total=100)
     assert button.property('desktopUpdateProgress') == 75
-    assert button.text() == '75%'
     updater.publish('ready', version='0.2.0')
-    qtbot.waitUntil(lambda: updater.calls == ['download', 'install'])
+    QApplication.processEvents()
+    assert updater.calls == ['download']
+    button.click()
+    assert updater.calls == ['download']
+    assert ui.action.text() == '重启并更新'
+    ui.action.click()
+    assert updater.calls == ['download', 'install']
     ui.show_status(updater.status)
     assert updater.calls == ['download', 'install']
 
@@ -47,18 +49,18 @@ def test_firmware_dot_and_simultaneous_desktop_offer(update_session, tmp_path):
     button = window._nav_buttons['settings']
     assert button.property('firmwareUpdateAvailable') is True
     assert fw.row.isHidden()
-    assert button.text() == '设置'
+    assert button.text() == '固件与系统'
     button.click()
-    assert vm.page == 'firmware'
+    assert vm.page == 'settings'
     updater.publish('available', version='0.2.0')
-    assert button.text() == '更新'
+    assert button.accessibleName() == '固件与系统'
     assert button.property('firmwareUpdateAvailable') is True
     assert not button.firmware_notice_visible()
     gateway.disconnected.emit('test disconnect')
     assert button.property('firmwareUpdateAvailable') is False
-    assert button.text() == '更新'
+    assert button.accessibleName() == '固件与系统'
     updater.publish('current')
-    assert button.text() == '设置'
+    assert button.text() == '固件与系统'
 
 
 def test_navigation_snooze_and_custom_firmware(update_session, tmp_path, monkeypatch):
@@ -67,11 +69,11 @@ def test_navigation_snooze_and_custom_firmware(update_session, tmp_path, monkeyp
     button = window._nav_buttons['settings']
     updater.publish('available', version='0.2.0')
     ui.snooze_update()
-    assert button.text() == '设置'
+    assert button.text() == '固件与系统'
     monkeypatch.setattr(updater, 'check', lambda: updater.publish('checking'))
     ui.check()
     updater.publish('available', version='0.2.0')
-    assert button.text() == '更新'
+    assert button.accessibleName() == '固件与系统'
     fw, snap = offer((window, vm, gateway, snapshot, store))
     gateway.snapshot_ready.emit(replace(snap, versions={**snap.versions, 'build_id':'custom-demo-01'}))
     assert button.property('firmwareUpdateAvailable') is False
@@ -82,11 +84,14 @@ def test_navigation_cancel_does_not_restart_and_ready_needs_explicit_intent(upda
     button = window._nav_buttons['settings']
     updater.publish('available', version='0.2.0')
     button.click()
+    ui.action.click()
     updater.cancel()
     updater.publish('ready', version='0.2.0')
     qtbot.wait(30)
     assert 'install' not in updater.calls
     button.click()
+    assert 'install' not in updater.calls
+    ui.action.click()
     assert updater.calls[-1] == 'install'
 
 
@@ -95,8 +100,12 @@ def test_navigation_ready_respects_existing_restart_guard(update_session, qtbot,
     monkeypatch.setattr(ui, 'blocked_reason', lambda: '设备写入尚未结束')
     updater.publish('available', version='0.2.0')
     window._nav_buttons['settings'].click()
+    ui.action.click()
     updater.publish('ready', version='0.2.0')
-    qtbot.waitUntil(lambda: 'install' in updater.calls)
+    QApplication.processEvents()
+    assert 'install' not in updater.calls
+    ui.action.click()
+    assert 'install' in updater.calls
     assert not ui.restart_prepared
     assert window.isEnabled()
     assert ui.status.state == 'ready'
@@ -123,7 +132,9 @@ def test_navigation_keeps_positions_and_settings_shortcut(update_session, qtbot)
             updater.publish('available', version='0.2.0')
             button.set_active(False)
             qtbot.wait(100)  # Settle parent layouts after changing locale/compact mode.
-            assert button.text() == window._language_manager.translate('更新')
+            assert button.accessibleName() == window._language_manager.translate('固件与系统')
+            assert button.text() == ('' if compact else button.accessibleName())
+            assert not button.icon().isNull()
             assert [(b.mapTo(window, b.rect().topLeft()), b.size()) for b in window._nav_buttons.values()] == before, (language, compact)
     from PySide6.QtGui import QKeySequence
     from PySide6.QtTest import QTest
@@ -131,7 +142,7 @@ def test_navigation_keeps_positions_and_settings_shortcut(update_session, qtbot)
     window.activateWindow()
     qtbot.waitUntil(window.isActiveWindow)
     assert window._nav_buttons['settings'].isEnabled()
-    QTest.keySequence(window, QKeySequence('Ctrl+5'))
+    QTest.keySequence(window, QKeySequence('Ctrl+4'))
     qtbot.waitUntil(lambda: vm.page == 'settings')
     assert updater.calls == []  # The settings shortcut must never trigger a restart.
 
@@ -141,7 +152,10 @@ def test_navigation_restart_preparation_survives_device_refresh(update_session, 
     monkeypatch.setattr(vm, 'stop_lighting_preview', lambda **_: vm.changed.emit(vm.model))
     updater.publish('available', version='0.2.0')
     window._nav_buttons['settings'].click()
+    ui.action.click()
     updater.publish('ready', version='0.2.0')
+    assert 'install' not in updater.calls
+    ui.action.click()
     qtbot.waitUntil(lambda: updater.status.state == 'installing')
     assert ui.restart_prepared
     assert not window.isEnabled()

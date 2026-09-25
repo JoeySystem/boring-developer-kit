@@ -12,7 +12,7 @@ def prompt_editor(qtbot):
     saved = []
     editor = PromptLibraryEditor(
         PromptLibrary("CP01-AABBCCDDEEFF", draft=(PromptEntry(1, "审查", "你好"),)),
-        device_storage_available=True, protocol_message="可用", device_busy=False,
+        device_storage_available=False, protocol_message="设备离线", device_busy=False,
         helper_message="尚未粘贴", listener_status=PromptListenerStatus(),
         event_log=(), background_message="助手离线",
         save_draft=lambda *args: saved.append(args), delete_draft=lambda *_: None,
@@ -28,13 +28,13 @@ def test_prompt_cards_keep_utf8_counts_and_local_only_save(qtbot):
     editor, saved = prompt_editor(qtbot)
     focus = editor.findChild(V4Card, "promptFocusCard")
     assert focus.property("v4Role") == "focus"
-    assert editor._name_bytes.text() == "6/48 UTF-8 字节"
-    assert editor._body_bytes.text() == "6/4096 UTF-8 字节"
+    assert editor._name_bytes.text() == "已用 6/48"
+    assert editor._body_bytes.text() == "已用 6/4096"
     editor._name.setText("英文 A")
     editor._body.setPlainText("一\n二")
     editor.findChild(QPushButton, "savePromptDraft").click()
     assert saved == [(1, "英文 A", "一\n二")]
-    assert editor._body_bytes.text() == "7/4096 UTF-8 字节"
+    assert editor._body_bytes.text() == "已用 7/4096"
     assert len(editor._direction_buttons) == 4
     assert editor.findChild(V4Card, "promptPasteCard") is not None
     assert editor.findChild(V4Card, "promptEventsCard") is not None

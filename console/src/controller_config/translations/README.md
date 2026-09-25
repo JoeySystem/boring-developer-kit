@@ -32,7 +32,7 @@
 
 ## 检查与维护
 
-在 `console` 目录，使用运行应用的 Python 环境检查 JSON 和占位符：
+在 `software/configurator` 目录，使用运行应用的 Python 环境检查 JSON 和占位符：
 
 ```bash
 .venv/bin/python -m controller_config.text_catalog

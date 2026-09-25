@@ -31,6 +31,7 @@ from controller_config.config_files import (
     load_config_package,
 )
 from controller_config.ble_name import BleNameSession
+from controller_config.normal_agent import NormalAgentSession
 from controller_config.drafts import LocalDraft
 from controller_config.diagnostics import DiagnosticsSession, diagnostic_capture
 from controller_config.firmware_update import (
@@ -97,6 +98,7 @@ from controller_config.transactions import (
     HAPTIC_OPTIONAL_CHANNELS,
     configs_match_readback,
 )
+from controller_config.host_tasks import HostTasks
 from controller_config.workflow_runtime import WorkflowHost, WorkflowRunResult
 from controller_config.workflows import LocalWorkflow, WorkflowError, WorkflowStore
 from controller_config.screen_icon_transfer import ScreenIconTransfer
@@ -126,6 +128,7 @@ class DeviceGateway(Protocol):
 
 class MainViewModel(QObject):
     changed = Signal(object)
+    ble_slot_failed = Signal(str, str)
     diagnostics_changed = Signal()
     lighting_preview_changed = Signal(object)
     extension_context_changed = Signal(int)
@@ -150,6 +153,9 @@ class MainViewModel(QObject):
         self._known_device_names: dict[str, tuple[str, str]] = {}
         from controller_config.codex_agent_focus import CodexAgentFocus
         self.codex_agent_focus = CodexAgentFocus(self)
+        self._normal_agent_status_refresh = False
+        self.normal_agent = NormalAgentSession(gateway.execute_command, self.normal_agent_write_block_reason, self)
+        self.normal_agent.changed.connect(self._sync_normal_agent_focus)
         from controller_config.claude_status import ClaudeStatusBridge
         self.claude_status = ClaudeStatusBridge(gateway, parent=self)
         self._contract = contract
@@ -158,7 +164,7 @@ class MainViewModel(QObject):
         self._prompt_library_store = prompt_library_store or PromptLibraryStore()
         self._prompt_library: PromptLibrary | None = None
         self._prompt_library_error = ""
-        self._model = ScreenModel(AppState.SCANNING, "正在查找 BORING 设备…")
+        self._model = ScreenModel(AppState.SCANNING, "正在查找已连接到此电脑的 BORING 设备…")
         self._page = "overview"
         self._drafts: dict[tuple[str, str, int], LocalDraft] = {}
         self._draft: LocalDraft | None = None
@@ -204,6 +210,10 @@ class MainViewModel(QObject):
             runner=script_runner,
             parent=self,
         )
+        self.host_tasks = HostTasks(self, gateway.execute_command, parent=self)
+        self._workflow_host.external_busy = lambda: self._automation_host.running or self.host_tasks.extensions_busy
+        self._automation_host.external_busy = lambda: self._workflow_host.running or self.host_tasks.extensions_busy
+        self._event_bus.register(self._busy_task_event)
         self._event_bus.register(self._workflow_host.handle_event)
         self._event_bus.register(self._automation_host.handle_event)
         self._prompt_device = PromptDeviceSession(
@@ -221,9 +231,14 @@ class MainViewModel(QObject):
         self._write_deadline.setSingleShot(True)
         self._write_deadline.setInterval(10_000)
         self._write_deadline.timeout.connect(self._on_write_deadline)
+        self._connection_port = ""
+        self._failed_connection_ports: set[str] = set()
         self._reconnect_timer = QTimer(self)
         self._reconnect_timer.setInterval(500)
         self._reconnect_timer.timeout.connect(self._scan_for_reconnect)
+        self._usb_probe_timer = QTimer(self)
+        self._usb_probe_timer.setInterval(2000)
+        self._usb_probe_timer.timeout.connect(self._probe_usb_handoff)
         # A lightweight tick retries deferred checks; network attempts remain six hours apart.
         self._remote_firmware_check_timer = QTimer(self)
         self._remote_firmware_check_timer.setInterval(60_000)
@@ -264,6 +279,7 @@ class MainViewModel(QObject):
         self._lighting_preview_heartbeat.timeout.connect(
             self._send_lighting_preview
         )
+        self.changed.connect(lambda model: self.host_tasks.attach(model.snapshot if model.state is AppState.READY else None))
         gateway.candidates_found.connect(self._on_candidates)
         gateway.progress.connect(self._on_progress)
         gateway.snapshot_ready.connect(self._on_snapshot)
@@ -272,6 +288,9 @@ class MainViewModel(QObject):
         gateway.command_failed.connect(self._on_command_failed)
         gateway.failure.connect(self._on_failure)
         gateway.disconnected.connect(self._on_disconnected)
+        usb_candidate_found = getattr(gateway, "usb_candidate_found", None)
+        if usb_candidate_found is not None:
+            usb_candidate_found.connect(self._on_usb_handoff_candidate)
         if firmware_release_source is not None:
             firmware_release_source.release_found.connect(
                 self._on_remote_firmware_release_found
@@ -296,6 +315,29 @@ class MainViewModel(QObject):
     def draft(self) -> LocalDraft | None:
         return self._draft
 
+    def _sync_normal_agent_focus(self) -> None:
+        session = self.normal_agent
+        self.codex_agent_focus.set_normal_behavior(
+            session.value if session.connected and session.loaded and not session.busy
+            and not session.uncertain else None
+        )
+
+    def normal_agent_write_block_reason(self) -> str:
+        snapshot = self._model.snapshot
+        if (snapshot is None or self._model.state not in {AppState.READY, AppState.READ_ONLY}
+                or not snapshot.trust.is_authenticated):
+            return "请连接并认证设备后操作"
+        if snapshot.compatibility.get("write") is not True:
+            return "设备当前只读，不能应用设置"
+        if (self._firmware_update.blocks_editing or self._calibration.blocks_editing
+                or self._write_transaction.blocks_editing
+                or self._write_transaction.state is ConfigTransactionState.UNKNOWN
+                or self._config_refresh is not None or self.screen_icon.busy or self.screen_glyphs.busy
+                or self._prompt_device.status.is_busy or self.ble_name.busy or self.normal_agent.busy
+                or snapshot.status.get("pending") is not None):
+            return "设备维护或写入尚未结束，请稍后应用"
+        return ""
+
     def ble_name_write_block_reason(self) -> str:
         snapshot = self._model.snapshot
         if (snapshot is None or self._model.state not in {AppState.READY, AppState.READ_ONLY}
@@ -307,11 +349,13 @@ class MainViewModel(QObject):
                 or self._write_transaction.blocks_editing
                 or self._write_transaction.state is ConfigTransactionState.UNKNOWN
                 or self._config_refresh is not None or self.screen_icon.busy or self.screen_glyphs.busy
-                or self._prompt_device.status.is_busy or snapshot.status.get("pending") is not None):
+                or self._prompt_device.status.is_busy or self.normal_agent.busy or snapshot.status.get("pending") is not None):
             return "设备维护或写入尚未结束，请稍后修改蓝牙名称"
         return ""
 
-    def _ensure_ble_name_idle(self) -> None:
+    def _ensure_device_preferences_idle(self) -> None:
+        if self.normal_agent.busy or self.normal_agent.uncertain:
+            raise ValueError("状态灯按键设置正在保存或读回，请稍后操作")
         if self.ble_name.busy:
             raise ValueError("蓝牙名称正在保存或读回，请稍后操作")
 
@@ -738,6 +782,21 @@ class MainViewModel(QObject):
         self.changed.emit(self._model)
         return entry
 
+    def save_and_write_prompt(self, prompt_id: int, name: str, body: str) -> None:
+        """Persist the current fields, then start the existing write/readback flow."""
+        if self._prompt_device.status.is_busy:
+            raise PromptLibraryError("提示词设备操作尚未完成，不能同时保存到设备")
+        library = self._require_prompt_library()
+        candidate = copy.deepcopy(library)
+        entry = candidate.set_draft(prompt_id, name.strip(), body)
+        self._prompt_library_store.save(candidate)
+        library.set_draft(prompt_id, entry.name, entry.body)
+        self._prompt_library_error = ""
+        # write_draft publishes the first operation state. Keeping the local
+        # save and device start in one call avoids rebuilding the editor between
+        # the two halves of the user's single action.
+        self._prompt_device.write_draft(prompt_id)
+
     def delete_prompt_draft(self, prompt_id: int) -> None:
         if self._prompt_device.status.is_busy:
             raise PromptLibraryError("提示词设备操作尚未完成，不能同时修改本地草稿")
@@ -772,6 +831,12 @@ class MainViewModel(QObject):
         self._ensure_prompt_device_operation_allowed()
         self._prompt_device.delete_confirmed(prompt_id)
 
+    def _busy_task_event(self, event):
+        if self.host_tasks.running:
+            from controller_config.automation import EventDispatchResult
+            return EventDispatchResult(True, False, "当前电脑任务正在运行，不会重复执行")
+        return None
+
     def save_automation(
         self,
         *,
@@ -780,10 +845,11 @@ class MainViewModel(QObject):
         trigger_prompt_id: int,
         script_path: str,
         enabled: bool,
+        timeout_ms: int = 60_000,
     ) -> LocalScriptAutomation:
-        if enabled and (problem := self.prompt_trigger_problem(trigger_prompt_id)):
+        if enabled and trigger_prompt_id is not None and (problem := self.prompt_trigger_problem(trigger_prompt_id)):
             raise AutomationError(problem)
-        if enabled and any(
+        if enabled and trigger_prompt_id is not None and any(
             workflow.enabled and workflow.trigger_prompt_id == trigger_prompt_id
             for workflow in self._workflow_host.workflows
         ):
@@ -806,16 +872,18 @@ class MainViewModel(QObject):
             trigger_prompt_id=trigger_prompt_id,
             script_path=script_path,
             enabled=enabled,
+            timeout_ms=timeout_ms,
         )
 
     def delete_automation(self, automation_id: str) -> None:
+        self.host_tasks.ensure_not_bound("script", automation_id)
         self._automation_host.delete_definition(automation_id)
 
     def run_automation_test(self, automation_id: str) -> None:
         self._automation_host.run_test(automation_id)
 
     def save_workflow(self, workflow: LocalWorkflow) -> LocalWorkflow:
-        if workflow.enabled:
+        if workflow.enabled and workflow.trigger_prompt_id is not None:
             if problem := self.prompt_trigger_problem(workflow.trigger_prompt_id):
                 raise WorkflowError(problem)
             if any(
@@ -837,13 +905,14 @@ class MainViewModel(QObject):
         return self._workflow_host.save_workflow(workflow)
 
     def delete_workflow(self, workflow_id: str) -> None:
+        self.host_tasks.ensure_not_bound("workflow", workflow_id)
         self._workflow_host.delete_workflow(workflow_id)
 
     def duplicate_workflow(self, workflow_id: str) -> LocalWorkflow:
         return self._workflow_host.duplicate_workflow(workflow_id)
 
-    def test_workflow(self, workflow_id: str) -> WorkflowRunResult:
-        return self._workflow_host.test_workflow(workflow_id)
+    def test_workflow(self, workflow_id: str, completed=None) -> None:
+        self._workflow_host.test_workflow(workflow_id, completed=completed)
 
     def _ensure_icon_idle(self) -> None:
         if self.screen_icon.busy or self.screen_glyphs.busy:
@@ -860,14 +929,14 @@ class MainViewModel(QObject):
             raise ValueError("设备维护或写入尚未结束，请稍后操作圆屏图标")
 
     def upload_screen_icon(self, pixels: bytes) -> None:
-        self._ensure_ble_name_idle()
+        self._ensure_device_preferences_idle()
         self._ensure_icon_idle()
         self._ensure_icon_operation_allowed()
         self.stop_lighting_preview()
         self.screen_icon.upload(pixels)
 
     def reset_screen_icon(self) -> None:
-        self._ensure_ble_name_idle()
+        self._ensure_device_preferences_idle()
         self._ensure_icon_idle()
         self._ensure_icon_operation_allowed()
         self.stop_lighting_preview()
@@ -899,7 +968,7 @@ class MainViewModel(QObject):
             self.screen_glyphs.refresh()
 
     def write_screen_glyph(self, pixels: bytes | None) -> None:
-        self._ensure_ble_name_idle()
+        self._ensure_device_preferences_idle()
         self._ensure_icon_idle()
         self._ensure_icon_operation_allowed()
         self.stop_lighting_preview()
@@ -909,6 +978,8 @@ class MainViewModel(QObject):
             self.screen_glyphs.write(pixels)
 
     def _ensure_prompt_device_operation_allowed(self) -> None:
+        if self.normal_agent.busy:
+            raise PromptLibraryError("状态灯按键设置正在保存或读回，请稍后操作")
         if self.ble_name.busy:
             raise PromptLibraryError("蓝牙名称正在保存或读回，请稍后操作")
         if self.screen_icon.busy or self.screen_glyphs.busy:
@@ -936,6 +1007,12 @@ class MainViewModel(QObject):
         self._notify_draft_changed()
         return profile_id
 
+    def create_profile_from_template(self, name: str, mappings: list[dict]) -> int:
+        self._before_draft_change()
+        profile_id = self._require_draft().create_profile_from_template(name, mappings)
+        self._notify_draft_changed()
+        return profile_id
+
     def copy_profile(self, profile_id: int | None) -> int:
         self._before_draft_change()
         copied_id = self._require_draft().copy_profile(profile_id)
@@ -957,6 +1034,30 @@ class MainViewModel(QObject):
         self._before_draft_change()
         self._require_draft().set_active_profile(profile_id)
         self._notify_draft_changed()
+
+    def preview_common_ai(self, selected, current, voice, saved, *, platform):
+        from controller_config.ai_setup import prepare_ai_profiles
+
+        draft = self._require_draft()
+        config, entries = prepare_ai_profiles(
+            draft, selected, current, voice, saved, platform=platform,
+        )
+        candidate = copy.copy(draft)
+        candidate.config = config
+        errors = candidate.validate(self._contract)
+        if errors:
+            raise ValueError(errors[0])
+        return config, entries
+
+    def prepare_common_ai(self, selected, current, voice, saved, *, platform):
+        draft = self._require_draft()
+        if draft.is_dirty:
+            raise ValueError("请先应用或保留现有修改，再设置常用 AI。")
+        config, entries = self.preview_common_ai(selected, current, voice, saved, platform=platform)
+        self._before_draft_change()
+        draft.config = config
+        self._notify_draft_changed()
+        return entries
 
     def create_macro(self) -> int:
         self._before_draft_change()
@@ -1032,6 +1133,11 @@ class MainViewModel(QObject):
         self._require_draft().replace_config(package.config, self._contract)
         self._notify_draft_changed()
 
+    def set_codex_voice(self, profile_id: int | None, action: dict) -> None:
+        self._before_draft_change()
+        self._require_draft().set_codex_voice(profile_id, action)
+        self._notify_draft_changed()
+
     def set_mapping(
         self,
         profile_id: int | None,
@@ -1071,7 +1177,7 @@ class MainViewModel(QObject):
         self._execute_ble_slot_command("BLE_SLOT_CLEAR", 0x16, slot)
 
     def factory_reset_device(self) -> None:
-        self._ensure_ble_name_idle()
+        self._ensure_device_preferences_idle()
         self._ensure_icon_idle()
         snapshot = self._model.snapshot
         if snapshot is None or self._model.state not in {
@@ -1118,6 +1224,11 @@ class MainViewModel(QObject):
         features = snapshot.capabilities.get("features")
         if not isinstance(features, dict) or features.get("ble_host_slots") != 3:
             raise ValueError("当前固件不支持三槽蓝牙管理")
+        if (self._firmware_update.blocks_editing or self._calibration.blocks_editing
+                or self._write_transaction.blocks_editing
+                or self._prompt_device.status.is_busy or self.screen_icon.busy
+                or self.screen_glyphs.busy or self.ble_name.busy or self.normal_agent.busy):
+            raise ValueError("设备正在保存或维护，请完成后再切换蓝牙连接")
         self._gateway.execute_command(Command(name, message_type, {"slot": slot}))
 
     def validate_draft(self) -> tuple[str, ...]:
@@ -1129,7 +1240,7 @@ class MainViewModel(QObject):
 
     def prepare_device_write(self, *, confirm_after_validation: bool = False) -> None:
         self._confirm_write_after_validation = False
-        self._ensure_ble_name_idle()
+        self._ensure_device_preferences_idle()
         if self._config_refresh is not None:
             raise ValueError("正在读取设备最新配置，请稍后再操作")
         self._ensure_icon_idle()
@@ -1195,7 +1306,7 @@ class MainViewModel(QObject):
         )
 
     def confirm_device_write(self) -> None:
-        self._ensure_ble_name_idle()
+        self._ensure_device_preferences_idle()
         if self._config_refresh is not None:
             raise ValueError("正在读取设备最新配置，请稍后再操作")
         self._ensure_icon_idle()
@@ -1300,7 +1411,7 @@ class MainViewModel(QObject):
         draft.platform = str(snapshot.status.get("platform", ""))
 
     def start_joystick_calibration(self) -> None:
-        self._ensure_ble_name_idle()
+        self._ensure_device_preferences_idle()
         if self._config_refresh is not None:
             raise ValueError("正在读取设备最新配置，请稍后再操作")
         self._ensure_icon_idle()
@@ -1403,9 +1514,9 @@ class MainViewModel(QObject):
     @property
     def firmware_origin_notice(self) -> str:
         if self.firmware_origin == "custom":
-            return "当前为自定义固件，不主动提醒官方更新。可查看官方版本，确认后替换自定义功能。"
+            return "正在使用自定义固件，无需按官方版本更新。切换到官方固件会替换自定义功能。"
         if self.firmware_origin == "unknown":
-            return "固件来源未确认，不主动提醒官方更新。可查看官方版本，确认后替换当前固件。"
+            return "无法确认当前固件来源。查看官方版本不代表需要更新。"
         return "设备报告的版本与构建编号匹配官方签名发布记录；不代表对运行代码进行了验真。"
 
     @property
@@ -1436,7 +1547,7 @@ class MainViewModel(QObject):
             or self._calibration.blocks_editing or self._write_transaction.blocks_editing
             or self._write_transaction.state is ConfigTransactionState.UNKNOWN
             or self._config_refresh is not None or self.screen_icon.busy or self.screen_glyphs.busy
-            or self._prompt_device.status.is_busy or self.ble_name.busy
+            or self._prompt_device.status.is_busy or self.ble_name.busy or self.normal_agent.busy
             or snapshot.status.get("pending") is not None
         )
 
@@ -1516,7 +1627,7 @@ class MainViewModel(QObject):
         if restoration:
             self._set_remote_firmware(RemoteFirmwareCheck(
                 state=RemoteFirmwareState.RESTORE_AVAILABLE,
-                message="可恢复官方版本。安装将替换当前固件及自定义功能，不会合并代码。",
+                message="这是切换固件，不是发现了新版本。切换会替换当前固件及自定义功能。",
                 release=value, restoration=True,
             ))
             return
@@ -1524,7 +1635,9 @@ class MainViewModel(QObject):
             self._set_remote_firmware(
                 RemoteFirmwareCheck(
                     state=RemoteFirmwareState.CURRENT,
-                    message=f"没有更新的在线固件（服务端版本 {value.version}）",
+                    message=("已是最新官方固件" if value.version == snapshot.versions.get("firmware")
+                             and value.build_id == snapshot.versions.get("build_id")
+                             else "没有比当前版本更新的官方固件"),
                     release=value,
                 )
             )
@@ -1700,7 +1813,7 @@ class MainViewModel(QObject):
         return package
 
     def start_firmware_update(self) -> None:
-        self._ensure_ble_name_idle()
+        self._ensure_device_preferences_idle()
         if self._config_refresh is not None:
             raise ValueError("正在读取设备最新配置，请稍后再操作")
         self._ensure_icon_idle()
@@ -1846,31 +1959,40 @@ class MainViewModel(QObject):
         self.diagnostics_changed.emit()
 
     def refresh(self) -> None:
+        self._failed_connection_ports.clear()
         self._cancel_remote_firmware_request()
         self.screen_glyphs.attach(None)
         self.screen_icon.attach(None)
         self.claude_status.unbind(clear=True)
         self._reconnect_timer.stop()
+        self._reconnect_timer.setInterval(500)
         self._suspend_extension_platform("正在重新扫描设备")
         self.stop_lighting_preview(clear_candidate=True)
         self._prompt_device.unbind()
-        self._set(ScreenModel(AppState.SCANNING, "正在查找 BORING 设备…", snapshot=self._model.snapshot))
+        self._set(ScreenModel(AppState.SCANNING, "正在查找已连接到此电脑的 BORING 设备…", snapshot=self._model.snapshot))
         if self._firmware_update.is_busy:
             self._gateway.scan(usb_only=True)
         else:
             self._gateway.scan()
 
     def connect_candidate(self, port_name: str) -> None:
+        self._connection_port = port_name
         self._cancel_remote_firmware_request()
         self.screen_glyphs.attach(None)
         self.screen_icon.attach(None)
         self.claude_status.unbind(clear=True)
         self._reconnect_timer.stop()
+        self._reconnect_timer.setInterval(500)
         self._set(ScreenModel(AppState.CONNECTING, "正在确认设备身份并读取配置…", snapshot=self._model.snapshot))
         self._gateway.connect_port(port_name)
 
     def shutdown(self) -> None:
+        self._usb_probe_timer.stop()
+        self.host_tasks.attach(None)
+        self.host_tasks.cancel_run()
         self.ble_name.detach()
+        self.normal_agent.detach()
+        self._normal_agent_status_refresh = False
         self.screen_glyphs.attach(None)
         self.screen_icon.attach(None)
         self.codex_agent_focus.unbind()
@@ -1895,6 +2017,16 @@ class MainViewModel(QObject):
         self._gateway.shutdown()
 
     def _on_candidates(self, candidates: tuple[PortCandidate, ...]) -> None:
+        if self._model.state is AppState.READ_FAILED and not (
+            self._firmware_update.is_busy or self._calibration.state is CalibrationState.UNKNOWN
+        ):
+            # A failed BLE link must not prevent a newly inserted USB cable from
+            # working, or silently retry the same failed connection every tick.
+            candidates = tuple(candidate for candidate in candidates
+                               if candidate.transport == "usb"
+                               and candidate.port_name not in self._failed_connection_ports)
+            if not candidates:
+                return
         candidates = tuple(
             replace(candidate, serial_number=self._known_device_names[candidate.port_name][0])
             if candidate.transport == "bluetooth" and candidate.port_name in self._known_device_names else candidate
@@ -1914,19 +2046,21 @@ class MainViewModel(QObject):
             self._set(
                 ScreenModel(
                     AppState.NO_DEVICE,
-                    "尚未发现 BORING 设备",
-                    "请连接设备后重新扫描。控制台不会把其他串口当作目标设备。",
+                    "尚未连接 BORING 设备",
+                    "请插入 USB，或先在系统蓝牙设置中连接设备。",
                     snapshot=self._model.snapshot,
                 )
             )
+            if not self._reconnect_timer.isActive():
+                self._reconnect_timer.start()
             return
         if len(candidates) > 1:
             self._reconnect_timer.stop()
             self._set(
                 ScreenModel(
                     AppState.MULTIPLE_DEVICES,
-                    "发现多台候选设备",
-                    "请选择要读取的设备；控制台不会默认使用第一台。",
+                    "此电脑连接了多台 BORING 设备",
+                    "请选择要管理的设备。",
                     candidates=candidates,
                     snapshot=self._model.snapshot,
                 )
@@ -1946,7 +2080,11 @@ class MainViewModel(QObject):
             )
 
     def _on_snapshot(self, snapshot: DeviceSnapshot) -> None:
+        self._connection_port = snapshot.port_name
+        self._failed_connection_ports.clear()
+        self._normal_agent_status_refresh = False
         self.ble_name.attach(snapshot)
+        self.normal_agent.attach(snapshot)
         if snapshot.trust.is_authenticated:
             self._known_device_names[snapshot.port_name] = (str(snapshot.identity["serial"]), "")
         self._config_refresh = None
@@ -1963,6 +2101,13 @@ class MainViewModel(QObject):
             )
             if not same_device_dirty_draft:
                 self._draft = self._drafts.setdefault(candidate.key, candidate)
+            # Firmware can change capabilities without changing the saved config.
+            # Keep edits and their original write base, but use the live limits.
+            self._draft.max_profiles = candidate.max_profiles
+            self._draft.controls = candidate.controls
+            self._draft.actions = candidate.actions
+            self._draft.limits = dict(candidate.limits)
+            self._draft.features = copy.deepcopy(candidate.features)
             self._sync_draft_platform(snapshot)
             serial = str(snapshot.identity.get("serial", ""))
             self._workflow_host.bind(serial)
@@ -2006,12 +2151,15 @@ class MainViewModel(QObject):
         if self._prompt_library is not None:
             self._prompt_device.bind(self._prompt_library, snapshot)
         self._reconcile_snapshot_after_write(snapshot)
+        self.host_tasks.attach(snapshot, readback=True)
         self._reconcile_snapshot_after_calibration(snapshot)
         self._reconcile_snapshot_after_firmware(snapshot)
         self._reset_remote_firmware_for_changed_device(snapshot)
         self.claude_status.bind(snapshot)
         if self.ble_name.supported and self.ble_name.connected:
             self.ble_name.read()
+        if self.normal_agent.supported and self.normal_agent.connected:
+            self.normal_agent.read()
         self._reconcile_remote_firmware_version(snapshot)
         self.auto_check_remote_firmware()
 
@@ -2076,9 +2224,6 @@ class MainViewModel(QObject):
         snapshot = self._model.snapshot
         if snapshot is None or self._model.state not in {AppState.READY, AppState.READ_ONLY}:
             return
-        if status == snapshot.status:
-            self._maybe_refresh_device_config()
-            return
         self.codex_agent_focus.consume(
             status,
             allowed=(self._model.state is AppState.READY
@@ -2086,6 +2231,9 @@ class MainViewModel(QObject):
                      and not self._calibration.blocks_editing
                      and not self._firmware_update.is_busy),
         )
+        if status == snapshot.status:
+            self._maybe_refresh_device_config()
+            return
         previous_engine = snapshot.status.get("action_engine")
         current_engine = status.get("action_engine")
         previous_local_page = (
@@ -2197,8 +2345,28 @@ class MainViewModel(QObject):
             self._drafts[candidate.key] = candidate
         state = AppState.READ_ONLY if updated.is_read_only else AppState.READY
         self._set(ScreenModel(state, updated.config_status_label, snapshot=updated))
+        self.host_tasks.attach(updated, readback=True)
 
     def _on_command_completed(self, command_name: str, payload: dict) -> None:
+        if command_name == "GET_STATUS" and self._normal_agent_status_refresh:
+            self._normal_agent_status_refresh = False
+            try:
+                if self._contract is not None:
+                    self._contract.validate_status(payload)
+                status = payload["result"]
+                self.codex_agent_focus.set_normal_behavior("open_conversation", status=status)
+            except (ContractError, ValueError, KeyError, TypeError) as error:
+                self.codex_agent_focus.set_normal_behavior(None)
+                self.normal_agent.finish_preparing(str(error))
+            else:
+                self.normal_agent.finish_preparing()
+                self._on_status_updated(status)
+            return
+        if self.normal_agent.completed(command_name, payload):
+            if self.normal_agent.preparing and not self._normal_agent_status_refresh:
+                self._normal_agent_status_refresh = True
+                self._gateway.execute_command(Command("GET_STATUS", 0x13, {}))
+            return
         if self.ble_name.completed(command_name, payload):
             snapshot = self._model.snapshot
             if self.ble_name.connected and self.ble_name.result is not None and snapshot is not None:
@@ -2217,6 +2385,8 @@ class MainViewModel(QObject):
             return
         if command_name in {SET_LIGHTING_PREVIEW, CLEAR_LIGHTING_PREVIEW}:
             self._on_lighting_preview_command_completed(command_name, payload)
+            return
+        if self.host_tasks.completed(command_name, payload):
             return
         if self._prompt_device.handle_completed(command_name, payload):
             return
@@ -2294,6 +2464,15 @@ class MainViewModel(QObject):
             self._reconcile_calibration_config_result(payload)
 
     def _on_command_failed(self, command_name: str, error: BootstrapError) -> None:
+        if command_name == "GET_STATUS" and self._normal_agent_status_refresh:
+            self._normal_agent_status_refresh = False
+            self.normal_agent.finish_preparing(error.technical or str(error))
+            return
+        if self.normal_agent.failed(command_name, error):
+            return
+        if command_name in {"BLE_SLOT_SELECT", "BLE_SLOT_CLEAR"}:
+            self.ble_slot_failed.emit(command_name, str(error))
+            return
         if self.ble_name.failed(command_name, error):
             return
         if command_name == "GET_CONFIG" and self._config_refresh is not None:
@@ -2308,6 +2487,8 @@ class MainViewModel(QObject):
             return
         if command_name in {SET_LIGHTING_PREVIEW, CLEAR_LIGHTING_PREVIEW}:
             self._on_lighting_preview_command_failed(command_name, error)
+            return
+        if self.host_tasks.failed(command_name, error):
             return
         if self._prompt_device.handle_failed(command_name, error):
             return
@@ -2357,6 +2538,20 @@ class MainViewModel(QObject):
         if command_name == "GET_CONFIG":
             if transaction.state in {ConfigTransactionState.VERIFYING, ConfigTransactionState.UNKNOWN}:
                 self._finish_write(ConfigTransactionState.UNKNOWN, "无法读回设备配置完成对账", error.technical)
+            return
+        if command_name == "VALIDATE_CONFIG" and error.error_name == "TRANSPORT_TIMEOUT":
+            self._finish_write(
+                ConfigTransactionState.FAILED,
+                "设备校验回复超时，配置尚未保存，请重试。",
+                error.technical,
+            )
+            return
+        if command_name == "VALIDATE_CONFIG" and not error.error_name:
+            self._finish_write(
+                ConfigTransactionState.FAILED,
+                "设备校验未完成，配置尚未保存，请查看详情后重试。",
+                error.technical,
+            )
             return
         self._finish_write(
             ConfigTransactionState.FAILED,
@@ -2535,19 +2730,37 @@ class MainViewModel(QObject):
             self._handle_calibration_connection_loss(technical)
         if kind is BootstrapKind.FIRMWARE_UPDATE_REQUIRED:
             state = AppState.FIRMWARE_UPDATE_REQUIRED
+        elif kind in {BootstrapKind.AUTHENTICATION_INTERRUPTED, BootstrapKind.DISCOVERY_INTERRUPTED}:
+            state = AppState.DISCONNECTED
+            if kind is BootstrapKind.DISCOVERY_INTERRUPTED:
+                message = "蓝牙连接检查暂未完成，正在自动重试。"
         elif kind is BootstrapKind.INCOMPATIBLE:
             state = AppState.INCOMPATIBLE
         elif kind is BootstrapKind.AUTHENTICITY_FAILED:
             state = AppState.AUTHENTICITY_FAILED
         else:
             state = AppState.READ_FAILED
+            if self._connection_port and self._model.state in {
+                AppState.CONNECTING, AppState.READY, AppState.READ_ONLY,
+            }:
+                self._failed_connection_ports.add(self._connection_port)
+            technical = "\n".join(part for part in (message, technical) if part)
+            message = "配置连接失败；可重新连接，或使用 USB 连接设备。"
         self._set(ScreenModel(state, message, technical, snapshot=self._model.snapshot))
-        if (kind not in {BootstrapKind.FIRMWARE_UPDATE_REQUIRED, BootstrapKind.AUTHENTICATION_INTERRUPTED}
-                and (firmware_was_busy or self._calibration.state is CalibrationState.UNKNOWN)
+        if (kind in {BootstrapKind.AUTHENTICATION_INTERRUPTED, BootstrapKind.DISCOVERY_INTERRUPTED}
+                and not self._reconnect_timer.isActive()):
+            # The failed worker closes after publishing this signal. Let the
+            # timer start a fresh scan after that cleanup instead of re-entering
+            # the same worker and canceling the replacement scan.
+            self._reconnect_timer.start(5000 if kind is BootstrapKind.DISCOVERY_INTERRUPTED else 500)
+        elif (kind not in {BootstrapKind.FIRMWARE_UPDATE_REQUIRED, BootstrapKind.AUTHENTICITY_FAILED}
+                and (state is AppState.READ_FAILED or firmware_was_busy
+                     or self._calibration.state is CalibrationState.UNKNOWN)
                 and not self._reconnect_timer.isActive()):
             self._reconnect_timer.start()
 
     def _on_disconnected(self, technical: str) -> None:
+        self._reconnect_timer.setInterval(500)
         self._cancel_remote_firmware_request()
         self.screen_glyphs.attach(None)
         self.screen_icon.attach(None)
@@ -2625,8 +2838,45 @@ class MainViewModel(QObject):
         if self._calibration.blocks_editing:
             self._handle_calibration_connection_loss(technical)
 
+    def _can_handoff_to_usb(self) -> bool:
+        snapshot = self._model.snapshot
+        return (
+            self._model.state in {AppState.READY, AppState.READ_ONLY}
+            and snapshot is not None and snapshot.connection_kind == "bluetooth"
+            and snapshot.trust.is_authenticated
+            and not (self._write_transaction.blocks_editing
+                     or self._write_transaction.state is ConfigTransactionState.UNKNOWN
+                     or self._firmware_update.blocks_editing or self._calibration.blocks_editing
+                     or self._remote_firmware.state in {
+                         RemoteFirmwareState.CHECKING, RemoteFirmwareState.DOWNLOADING,
+                     }
+                     or self._config_refresh is not None
+                     or self.screen_icon.busy or self.screen_glyphs.busy
+                     or self._prompt_device.status.is_busy or self.ble_name.busy
+                     or self.normal_agent.busy or self.normal_agent.uncertain
+                     or self.diagnostic_capture_active or self._diagnostic_capture_pending
+                     or self.host_tasks.running or self._automation_host.running
+                     or self._workflow_host.running or snapshot.status.get("pending") is not None)
+        )
+
+    def _probe_usb_handoff(self) -> None:
+        probe = getattr(self._gateway, "probe_usb", None)
+        if callable(probe) and self._can_handoff_to_usb():
+            probe(str(self._model.snapshot.identity["serial"]))
+
+    def _on_usb_handoff_candidate(self, candidate: PortCandidate) -> None:
+        # A write may have started while enumeration was in flight. Retry later.
+        if (self._can_handoff_to_usb() and candidate.transport == "usb"
+                and candidate.serial_number == self._model.snapshot.identity["serial"]):
+            self.connect_candidate(candidate.port_name)
+
     def _scan_for_reconnect(self) -> None:
-        reconnectable = self._model.state is AppState.DISCONNECTED or (
+        if self._model.state is AppState.READ_FAILED and not (
+            self._firmware_update.is_busy or self._calibration.state is CalibrationState.UNKNOWN
+        ):
+            self._gateway.scan(usb_only=True)
+            return
+        reconnectable = self._model.state in {AppState.NO_DEVICE, AppState.DISCONNECTED} or (
             self._model.state is AppState.READ_FAILED
             and (
                 self._firmware_update.is_busy
@@ -2659,8 +2909,17 @@ class MainViewModel(QObject):
                 message="连接已变化，请重新验证配置",
             )
         self._model = model
+        if (model.state in {AppState.READY, AppState.READ_ONLY}
+                and model.snapshot is not None
+                and model.snapshot.connection_kind == "bluetooth"):
+            if not self._usb_probe_timer.isActive():
+                self._usb_probe_timer.start()
+        else:
+            self._usb_probe_timer.stop()
         if model.state not in {AppState.READY, AppState.READ_ONLY}:
+            self._normal_agent_status_refresh = False
             self.ble_name.detach()
+            self.normal_agent.detach()
             self._config_refresh = None
             self.codex_agent_focus.unbind()
             self.claude_status.unbind()
@@ -2741,6 +3000,7 @@ class MainViewModel(QObject):
         self.changed.emit(self._model)
 
     def _sync_prompt_polling(self) -> None:
+        self.host_tasks.set_paused(self._write_transaction.is_busy or self._firmware_update.blocks_editing or self._calibration.blocks_editing)
         self._prompt_device.set_polling_paused(
             self._write_transaction.is_busy
             or self._firmware_update.blocks_editing
@@ -3185,6 +3445,7 @@ class MainViewModel(QObject):
         self._drafts[candidate.key] = candidate
         state = AppState.READ_ONLY if updated.is_read_only else AppState.READY
         self._set(ScreenModel(state, updated.config_status_label, snapshot=updated))
+        self.host_tasks.attach(updated, readback=True)
         self._finish_calibration(
             CalibrationState.COMPLETED,
             "摇杆校准已激活，并已通过 GET_CONFIG 读回确认",
@@ -3826,6 +4087,7 @@ class MainViewModel(QObject):
         )
         state = AppState.READ_ONLY if updated.is_read_only else AppState.READY
         self._set(ScreenModel(state, updated.config_status_label, snapshot=updated))
+        self.host_tasks.attach(updated, readback=True)
 
     def _finish_write(
         self,

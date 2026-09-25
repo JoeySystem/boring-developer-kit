@@ -1,12 +1,4 @@
 {
-  "request": {
-    "nonce": "sample"
-  },
-  "ack": {
-    "command": "PING",
-    "result": {
-      "nonce": "sample",
-      "uptime_ms": 1234
-    }
-  }
+  "request": {"nonce": "sample"},
+  "ack": {"command": "PING", "result": {"nonce": "sample", "uptime_ms": 1234}}
 }

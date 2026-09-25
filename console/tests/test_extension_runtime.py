@@ -209,6 +209,39 @@ def test_restart_relaunches_enabled_extension(qtbot, tmp_path) -> None:
     runtime.shutdown()
 
 
+def test_repeated_start_keeps_one_enabled_extension_process(qtbot, tmp_path) -> None:
+    counter = tmp_path / "starts.txt"
+    _write_resident_script(
+        tmp_path / "main.py",
+        before_loop=(
+            f"with open({str(counter)!r}, 'a', encoding='utf-8') as stream:\n"
+            "    stream.write('started\\n')\n"
+            "    stream.flush()\n"
+        ),
+    )
+    runtime = ExtensionRuntime(
+        _manifest(),
+        tmp_path,
+        api_server_name="boring-test-api",
+        enabled=True,
+    )
+
+    assert runtime.start() is True
+    qtbot.waitUntil(
+        lambda: runtime.state == ExtensionRuntimeState.RUNNING
+        and counter.is_file()
+        and counter.read_text(encoding="utf-8").splitlines() == ["started"],
+        timeout=3000,
+    )
+    process = runtime.process
+
+    assert runtime.start() is True
+    assert runtime.process is process
+    assert counter.read_text(encoding="utf-8").splitlines() == ["started"]
+
+    runtime.shutdown()
+
+
 def test_disabling_runtime_stops_process_and_is_idempotent(qtbot, tmp_path) -> None:
     _write_resident_script(tmp_path / "main.py")
     runtime = ExtensionRuntime(

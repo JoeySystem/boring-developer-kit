@@ -1,5 +1,6 @@
 import pytest
 from PySide6.QtCore import Qt, QPoint, QRect
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QScrollArea, QPushButton
 
 from controller_config.views.action_editor import ShortcutRecorder
@@ -49,11 +50,12 @@ def test_mapping_stacks_before_columns_collide(session, qtbot):
 def test_pages_do_not_hide_horizontal_content(session, qtbot, tmp_path, page, width, height, language):
     window, vm, _gateway, _snapshot, _store = session
     window._language_manager.set_language(language)
-    window.show()
-    # Give the offscreen backend the intended virtual work area. Its built-in
-    # screen is only 800 px wide and would otherwise clamp desktop-size cases.
-    window._fit_window_to_available_area(QRect(0, 0, width, height))
     window.resize(width, height)
+    window.show()
+    # The two smaller cases represent a screen whose work area is below the
+    # normal minimum, not a user shrinking the window past its new limit.
+    if width < 1100 or height < 700:
+        window._fit_window_to_available_area(QRect(0, 0, width, height))
     vm.navigate(page)
     qtbot.wait(150)
     assert window.width() == width, (page, language, width, window.width())
@@ -69,7 +71,7 @@ def test_open_inspector_and_profile_menu_fit(session, qtbot, tmp_path, language)
     window._language_manager.set_language(language)
     window.resize(1280, 720)
     window.show()
-    window._select_physical_control('key.8')
+    window._select_physical_control('key.9')
     qtbot.wait(100)
     recorder = window.findChild(ShortcutRecorder)
     recorder._preview.setText('Ctrl+Shift+Alt+D')
@@ -86,14 +88,14 @@ def test_open_inspector_and_profile_menu_fit(session, qtbot, tmp_path, language)
     cards = [rail.layout().itemAt(i).widget() for i in range(rail.layout().count()) if rail.layout().itemAt(i).widget() is not None]
     for first, second in zip(cards, cards[1:]):
         assert first.geometry().bottom() < second.geometry().top()
-    for name in ('applyMappingToDevice', 'saveMappingDraft'):
-        button = window.findChild(QPushButton, name)
-        assert button.width() >= button.sizeHint().width()
-    window.findChild(QPushButton, 'shortcutManualToggle').click()
-    qtbot.wait(30)
+        assert first.height() >= first.minimumSizeHint().height()
+    button = window.findChild(QPushButton, 'applyMappingToDevice')
+    assert button.width() >= button.sizeHint().width()
+    assert window.findChild(QPushButton, 'saveMappingDraft').isHidden()
     assert body.widget().width() <= body.viewport().width(), [(w.objectName(), type(w).__name__, w.minimumSizeHint().width()) for w in body.widget().findChildren(QWidget) if w.isVisible() and w.minimumSizeHint().width() > 220]
     pill = window.findChild(QPushButton, 'profilePill')
     menu = pill.menu()
+    assert menu.findChild(QAction, 'saveProfileAsAction') is not None
     menu.popup(pill.mapToGlobal(QPoint(0, pill.height())))
     qtbot.wait(30)
     assert menu.isVisible() and menu.isWindow()
@@ -110,7 +112,12 @@ def test_playground_sections_fit_small_window(session, qtbot, language):
     window._fit_window_to_available_area(QRect(0, 0, 780, 560))
     vm.navigate('actions')
     page = window.findChild(ActionsPage)
-    for section in range(5):
+    for section in (
+        page.MY_ACTIONS,
+        page.EDIT_ACTION,
+        page.RUN_HISTORY,
+        page.DEVELOP_ACTIONS,
+    ):
         page.show_section(section)
         qtbot.wait(50)
         assert window.width() == 780
@@ -127,7 +134,7 @@ def test_playground_sections_fit_small_window(session, qtbot, language):
 def test_resizing_open_editor_preserves_input_and_reflows(session, qtbot):
     window, *_ = session
     window.show()
-    window._select_physical_control('key.8')
+    window._select_physical_control('key.9')
     recorder = window.findChild(ShortcutRecorder)
     recorder._preview.setText('Ctrl+Shift+Alt+D')
     for width in (1280, 780, 1280, 1024, 1280):

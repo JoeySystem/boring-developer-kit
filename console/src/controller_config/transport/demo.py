@@ -842,6 +842,8 @@ def _power_v2_snapshot(contract: Contract, *, read_only: bool) -> DeviceSnapshot
     # The demo gateway does not implement home-icon or glyph-image transfers.
     capabilities["result"]["features"]["custom_home_icon"] = False
     capabilities["result"]["features"]["custom_glyph_icons"] = False
+    # Independent device preferences are exercised with a protocol-capable gateway.
+    capabilities["result"]["features"]["normal_agent_key_behavior"] = False
     digest = hashlib.sha256(canonical_json_bytes(config)).hexdigest()
     generation = 1
     hello = {

@@ -5,7 +5,7 @@ import time
 import uuid
 from collections import deque
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Protocol
@@ -95,16 +95,17 @@ class DeviceEventBus(QObject):
 class LocalScriptAutomation:
     automation_id: str
     name: str
-    trigger_prompt_id: int
+    trigger_prompt_id: int | None
     script_path: str
     enabled: bool
+    timeout_ms: int = 60_000
 
     def validate(self) -> None:
         if not self.automation_id.strip():
             raise AutomationError("本地脚本 ID 不能为空")
         if not self.name.strip():
             raise AutomationError("本地脚本名称不能为空")
-        if (
+        if self.trigger_prompt_id is not None and (
             not isinstance(self.trigger_prompt_id, int)
             or isinstance(self.trigger_prompt_id, bool)
             or not 1 <= self.trigger_prompt_id <= PROMPT_SLOT_COUNT
@@ -114,6 +115,12 @@ class LocalScriptAutomation:
             )
         if not self.script_path.strip():
             raise AutomationError("请选择本地 Python 脚本")
+        if (
+            isinstance(self.timeout_ms, bool)
+            or not isinstance(self.timeout_ms, int)
+            or self.timeout_ms <= 0
+        ):
+            raise AutomationError("脚本运行时限必须是正整数毫秒")
 
     @classmethod
     def from_mapping(cls, value: object) -> "LocalScriptAutomation":
@@ -128,16 +135,22 @@ class LocalScriptAutomation:
             raise AutomationError("本地脚本 ID、名称和脚本路径必须是字符串")
         if not isinstance(enabled, bool):
             raise AutomationError("本地脚本 enabled 必须是布尔值")
-        definition = cls(automation_id, name, prompt_id, script_path, enabled)
+        definition = cls(
+            automation_id, name, prompt_id, script_path, enabled,
+            value.get("timeout_ms", 60_000),
+        )
         definition.validate()
         return definition
 
     def as_mapping(self) -> dict[str, object]:
-        return asdict(self)
+        value = asdict(self)
+        if self.timeout_ms == 60_000:
+            value.pop("timeout_ms")
+        return value
 
 
 class AutomationStore:
-    VERSION = 1
+    VERSION = 2
 
     def __init__(self, directory: Path | None = None) -> None:
         if directory is None:
@@ -155,7 +168,7 @@ class AutomationStore:
             return ()
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise AutomationError(f"无法读取本地脚本：{exc}") from exc
-        if not isinstance(value, dict) or value.get("version") != self.VERSION:
+        if not isinstance(value, dict) or value.get("version") not in (1, self.VERSION):
             raise AutomationError("本地脚本文件版本不受支持")
         if value.get("serial") != serial:
             raise AutomationError("本地脚本与当前设备序列号不一致")
@@ -170,7 +183,10 @@ class AutomationStore:
         _validate_unique(definitions)
         self._directory.mkdir(parents=True, exist_ok=True)
         payload = {
-            "version": self.VERSION,
+            "version": self.VERSION if any(
+                item.trigger_prompt_id is None or item.timeout_ms != 60_000
+                for item in definitions
+            ) else 1,
             "serial": serial,
             "automations": [definition.as_mapping() for definition in definitions],
         }
@@ -197,6 +213,7 @@ class AutomationRunResult:
     standard_output: str = ""
     standard_error: str = ""
     cancelled: bool = False
+    timed_out: bool = False
 
 
 RunCompleted = Callable[[AutomationRunResult], None]
@@ -378,6 +395,7 @@ class AutomationLogEntry:
 
 class AutomationHost(QObject):
     changed = Signal()
+    run_completed = Signal(object)
 
     def __init__(
         self,
@@ -395,6 +413,13 @@ class AutomationHost(QObject):
         self._sequence = 0
         self._load_error = ""
         self._running = False
+        self.external_busy: Callable[[], bool] = lambda: False
+        self.status = "idle"
+        self.current_step: int | None = None
+        self._timed_out = False
+        self._deadline = QTimer(self)
+        self._deadline.setSingleShot(True)
+        self._deadline.timeout.connect(self._timeout)
 
     @property
     def running(self) -> bool:
@@ -402,7 +427,17 @@ class AutomationHost(QObject):
 
     def cancel_run(self) -> None:
         if self._running:
+            self._deadline.stop()
+            self.status = "stopping"
             self._runner.cancel()
+            self.changed.emit()
+
+    def _timeout(self) -> None:
+        if self._running:
+            self._timed_out = True
+            self.status = "timing_out"
+            self._runner.cancel()
+            self.changed.emit()
 
     @property
     def serial(self) -> str:
@@ -426,6 +461,7 @@ class AutomationHost(QObject):
         if self._serial:
             self._runner.shutdown()
             self._running = False
+            self._deadline.stop()
         self._serial = serial
         self._logs.clear()
         self._sequence = 0
@@ -443,20 +479,27 @@ class AutomationHost(QObject):
         *,
         automation_id: str | None,
         name: str,
-        trigger_prompt_id: int,
+        trigger_prompt_id: int | None,
         script_path: str,
         enabled: bool,
+        timeout_ms: int | None = None,
     ) -> LocalScriptAutomation:
         self._require_serial()
         path = Path(script_path).expanduser()
         if not path.is_file():
             raise AutomationError(f"脚本文件不存在：{path}")
+        if timeout_ms is None:
+            timeout_ms = next(
+                (item.timeout_ms for item in self._definitions if item.automation_id == automation_id),
+                60_000,
+            )
         definition = LocalScriptAutomation(
             automation_id=automation_id or uuid.uuid4().hex,
             name=name.strip(),
             trigger_prompt_id=trigger_prompt_id,
             script_path=str(path.resolve()),
             enabled=bool(enabled),
+            timeout_ms=timeout_ms,
         )
         definition.validate()
         candidate = {
@@ -527,40 +570,75 @@ class AutomationHost(QObject):
         self.changed.emit()
 
     def shutdown(self) -> None:
+        self._deadline.stop()
         self._runner.shutdown()
 
     def _launch(self, definition: LocalScriptAutomation, event: DeviceEvent) -> None:
-        if self._running:
+        self.launch_definition(definition, event)
+
+    def launch_definition(
+        self,
+        definition: LocalScriptAutomation,
+        event: DeviceEvent | None = None,
+        completed: RunCompleted | None = None,
+        *,
+        timeout_ms: int | None = None,
+    ) -> None:
+        if self._running or self.external_busy():
             raise AutomationError("已有本地脚本正在运行，请先停止或等待完成；不会排队。")
+        definition.validate()
+        duration = definition.timeout_ms if timeout_ms is None else timeout_ms
+        if isinstance(duration, bool) or not isinstance(duration, int) or duration <= 0:
+            raise AutomationError("脚本运行时限必须是正整数毫秒")
         if not Path(definition.script_path).is_file():
             raise AutomationError(f"脚本文件不存在：{definition.script_path}")
+        if event is None:
+            event = automation_manual_test_event(
+                device_serial=self._serial, prompt_id=definition.trigger_prompt_id
+            )
         serial = self._serial
 
-        def completed(result: AutomationRunResult) -> None:
+        def on_completed(result: AutomationRunResult) -> None:
             if serial != self._serial:
                 return
+            self._deadline.stop()
             self._running = False
-            if result.cancelled:
+            if self._timed_out:
+                result = replace(result, timed_out=True)
+                self.status = "timed_out"
+                self._append_log("error", f"运行超时：{definition.name}", result.standard_output)
+            elif result.cancelled:
+                self.status = "cancelled"
                 self._append_log("info", f"已停止：{definition.name}", result.standard_output)
             elif result.exit_code == 0:
+                self.status = "completed"
                 self._append_log(
                     "success",
                     f"运行完成：{definition.name}",
                     result.standard_output,
                 )
             else:
+                self.status = "failed"
                 self._append_log(
                     "error",
                     f"运行失败：{definition.name} · exit {result.exit_code}",
                     result.standard_error or result.standard_output,
                 )
             self.changed.emit()
+            self.run_completed.emit(result)
+            if completed is not None:
+                completed(result)
 
         self._running = True
+        self.status = "running"
+        self._timed_out = False
+        self._deadline.start(duration)
         try:
-            self._runner.launch(definition, event, completed)
+            self._runner.launch(definition, event, on_completed)
         except Exception:
             self._running = False
+            self.status = "failed"
+            self._deadline.stop()
             self.changed.emit()
             raise
         if self._running:
@@ -625,9 +703,10 @@ def _validate_unique(definitions: tuple[LocalScriptAutomation, ...]) -> None:
         definition.validate()
         if definition.automation_id in ids:
             raise AutomationError(f"本地脚本 ID 重复：{definition.automation_id}")
-        if definition.trigger_prompt_id in prompt_ids:
+        if definition.trigger_prompt_id is not None and definition.trigger_prompt_id in prompt_ids:
             raise AutomationError(
                 f"提示词槽位 {definition.trigger_prompt_id} 已绑定其他本地脚本"
             )
         ids.add(definition.automation_id)
-        prompt_ids.add(definition.trigger_prompt_id)
+        if definition.trigger_prompt_id is not None:
+            prompt_ids.add(definition.trigger_prompt_id)

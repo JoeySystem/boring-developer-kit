@@ -90,8 +90,11 @@ def test_main_window_reuses_terminal_and_keeps_retry_and_editor_available(qtbot,
         window.render(ScreenModel(AppState.CONNECTING, '正在读取：AUTH_CHALLENGE'))
         window.render(ScreenModel(AppState.AUTHENTICITY_FAILED, '认证失败', '请检查设备身份'))
         assert window._connection_terminal is terminal
-        qtbot.waitUntil(lambda: any(b.isVisible() and b.text() == '重新扫描'
-                                   for b in window.findChildren(QPushButton)))
+        qtbot.waitUntil(lambda: (
+            (retry := window.findChild(QPushButton, 'connectDeviceButton')) is not None
+            and retry.isVisible()
+            and retry.isEnabled()
+        ))
         assert not window.findChild(QPlainTextEdit, 'connectionDetails').isVisible()
         window.findChild(QPushButton, 'connectionDetailsToggle').click()
         assert '请检查设备身份' in window.findChild(QPlainTextEdit, 'connectionDetails').toPlainText()
@@ -115,7 +118,7 @@ def test_success_animation_does_not_push_device_controls_out_of_view(qtbot, cont
     window.show()
     try:
         vm._on_snapshot(ready_model(contract).snapshot)
-        qtbot.wait(150)
+        qtbot.waitUntil(lambda: window._connection_fade_target is None, timeout=1200)
         assert window._connection_terminal.present
         key = window.findChild(QPushButton, 'controlKey')
         qtbot.waitUntil(

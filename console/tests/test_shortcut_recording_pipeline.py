@@ -3,7 +3,7 @@ from dataclasses import replace
 
 import pytest
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel, QPushButton, QScrollArea
+from PySide6.QtWidgets import QLabel, QLineEdit, QPushButton, QScrollArea
 
 from controller_config.actions import describe_action
 from controller_config.views.action_editor import ActionEditor, ShortcutRecorder
@@ -26,6 +26,8 @@ def test_recorded_modifiers_survive_edit_validate_write_and_readback(session, qt
     snapshot = replace(snapshot, status={**snapshot.status, 'platform': device, 'operating_mode': 'normal'})
     gateway.snapshot_ready.emit(snapshot)
     window._select_physical_control('key.8')
+    shortcut_name = window.findChild(QLineEdit, 'mappingShortNameEditor')
+    shortcut_name.setText('Next item')
     recorder = window.findChild(ShortcutRecorder)
     recorder.start_recording()
     qtbot.keyClick(recorder._capture, Qt.Key_N, qt_modifier)
@@ -37,7 +39,9 @@ def test_recorded_modifiers_survive_edit_validate_write_and_readback(session, qt
     assert validate.name == 'VALIDATE_CONFIG'
     config = validate.payload['config']
     profile = next(p for p in config['profiles'] if p['id'] == config['active_profile'])
-    assert next(m for m in profile['mappings'] if m['control_id'] == 'key.8')['action'] == expected
+    written_mapping = next(m for m in profile['mappings'] if m['control_id'] == 'key.8')
+    assert written_mapping['short_name'] == 'Next item'
+    assert written_mapping['action'] == expected
     complete_write(vm, gateway, snapshot)
     written = next(c for c in gateway.commands if c.name == 'SET_CONFIG')
     assert written.payload['config'] == config
@@ -53,21 +57,19 @@ def test_codex_editor_does_not_claim_normal_mapping_executes_in_current_mode(ses
     window, vm, gateway, snapshot, _ = session
     window._language_manager.set_language(language)
     gateway.snapshot_ready.emit(replace(snapshot, status={**snapshot.status, 'operating_mode': 'codex'}))
-    window._select_physical_control('key.8')
+    window._select_physical_control('key.9')
     notice = window.findChild(QLabel, 'mappingExecutionNotice')
-    assert notice is not None and ('普通模式' if language == 'zh_CN' else 'Normal') in notice.text() and 'CODEX' in notice.text()
+    normal_label = '普通模式' if language == 'zh_CN' else 'Normal'
+    assert notice is not None and normal_label in notice.text() and 'CODEX' in notice.text()
     if language == 'en_US':
-        assert 'uses its own actions' in notice.text()
-    assert ('普通模式' if language == 'zh_CN' else 'NORMAL') in window.findChild(QPushButton, 'applyMappingToDevice').text().upper()
+        assert 'official functions' in notice.text()
+    assert normal_label in window.findChild(QPushButton, 'applyMappingToDevice').text()
     window.resize(1100, 700)
     window.show()
     qtbot.wait(300)
-    viewport = window.findChild(QScrollArea, 'overviewScroll').viewport()
-    scroll = window.findChild(QScrollArea, 'overviewScroll')
-    for target in (notice, window.findChild(QPushButton, 'applyMappingToDevice')):
-        scroll.ensureWidgetVisible(target, 0, 0)
-        qtbot.wait(50)
-        assert _visible_inside(target, viewport)
+    viewport = window._current_mapping_card()
+    assert _visible_inside(notice, viewport)
+    assert _visible_inside(window.findChild(QPushButton, 'applyMappingToDevice'), viewport)
     assert window.grab().save(str(tmp_path / f'codex-notice-{language}.png'))
     gateway.status_updated.emit({**vm.model.snapshot.status, 'operating_mode': 'normal'})
     assert window.findChild(QLabel, 'mappingExecutionNotice') is None

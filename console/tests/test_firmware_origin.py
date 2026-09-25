@@ -145,15 +145,32 @@ def test_origin_ui_locales_and_manual_restore(qtbot,qapp,contract,tmp_path,langu
     window=MainWindow(vm,language_manager=lm);qtbot.addWidget(window)
     window.resize(1280,800);vm.navigate('firmware');window.show()
     label=window.findChild(QLabel,'firmwareOrigin')
-    source_text={'custom':'固件来源：自定义固件','unknown':'固件来源：未确认','official':'固件来源：匹配官方发布'}[origin]
+    source_text={'custom':'正在使用自定义固件','unknown':'固件来源未确认','official':'官方固件'}[origin]
     assert label.text()==lm.translate(source_text)
     if origin!='official':
         button=window.findChild(QPushButton,'checkRemoteFirmware')
         assert button.isEnabled() and button.text()==lm.translate('查看官方版本')
+        assert button.property('buttonRole') == 'secondary'
         button.click();source.release_found.emit(_release(bundle))
-        button=window.findChild(QPushButton,'downloadRemoteFirmware')
-        assert button.isEnabled() and button.text()==lm.translate('下载官方恢复固件')
+        button=window.findChild(QPushButton,'installRemoteFirmware')
+        assert button.isEnabled() and button.text()==lm.translate('切换到官方固件…')
+        assert button.property('buttonRole') == 'secondary'
+        assert source.downloads == []
+        assert not any(c.name.startswith('FW_') for c in gateway.commands)
         assert window._firmware_update_footer.isHidden()
+    else:
+        if vm.remote_firmware.state.value != 'checking':
+            window.findChild(QPushButton, 'checkRemoteFirmware').click()
+        source.release_found.emit(_release(bundle))
+        assert vm.remote_firmware.state.value == 'current'
+        assert window.findChild(QPushButton, 'installRemoteFirmware') is None
+        assert window.findChild(QLabel, 'remoteFirmwareMessage').text() == lm.translate('已是最新官方固件')
+        assert window.findChild(QPushButton, 'checkRemoteFirmware').property('buttonRole') == 'secondary'
+    for locale in ('en_US', 'ja_JP', 'zh_CN', language):
+        lm.set_language(locale)
+        summary = window.findChild(QLabel, 'remoteFirmwareReleaseSummary')
+        assert summary.text().startswith(lm.translate('官方版本：{version}').split('{version}')[0])
+        assert '#FF6A00' not in summary.styleSheet()
     qtbot.wait(50)
     assert window.findChild(QLabel,'firmwareOrigin').wordWrap()
     import os

@@ -15,6 +15,7 @@ class DeviceGateway(QObject):
     agent_status_completed = Signal(object, object)
     agent_status_failed = Signal(object, object)
     candidates_found = Signal(object)
+    usb_candidate_found = Signal(object)
     progress = Signal(str)
     snapshot_ready = Signal(object)
     status_updated = Signal(object)
@@ -41,6 +42,7 @@ class DeviceGateway(QObject):
         self._ble_scan_active = False
         self._pending_ble_candidates: tuple[object, ...] | None = None
         self._reconnect_preferred_port = ""
+        self._usb_probe_serial = ""
 
         self._usb.candidates_found.connect(self._on_usb_candidates)
         self._ble.candidates_found.connect(self._on_ble_candidates)
@@ -85,6 +87,14 @@ class DeviceGateway(QObject):
             )
 
     def scan(self, *, usb_only: bool = False) -> None:
+        if self._usb_probe_serial:
+            # Reuse an in-flight enumeration for an explicit refresh instead of
+            # dropping its result as a background probe while the UI is scanning.
+            self._usb_probe_serial = ""
+            self._active = ""
+            self._scan_waiting_for_ble = not usb_only
+            self._reconnect_preferred_port = ""
+            return
         # The reconnect timer ticks faster than BLE discovery can finish.
         # Keep its candidate/device-info handoff intact until both sources finish.
         if self._scan_waiting_for_usb or self._ble_scan_active:
@@ -103,6 +113,10 @@ class DeviceGateway(QObject):
 
     def scan_reconnect(self, preferred_port: str, *, usb_only: bool = False) -> None:
         """Probe USB promptly while retaining a targeted BLE reconnect scan."""
+        if self._usb_probe_serial:
+            self.scan(usb_only=usb_only)
+            self._reconnect_preferred_port = preferred_port
+            return
         if self._scan_waiting_for_usb:
             return
         self._reconnect_preferred_port = preferred_port
@@ -118,8 +132,20 @@ class DeviceGateway(QObject):
         self._scan_waiting_for_usb = True
         self._usb.scan()
 
+    def probe_usb(self, serial: str) -> None:
+        """Enumerate USB without disturbing the working BLE configuration link."""
+        if (not serial or self._active != "ble" or self._scan_waiting_for_usb
+                or self._ble_scan_active):
+            return
+        self._usb_probe_serial = serial
+        self._scan_waiting_for_usb = True
+        self._usb.scan()
+
     def connect_port(self, port_name: str) -> None:
         self._active = "ble" if port_name.startswith("ble:") else "usb"
+        if self._active == "usb":
+            # stop_scan only cancels discovery; it does not close a live BLE link.
+            self._ble.shutdown()
         inactive = self._usb if self._active == "ble" else self._ble
         if hasattr(inactive, "stop_scan"):
             inactive.stop_scan()
@@ -141,6 +167,14 @@ class DeviceGateway(QObject):
         return self._ble if self._active == "ble" else self._usb
 
     def _on_usb_candidates(self, candidates: object) -> None:
+        if self._usb_probe_serial:
+            serial, self._usb_probe_serial = self._usb_probe_serial, ""
+            self._scan_waiting_for_usb = False
+            if self._active == "ble":
+                matches = tuple(c for c in candidates if c.serial_number == serial)
+                if len(matches) == 1:
+                    self.usb_candidate_found.emit(matches[0])
+            return
         values = self._preferred_candidates(tuple(candidates))
         self._scan_waiting_for_usb = False
         if values:
@@ -158,7 +192,7 @@ class DeviceGateway(QObject):
             return
         if self._scan_waiting_for_ble:
             if not self._ble_scan_active:
-                self.progress.emit("未发现 USB，正在查找已配对的 BORING 蓝牙设备…")
+                self.progress.emit("未发现 USB，正在读取本机已连接的蓝牙设备…")
                 self._ble_scan_active = True
                 self._ble.scan(preferred_port=self._reconnect_preferred_port or None)
         else:
@@ -186,9 +220,16 @@ class DeviceGateway(QObject):
         return preferred or candidates
 
     def _forward_progress(self, source: str, message: str) -> None:
-        if self._active == source or (not self._active and source == "usb"):
+        if (self._active == source or (not self._active and source == "usb")
+                or (source == "ble" and self._scan_waiting_for_ble)):
             self.progress.emit(message)
 
     def _forward(self, signal_name: str, source: str, *args: object) -> None:
+        if signal_name == "failure" and source == "ble" and self._scan_waiting_for_ble:
+            self._scan_waiting_for_ble = False
+            self._ble_scan_active = False
+            self._pending_ble_candidates = None
+            self.failure.emit(*args)
+            return
         if source == self._active:
             getattr(self, signal_name).emit(*args)

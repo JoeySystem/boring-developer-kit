@@ -5,6 +5,8 @@ from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
 
+from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Signal, Slot
+
 from controller_config.automation import LocalScriptAutomation
 from controller_config.extensions.bindings import ExtensionActionBinding
 from controller_config.extensions.manager import InstalledExtension
@@ -39,6 +41,153 @@ class HostActionExecution:
     message: str
     context: HostActionContext
     technical: str = ""
+
+
+class _BackgroundCall(QRunnable):
+    def __init__(self, operation: Callable[[], object], result: Signal) -> None:
+        super().__init__()
+        self.operation = operation
+        self.result = result
+
+    def run(self) -> None:
+        try:
+            value = self.operation()
+        except Exception as exc:
+            value = exc
+        self.result.emit(value)
+
+
+class HostActionJob(QObject):
+    """One step; only file I/O and OS commands leave the GUI thread."""
+
+    _worker_result = Signal(object)
+
+    def __init__(
+        self,
+        registry: HostActionRegistry,
+        step: WorkflowStep,
+        context: HostActionContext,
+        completed: Callable[[HostActionExecution], None],
+        parent: QObject,
+    ) -> None:
+        super().__init__(parent)
+        self.registry = registry
+        self.step = step
+        self.context = context
+        self.completed = completed
+        self._working = False
+        self._cancelled = False
+        self._finished = False
+        self._after_worker = None
+        self._poll = QTimer(self)
+        self._poll.setSingleShot(True)
+        self._poll.timeout.connect(self._poll_selection)
+        self._worker_result.connect(self._worker_finished)
+        QTimer.singleShot(0, self, self._start)
+
+    def cancel(self) -> None:
+        self._cancelled = True
+        self._poll.stop()
+        # A started file write cannot be safely interrupted. Keep its owner busy
+        # until the result arrives; no following step is allowed to start.
+        if not self._working:
+            self._finish(HostActionExecution(False, "已停止", self.context))
+
+    def _background(self, operation, after=None) -> None:
+        self._working = True
+        self._after_worker = after
+        QThreadPool.globalInstance().start(
+            _BackgroundCall(operation, self._worker_result)
+        )
+
+    @Slot(object)
+    def _worker_finished(self, value) -> None:
+        self._working = False
+        if self._cancelled:
+            self._finish(
+                HostActionExecution(False, "已停止；已开始的操作可能已完成", self.context)
+            )
+        elif isinstance(value, Exception):
+            self._fail(value)
+        elif self._after_worker is not None:
+            self._after_worker(value)
+        else:
+            self._finish(value)
+
+    def _start(self) -> None:
+        if self._finished:
+            return
+        try:
+            self.step.validate()
+            available, reason = self.registry.availability(self.step.action_id)
+            if not available:
+                raise HostActionError(reason)
+            services = self.registry._services
+            if self.step.action_id == "capture_selection" and isinstance(
+                services, SystemHostServices
+            ):
+                self._before = services.selection_sequence()
+                self._attempts = 0
+                self._background(services.send_copy_shortcut, self._copy_sent)
+            elif self.step.action_id == "open_target" and isinstance(
+                services, SystemHostServices
+            ):
+                target = str(self.step.parameters["target"])
+                self._background(
+                    lambda: services.prepare_open_target(target), self._open_prepared
+                )
+            elif self.step.action_id in {
+                "append_text_file", "show_notification", "capture_selection"
+            }:
+                self._background(lambda: self.registry.execute(self.step, self.context))
+            else:
+                # QClipboard and QDesktopServices must stay on the GUI thread.
+                self._finish(self.registry.execute(self.step, self.context))
+        except Exception as exc:
+            self._fail(exc)
+
+    def _copy_sent(self, _value) -> None:
+        self._poll.start(120 if self._before is None else 50)
+
+    def _open_prepared(self, url) -> None:
+        try:
+            self.registry._services.open_prepared_target(
+                url, str(self.step.parameters["target"])
+            )
+        except Exception as exc:
+            self._fail(exc)
+            return
+        self._finish(HostActionExecution(True, "目标已交给操作系统打开", self.context))
+
+    def _poll_selection(self) -> None:
+        try:
+            services = self.registry._services
+            if self._before is None or services.selection_sequence() != self._before:
+                self._finish(
+                    HostActionExecution(
+                        True, "已获取当前选中文字", HostActionContext(services.read_clipboard())
+                    )
+                )
+                return
+            self._attempts += 1
+            if self._attempts >= 8:
+                raise HostActionError("未检测到新的选中文字。请确认文字选区和辅助功能权限。")
+            self._poll.start(50)
+        except Exception as exc:
+            self._fail(exc)
+
+    def _fail(self, exc: Exception) -> None:
+        self._finish(HostActionExecution(False, str(exc), self.context, str(exc)))
+
+    def _finish(self, result: HostActionExecution) -> None:
+        if self._finished:
+            return
+        self._finished = True
+        self._poll.stop()
+        try:
+            self.completed(result)
+        finally:
+            self.deleteLater()
 
 
 class HostActionRegistry:
@@ -132,6 +281,16 @@ class HostActionRegistry:
             return HostActionExecution(False, str(exc), context, str(exc))
         raise HostActionError(f"不支持的内置步骤：{step.action_id}")
 
+    def execute_async(
+        self,
+        step: WorkflowStep,
+        context: HostActionContext,
+        completed: Callable[[HostActionExecution], None],
+        *,
+        parent: QObject,
+    ) -> HostActionJob:
+        return HostActionJob(self, step, context, completed, parent)
+
 
 @dataclass(frozen=True)
 class HostAction:
@@ -178,7 +337,7 @@ def collect_host_actions(
             available=(
                 workflow.enabled and workflow.tested and not workflow.review_required
             ),
-            prompt_ids=(workflow.trigger_prompt_id,),
+            prompt_ids=(workflow.trigger_prompt_id,) if workflow.trigger_prompt_id is not None else (),
         )
         for workflow in workflows
     ]
@@ -193,7 +352,7 @@ def collect_host_actions(
                 available=(
                     definition.enabled and Path(definition.script_path).is_file()
                 ),
-                prompt_ids=(definition.trigger_prompt_id,),
+                prompt_ids=(definition.trigger_prompt_id,) if definition.trigger_prompt_id is not None else (),
             )
             for definition in automations
         ]

@@ -459,3 +459,48 @@ def test_console_invokes_only_authorized_action_session_and_receives_acceptance(
     finally:
         socket.abort()
         server.close()
+
+
+def test_api11_cancel_preserves_action_until_terminal(qtbot, contract):
+    server = _server(contract)
+    socket = _connect(qtbot, server.server_name)
+    results, terminal = [], []
+    server.action_result_received.connect(lambda ext, result: terminal.append(result))
+    try:
+        _send(qtbot, socket, {'request_id': 'hello11', 'kind': 'handshake',
+                             'extension_id': EXTENSION_ID, 'api_version': {'major': 1, 'minor': 1}})
+        assert _receive(qtbot, socket)['api_version']['minor'] == 1
+        assert server.invoke_action(_invocation(), results.append)
+        assert server.active_action_count == 1
+        assert server.active_extension_ids == (EXTENSION_ID,)
+        assert _receive(qtbot, socket)['kind'] == 'action.invoke'
+        for status in ('accepted', 'failed'):
+            _send(qtbot, socket, {'request_id': status, 'kind': 'action_result', 'result': {
+                'schema_version': 1, 'invocation_id': 'invocation-1', 'status': status,
+                'message': '已停止' if status == 'failed' else '',
+            }})
+            assert _receive(qtbot, socket)['accepted']
+            if status == 'accepted':
+                assert server.request_cancel_invocation('invocation-1')
+                assert server.active_action_count == 1
+                assert _receive(qtbot, socket) == {'kind': 'action.cancel', 'invocation_id': 'invocation-1'}
+        assert server.active_action_count == 0
+        assert server.active_extension_ids == ()
+        assert [r.status for r in results] == ['accepted']
+        assert [r.status for r in terminal] == ['accepted', 'failed']
+    finally:
+        socket.abort()
+        server.close()
+
+
+def test_api10_declines_cooperative_cancel_without_forgetting_action(qtbot, contract):
+    server = _server(contract)
+    socket = _connect(qtbot, server.server_name)
+    try:
+        assert _handshake(qtbot, socket)['api_version']['minor'] == 0
+        assert server.invoke_action(_invocation(), lambda result: None)
+        assert not server.request_cancel_invocation('invocation-1')
+        assert server.active_action_count == 1
+    finally:
+        socket.abort()
+        server.close()

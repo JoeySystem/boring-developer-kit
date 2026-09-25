@@ -1,7 +1,7 @@
 import copy
 
 import pytest
-from PySide6.QtWidgets import QComboBox, QSpinBox
+from PySide6.QtWidgets import QComboBox, QLabel, QPushButton, QSlider
 
 from controller_config.appearance import V4_STYLE
 from controller_config.i18n import LanguageManager
@@ -20,7 +20,7 @@ def make_editor(qtbot, contract, strength=60, enabled=True):
         features={"haptic": True, "haptic_channels": True, "display": True},
         under_key_control_ids=(), agent_status_control_ids=frozenset(),
         rules=contract.editor_rules, lighting_levels=POWER_V2_LIGHTING_LEVELS,
-        haptic_levels=POWER_V2_HAPTIC_LEVELS, display_brightness_configurable=False,
+        haptic_levels=POWER_V2_HAPTIC_LEVELS,
     )
     qtbot.addWidget(editor)
     return editor, config
@@ -61,15 +61,24 @@ def test_zero_level_and_master_toggle_restore_selected_strength(qtbot, contract)
     assert editor.values()[1]["strength"] == 80
 
 
-def test_fixed_display_exposes_only_real_backlight_states(qtbot, contract):
+def test_display_brightness_exposes_the_firmware_range(qtbot, contract):
     editor, config = make_editor(qtbot, contract)
-    control = editor.findChild(QComboBox, "displayBrightness")
-    assert [control.itemData(i) for i in range(control.count())] == [0, 100]
-    assert editor.findChild(QSpinBox, "displayBrightness") is None
-    control.setCurrentIndex(0)
+    control = editor.findChild(QSlider, "displayBrightness")
+    value = editor.findChild(QLabel, "displayBrightnessValue")
+    assert (control.minimum(), control.maximum(), control.value()) == (0, 100, 64)
+    assert value.text() == "64%"
+    control.setValue(28)
+    assert value.text() == "28%"
+    assert editor.values()[2] == {**config["display"], "brightness": 28}
+    control.setValue(0)
     assert editor.values()[2]["brightness"] == 0
-    control.setCurrentIndex(1)
-    assert editor.values()[2] == config["display"]  # no silent rewrite of old 64
+    control.setValue(64)
+    assert editor.values()[2] == config["display"]
+    rotations = editor.findChildren(QPushButton, "displayRotationOption")
+    assert [button.property("rotationValue") for button in rotations] == [0, 90, 180, 270]
+    assert [button.isChecked() for button in rotations] == [True, False, False, False]
+    rotations[1].click()
+    assert editor.values()[2] == {**config["display"], "rotation": 90}
 
 
 def test_main_window_uses_hardware_levels_and_retains_draft_on_page_change(session, monkeypatch):
@@ -79,13 +88,18 @@ def test_main_window_uses_hardware_levels_and_retains_draft_on_page_change(sessi
     vm.navigate("lighting")
     editor = window.findChild(PreferencesEditor)
     assert editor.findChild(QComboBox, "hapticStrength") is not None
-    assert editor.findChild(QComboBox, "displayBrightness") is not None
+    brightness = editor.findChild(QSlider, "displayBrightness")
+    assert brightness is not None
     editor._haptic_strength.setCurrentIndex(4)
+    brightness.setValue(47)
+    editor.findChildren(QPushButton, "displayRotationOption")[1].click()
     monkeypatch.setattr(QMessageBox, "warning", lambda *_: QMessageBox.Save)
     window._nav_buttons["settings"].click()
     assert vm.draft.config["haptic"]["strength"] == 80
     vm.navigate("lighting")
     assert window.findChild(PreferencesEditor)._haptic_strength.currentIndex() == 4
+    assert window.findChild(QSlider, "displayBrightness").value() == 47
+    assert window.findChildren(QPushButton, "displayRotationOption")[1].isChecked()
     assert not any(command.name in {"VALIDATE_CONFIG", "SET_CONFIG"} for command in gateway.commands)
 
 
@@ -119,8 +133,10 @@ def test_level_copy_translates_and_card_fits(qtbot, qapp, contract, tmp_path, la
     screen.show()
     qtbot.wait(30)
     assert screen.rect().contains(editor._display_brightness.geometry())
-    assert editor._display_brightness.currentText() == (
-        "Backlight On (Fixed Brightness)" if language == "en_US" else "开启背光（固定亮度）"
-    )
+    assert editor._display_brightness.value() == 64
+    assert screen.findChild(QLabel, "displayBrightnessValue").text() == "64%"
+    rotations = screen.findChildren(QPushButton, "displayRotationOption")
+    assert len(rotations) == 4
+    assert all(screen.rect().contains(button.geometry()) for button in rotations)
     assert screen.grab().save(str(tmp_path / f"screen-backlight-{language}.png"))
     manager.set_language("zh_CN")

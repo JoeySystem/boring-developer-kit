@@ -284,3 +284,27 @@ def test_strict_objects_reject_unknown_fields() -> None:
 
     with pytest.raises(ExtensionContractError, match="download_url"):
         ExtensionManifest.from_mapping(payload)
+
+
+def test_host_task_event_requires_api_11_without_prompt_fields():
+    manifest_payload = _manifest_payload()
+    manifest_payload['observer_events'] = ['host_action.triggered']
+    with pytest.raises(ExtensionContractError, match='1.1'):
+        ExtensionManifest.from_mapping(manifest_payload)
+    manifest_payload['api_version']['minor'] = 1
+    manifest = ExtensionManifest.from_mapping(manifest_payload)
+    event = {
+        'schema_version': 1, 'kind': 'host_action.triggered', 'source': 'usb.host_action',
+        'device_serial': SERIAL, 'event_id': 9, 'payload': {'action_id': 255, 'task_token': '0123456789abcdef0123456789abcdef'},
+    }
+    value = {
+        'schema_version': 1, 'invocation_id': 'host-1', 'extension_id': manifest.extension_id,
+        'action_id': 'use_prompt', 'device_serial': SERIAL, 'context_revision': 1, 'event': event,
+    }
+    assert ActionInvocation.from_mapping(value, manifest=manifest).event.as_mapping() == event
+    old_manifest = ExtensionManifest.from_mapping(_manifest_payload())
+    with pytest.raises(ExtensionContractError, match='1.1'):
+        ActionInvocation.from_mapping(value, manifest=old_manifest)
+    event['payload']['prompt_id'] = 1
+    with pytest.raises(ExtensionContractError):
+        SemanticEvent.from_mapping(event)

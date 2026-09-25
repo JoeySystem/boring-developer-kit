@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
+    QSpinBox,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -75,10 +76,10 @@ class ExtensionsPage(QScrollArea):
         summary_layout = QHBoxLayout(summary)
         summary_layout.setContentsMargins(24, 20, 24, 22)
         heading = QVBoxLayout()
-        heading.addWidget(QLabel("CODEX WORKFLOW", objectName="eyebrow"))
-        heading.addWidget(QLabel("Codex 工作流", objectName="inspectorTitle"))
+        heading.addWidget(QLabel("EXTENSIONS", objectName="eyebrow"))
+        heading.addWidget(QLabel("安装扩展包", objectName="inspectorTitle"))
         intro = QLabel(
-            "导入在 Codex 或其他 AI 中开发好的 BORING 扩展包，由控制台校验、运行并管理实体事件权限。",
+            "导入开发者提供的目录或 ZIP，使用包里的具名动作。扩展保存在这台电脑，运行时需保持 BORING 后台开启。",
             objectName="muted",
         )
         intro.setWordWrap(True)
@@ -105,9 +106,14 @@ class ExtensionsPage(QScrollArea):
             row.addWidget(marker)
             row.addWidget(label, 1)
             guide_layout.addLayout(row)
+        guide.hide()
+        guide_toggle = QPushButton("自己开发扩展", objectName="extensionDevelopmentGuide")
+        guide_toggle.setCheckable(True)
+        guide_toggle.toggled.connect(guide.setVisible)
+        heading.addWidget(guide_toggle)
         heading.addWidget(guide)
         note = QLabel(
-            "以上为操作顺序，不代表已完成验证。扩展启用后请确认运行记录，再进行实体触发验收。",
+            "Console 自带 Python 运行器；不会自动安装第三方依赖。请按作者说明准备依赖，导入后启用并检查实际输出。",
             objectName="muted",
         )
         note.setWordWrap(True)
@@ -143,6 +149,7 @@ class ExtensionsPage(QScrollArea):
         catalog_layout.setSpacing(10)
         catalog_layout.addWidget(QLabel("已安装扩展", objectName="inspectorTitle"))
         self._extensions = QListWidget(objectName="extensionList")
+        self._extensions.setMaximumHeight(140)
         self._extensions.currentItemChanged.connect(self._extension_selected)
         catalog_layout.addWidget(self._extensions, 1)
         import_row = QHBoxLayout()
@@ -177,8 +184,41 @@ class ExtensionsPage(QScrollArea):
         buttons.addStretch(1)
         details_layout.addLayout(buttons)
 
-        details_layout.addWidget(QLabel("实体提示词绑定", objectName="inspectorTitle"))
-        binding_row = QHBoxLayout()
+        details_layout.addWidget(QLabel("选择要运行的动作", objectName="inspectorTitle"))
+        self._action = QComboBox(objectName="extensionAction")
+        details_layout.addWidget(self._action)
+        task_row = QHBoxLayout()
+        self._task_control = QComboBox(objectName="extensionPhysicalControl")
+        task_row.addWidget(self._task_control, 1)
+        self._apply_task = QPushButton("应用到设备", objectName="extensionApplyTask")
+        self._apply_task.clicked.connect(self._apply_host_task)
+        task_row.addWidget(self._apply_task)
+        self._trial_task = QPushButton("开始实体试用", objectName="extensionTrial")
+        self._trial_task.clicked.connect(self._arm_task_trial)
+        task_row.addWidget(self._trial_task)
+        details_layout.addLayout(task_row)
+        run_settings = QPushButton("运行设置", objectName="extensionRunSettingsToggle")
+        run_settings.setCheckable(True)
+        details_layout.addWidget(run_settings)
+        self._task_timeout = QSpinBox(objectName="extensionTaskTimeout")
+        self._task_timeout.setRange(1, 3600)
+        self._task_timeout.setValue(60)
+        self._task_timeout.setPrefix(translate_ui_text("最长运行 "))
+        self._task_timeout.setSuffix(" s")
+        self._task_timeout.hide()
+        run_settings.toggled.connect(self._task_timeout.setVisible)
+        details_layout.addWidget(self._task_timeout)
+        self._task_status = QLabel(objectName="extensionTaskStatus")
+        self._task_status.setWordWrap(True)
+        details_layout.addWidget(self._task_status)
+        legacy_toggle = QPushButton("旧提示词绑定", objectName="extensionLegacyBindingToggle")
+        legacy_toggle.setCheckable(True)
+        details_layout.addWidget(legacy_toggle)
+        self._legacy_binding = QWidget(objectName="extensionLegacyBinding")
+        binding_row = QHBoxLayout(self._legacy_binding)
+        binding_row.setContentsMargins(0, 0, 0, 0)
+        self._legacy_binding.hide()
+        legacy_toggle.toggled.connect(self._legacy_binding.setVisible)
         self._prompt_slot = QComboBox(objectName="extensionPromptSlot")
         bound_slots = (
             {binding.prompt_id for binding in platform.bindings
@@ -189,18 +229,19 @@ class ExtensionsPage(QScrollArea):
             self._prompt_slot.addItem(f"提示词槽位 {prompt_id}", prompt_id)
         self._prompt_slot.currentIndexChanged.connect(self._refresh_binding)
         binding_row.addWidget(self._prompt_slot)
-        self._action = QComboBox(objectName="extensionAction")
-        binding_row.addWidget(self._action, 1)
         self._bind = QPushButton("绑定", objectName="extensionBindAction")
         self._bind.clicked.connect(self._bind_action)
         binding_row.addWidget(self._bind)
         self._unbind = QPushButton("解除绑定", objectName="extensionUnbindAction")
         self._unbind.clicked.connect(self._unbind_action)
         binding_row.addWidget(self._unbind)
-        details_layout.addLayout(binding_row)
+        details_layout.addWidget(self._legacy_binding)
         self._binding_status = QLabel(objectName="muted")
         self._binding_status.setWordWrap(True)
         details_layout.addWidget(self._binding_status)
+        self._binding_status.hide()
+        legacy_toggle.toggled.connect(self._binding_status.setVisible)
+        self._action.currentIndexChanged.connect(self._refresh_task_binding)
         workspace.addWidget(details, 3)
         layout.addLayout(workspace, 1)
 
@@ -261,12 +302,19 @@ class ExtensionsPage(QScrollArea):
         log_card = _card("widget")
         log_layout = QVBoxLayout(log_card)
         log_layout.setContentsMargins(24, 20, 24, 22)
-        log_layout.addWidget(QLabel("扩展运行记录", objectName="inspectorTitle"))
+        self._run_status = QLabel("尚未运行", objectName="extensionRunStatus")
+        self._run_status.setWordWrap(True)
+        log_layout.addWidget(self._run_status)
+        self._log_toggle = QPushButton("查看详情", objectName="extensionLogToggle")
+        self._log_toggle.setCheckable(True)
+        log_layout.addWidget(self._log_toggle)
         self._logs = QPlainTextEdit(objectName="extensionRunLog")
         self._logs.setReadOnly(True)
         self._logs.setMaximumBlockCount(200)
         self._logs.setMinimumHeight(120)
         log_layout.addWidget(self._logs)
+        self._logs.hide()
+        self._log_toggle.toggled.connect(self._logs.setVisible)
         layout.addWidget(log_card)
 
         boundary = QLabel(
@@ -282,6 +330,7 @@ class ExtensionsPage(QScrollArea):
         if self._platform is not None:
             self._platform.changed.connect(self.refresh)
             self._platform.log_added.connect(self._append_log)
+        self._view_model.host_tasks.changed.connect(self._refresh_task_binding)
         self.refresh()
 
     def resizeEvent(self, event) -> None:  # noqa: N802
@@ -312,6 +361,16 @@ class ExtensionsPage(QScrollArea):
         if action_index >= 0:
             self._action.setCurrentIndex(action_index)
         self._select_item(self._proposal_list, state.proposal_id)
+
+    def select_action(self, extension_id: str, action_id: str, prompt_id: int | None = None) -> None:
+        self._select_item(self._extensions, extension_id)
+        action_index = self._action.findData(action_id)
+        if action_index >= 0:
+            self._action.setCurrentIndex(action_index)
+        if prompt_id is not None:
+            prompt_index = self._prompt_slot.findData(prompt_id)
+            if prompt_index >= 0:
+                self._prompt_slot.setCurrentIndex(prompt_index)
 
     def refresh(self) -> None:
         state = self.editing_state()
@@ -394,11 +453,18 @@ class ExtensionsPage(QScrollArea):
                 for item in self._platform.logs
             )
         )
+        if self._platform.logs:
+            self._update_run_status(self._platform.logs[-1])
         self._extension_selected(self._extensions.currentItem(), None)
         self._proposal_selected(self._proposal_list.currentItem(), None)
 
     def _append_log(self, record: ExtensionPlatformLog) -> None:
         self._logs.appendPlainText(_format_log(record))
+        self._update_run_status(record)
+
+    def _update_run_status(self, record: ExtensionPlatformLog) -> None:
+        self._run_status.setText(translate_ui_text(record.message))
+        self._log_toggle.setText(translate_ui_text("查看失败详情" if record.level == "error" else "查看详情"))
 
     def _import_directory(self) -> None:
         value = QFileDialog.getExistingDirectory(self, "选择 BORING 扩展目录")
@@ -541,6 +607,7 @@ class ExtensionsPage(QScrollArea):
             )
 
     def _refresh_binding(self) -> None:
+        self._refresh_task_binding()
         serial = self._device_serial()
         prompt_id = int(self._prompt_slot.currentData() or 1)
         binding = next(
@@ -568,6 +635,64 @@ class ExtensionsPage(QScrollArea):
             and self._action.count() > 0
             and serial is not None
         )
+
+    def _task_descriptor(self) -> dict | None:
+        extension_id = self._selected_extension_id()
+        action_id = self._action.currentData()
+        if extension_id is None or action_id is None:
+            return None
+        return {"target_id": f"{extension_id}:{action_id}",
+                "extension_id": extension_id, "action_id": action_id,
+                "name": self._action.currentText(), "timeout_ms": self._task_timeout.value() * 1000}
+
+    def _refresh_task_binding(self) -> None:
+        tasks = self._view_model.host_tasks
+        descriptor = self._task_descriptor()
+        binding = tasks.binding_for("extension", descriptor["target_id"]) if descriptor else None
+        target_id = descriptor["target_id"] if descriptor else None
+        changed_target = target_id != getattr(self, "_task_target_selected", None)
+        self._task_target_selected = target_id
+        target = ((binding.control_id if binding else getattr(tasks, "preferred_control", None))
+                  if changed_target else self._task_control.currentData())
+        if changed_target:
+            self._task_timeout.setValue(binding.pending.get("timeout_ms", 60_000) // 1000 if binding and binding.pending else 60)
+        self._task_control.clear()
+        for label, value in tasks.controls:
+            self._task_control.addItem(label, value)
+        self._task_control.setCurrentIndex(max(0, self._task_control.findData(target)))
+        problem = tasks.problem
+        if not problem and descriptor and self._platform is not None:
+            extension = self._platform.manager.get(descriptor["extension_id"])
+            if extension.manifest.api_version.minor < 1:
+                problem = "请向作者索取支持电脑任务的新版扩展；旧提示词绑定仍可使用。"
+            elif not self._platform.extension_is_ready(descriptor["extension_id"]):
+                problem = "请先启用扩展并等待启动完成。"
+        self._apply_task.setEnabled(descriptor is not None and not problem)
+        self._trial_task.setVisible(binding is not None)
+        self._trial_task.setEnabled(binding is not None and binding.applied and not problem)
+        self._task_status.setText(translate_ui_text(problem or tasks.status or "选择动作和设备按键，应用后进行首次试用。"))
+
+    def _apply_host_task(self) -> None:
+        descriptor = self._task_descriptor()
+        if descriptor is None:
+            return
+        try:
+            self._view_model.host_tasks.apply("extension", descriptor, self._task_control.currentData())
+        except (ValueError, OSError) as exc:
+            self._task_status.setText(translate_ui_text(str(exc)))
+
+    def _arm_task_trial(self) -> None:
+        descriptor = self._task_descriptor()
+        binding = self._view_model.host_tasks.binding_for("extension", descriptor["target_id"]) if descriptor else None
+        if binding is not None:
+            try:
+                self._view_model.host_tasks.arm_trial(binding.action_id)
+            except ValueError as exc:
+                self._task_status.setText(translate_ui_text(str(exc)))
+
+    def hideEvent(self, event) -> None:  # noqa: N802
+        self._view_model.host_tasks.cancel_trial()
+        super().hideEvent(event)
 
     def _proposal_selected(self, current, _previous) -> None:
         proposal_id = current.data(Qt.UserRole) if current is not None else None
