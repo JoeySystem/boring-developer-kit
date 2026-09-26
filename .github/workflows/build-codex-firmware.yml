@@ -14,19 +14,27 @@ jobs:
     runs-on: ubuntu-latest
     container: espressif/idf:v6.0.2
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Build custom MIST firmware package
         shell: bash
         run: |
           set -euo pipefail
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          source /opt/esp/idf/export.sh
           if ! command -v rsync >/dev/null 2>&1; then
             apt-get update
             apt-get install -y --no-install-recommends rsync
           fi
           idf.py --version
           cd firmware
-          sh tools/build.sh --target matrix12-power-v2-codex-usb --custom-name codexquota
+          if ! sh tools/build.sh --target matrix12-power-v2-codex-usb --custom-name codexquota > /tmp/boring-build.log 2>&1; then
+            tail -n 80 /tmp/boring-build.log
+            while IFS= read -r line; do
+              echo "::error::$line"
+            done < <(grep -E 'error:|Error|ERROR|not found|failed|undefined reference' /tmp/boring-build.log | tail -n 10)
+            exit 1
+          fi
+          tail -n 15 /tmp/boring-build.log
       - name: Upload Console import ZIP
         uses: actions/upload-artifact@v4
         with:
