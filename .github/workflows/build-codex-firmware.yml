@@ -1,0 +1,35 @@
+name: Build MIST Codex quota firmware
+
+on:
+  push:
+    branches:
+      - feature/codex-quota-on-mist-screen
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v6.0.2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build custom MIST firmware package
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          if ! command -v rsync >/dev/null 2>&1; then
+            apt-get update
+            apt-get install -y --no-install-recommends rsync
+          fi
+          idf.py --version
+          cd firmware
+          sh tools/build.sh --target matrix12-power-v2-codex-usb --custom-name codexquota
+      - name: Upload Console import ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: boring-mist-codex-quota-firmware
+          path: firmware/artifacts/**/*.zip
+          if-no-files-found: error
