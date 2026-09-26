@@ -204,6 +204,7 @@ typedef enum {
     LOCAL_PAGE_SYSTEM,
     LOCAL_PAGE_STATUS_DETAIL,
     LOCAL_PAGE_BATTERY,
+    LOCAL_PAGE_CODEX_QUOTA,
 } local_page_t;
 
 static local_page_t s_local_page;
@@ -216,6 +217,7 @@ static uint8_t s_prompt_palette_selected_id;
 static uint32_t s_last_timer_display_second = UINT32_MAX;
 
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+static uint32_t s_codex_quota_rendered;
 static uint32_t s_mist_last_frame_ms;
 static uint32_t s_mist_peek_until_ms;
 static bool s_mist_peek_active;
@@ -2671,10 +2673,36 @@ static void render_local_page(void)
             BOARD_ROUND_PAGE_ICON_TIMER,
             BOARD_ROUND_PAGE_ICON_SETTINGS,
             BOARD_MIST_ICON_BATTERY,
+            BOARD_MIST_ICON_HOME_CODEX,
         };
         render_mist_carousel(function_icons, ARRAY_COUNT(function_icons), s_function_cursor);
     } else if (s_local_page == LOCAL_PAGE_BATTERY) {
         render_mist_battery();
+    } else if (s_local_page == LOCAL_PAGE_CODEX_QUOTA) {
+        uint8_t weekly;
+        int five_hour;
+        char weekly_text[20];
+        char five_hour_text[20];
+        const bool available = board_mist_ui_get_codex_usage(
+            ticks_to_ms(xTaskGetTickCount()), &weekly, &five_hour);
+        s_codex_quota_rendered = available
+            ? 0x10000u | weekly | ((uint32_t)(five_hour + 1) << 8) : 0;
+        if (available) {
+            snprintf(weekly_text, sizeof(weekly_text), "7D %u%%", weekly);
+            if (five_hour >= 0)
+                snprintf(five_hour_text, sizeof(five_hour_text),
+                         "5H %d%%", five_hour);
+            else snprintf(five_hour_text, sizeof(five_hour_text), "5H N/A");
+        }
+        const board_mist_view_t view = {
+            .page = BOARD_MIST_LOCAL,
+            .phase = 1,
+            .title = "CODEX",
+            .primary = available ? weekly_text : "NO DATA",
+            .secondary = available ? five_hour_text : "CONSOLE",
+            .footer = available ? "LEFT" : "OPEN",
+        };
+        (void)board_display_show_mist(&view);
     } else if (s_local_page == LOCAL_PAGE_SETTINGS) {
         static const uint8_t settings_icons[] = {
             BOARD_ROUND_PAGE_ICON_SYSTEM,
@@ -2919,6 +2947,8 @@ static void return_local_ui_one_level(void)
         exit_local_page();
     } else if (s_local_page == LOCAL_PAGE_BATTERY) {
         show_function_center(2);
+    } else if (s_local_page == LOCAL_PAGE_CODEX_QUOTA) {
+        show_function_center(3);
     } else if (s_local_page == LOCAL_PAGE_FUNCTION) {
         exit_local_page();
     } else if (s_local_page == LOCAL_PAGE_SETTINGS) {
@@ -2992,7 +3022,12 @@ static void confirm_local_page(void)
             show_feedback(STATUS_FEEDBACK_ERROR, "PROMPT HELPER OFFLINE");
         }
     } else if (s_local_page == LOCAL_PAGE_FUNCTION) {
-        if (s_function_cursor == 2) {
+        if (s_function_cursor == 3) {
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+            s_local_page = LOCAL_PAGE_CODEX_QUOTA;
+            render_local_page();
+#endif
+        } else if (s_function_cursor == 2) {
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
             s_local_page = LOCAL_PAGE_BATTERY;
             fuel_gauge_request_immediate_poll();
@@ -3333,7 +3368,7 @@ static void handle_local_event(const board_event_t *event)
     bool changed = false;
     if (s_local_page == LOCAL_PAGE_FUNCTION) {
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
-        const uint8_t count = 3;
+        const uint8_t count = 4;
 #else
         const uint8_t count = 2;
 #endif
@@ -4634,6 +4669,18 @@ void action_engine_poll(void)
     poll_pomodoro();
     poll_round_feedback();
     poll_battery_status();
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    if (s_local_page == LOCAL_PAGE_CODEX_QUOTA && !s_round_feedback_active &&
+        !s_mist_connection_visible) {
+        uint8_t weekly;
+        int five_hour;
+        const bool available = board_mist_ui_get_codex_usage(
+            ticks_to_ms(xTaskGetTickCount()), &weekly, &five_hour);
+        const uint32_t signature = available
+            ? 0x10000u | weekly | ((uint32_t)(five_hour + 1) << 8) : 0;
+        if (signature != s_codex_quota_rendered) render_local_page();
+    }
+#endif
     /* Always release a deferred short press, even while another UI is active. */
     poll_function_key_release();
     poll_tap_releases();
@@ -4800,6 +4847,7 @@ void action_engine_get_diagnostics(action_engine_diagnostics_t *diagnostics)
         [LOCAL_PAGE_SYSTEM] = "system",
         [LOCAL_PAGE_STATUS_DETAIL] = "status_detail",
         [LOCAL_PAGE_BATTERY] = "battery",
+        [LOCAL_PAGE_CODEX_QUOTA] = "codex_quota",
     };
     static const char *const round_setting_names[] = {
         [BOARD_ROUND_SETTING_EDITING] = "editing",

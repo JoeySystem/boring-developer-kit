@@ -1295,6 +1295,7 @@ class MainWindow(QMainWindow):
         *,
         language_manager: LanguageManager | None = None,
         background_controller: PromptBackgroundController | None = None,
+        codex_screen_bridge=None,
         onboarding_settings: QSettings | None = None,
         build_identity: BuildIdentity | None = None,
     ) -> None:
@@ -1305,6 +1306,7 @@ class MainWindow(QMainWindow):
         self._update_workspace_restore = {}
         self._view_model = view_model
         self._background_controller = background_controller
+        self._codex_screen_bridge = codex_screen_bridge
         self._onboarding_settings = onboarding_settings
         self._onboarding_dialog: OnboardingDialog | None = None
         self._ai_setup_dialog = None
@@ -4662,6 +4664,12 @@ class MainWindow(QMainWindow):
         detail = QLabel(objectName="homeUsageDetail")
         detail.setWordWrap(True)
         box.addWidget(detail)
+        if self._codex_screen_bridge is not None:
+            toggle = QCheckBox("在设备屏幕显示七天剩余额度（需支持的固件）",
+                               objectName="codexScreenUsageEnabled")
+            toggle.setChecked(self._codex_screen_bridge.enabled)
+            toggle.toggled.connect(self._codex_screen_bridge.set_enabled)
+            box.addWidget(toggle)
         if self._background_controller is not None:
             snapshot = self._background_controller.codex_usage_snapshot
         else:
