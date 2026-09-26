@@ -21,8 +21,7 @@ def usage(*, source="app_server", updated_at=None):
         source=source,
         updated_at=time.time() if updated_at is None else updated_at,
         buckets=(CodexQuotaBucket("codex", None, None,
-                                  CodexQuotaWindow(6, 10_080, None),
-                                  CodexQuotaWindow(25, 300, None)),),
+                                  CodexQuotaWindow(6, 10_080, None), None),),
     )
 
 
@@ -87,8 +86,7 @@ def test_bridge_sends_only_to_capable_device_and_clears_on_disable(qapp, tmp_pat
     assert len(gateway.commands) == 1
     command = gateway.commands[-1]
     assert command.message_type == 0x2C
-    assert command.payload == {"source": "codex", "weekly_remaining": 94,
-                               "five_hour_remaining": 75}
+    assert command.payload == {"source": "codex", "weekly_remaining": 94}
     ack(gateway, command)
 
     bridge.set_enabled(False)
@@ -116,7 +114,15 @@ def test_bridge_rejects_stale_or_fallback_usage(qapp, tmp_path):
     bridge.shutdown()
 
 
-def test_remaining_handles_missing_window_and_old_snapshot():
-    assert _remaining(usage()) == (94, 75)
+def test_remaining_handles_missing_weekly_window_and_old_snapshot():
+    assert _remaining(usage()) == 94
+    without_weekly = usage()
+    without_weekly = CodexUsageSnapshot(
+        status=without_weekly.status, source=without_weekly.source,
+        updated_at=without_weekly.updated_at,
+        buckets=(CodexQuotaBucket("codex", None, None,
+                                  CodexQuotaWindow(25, 300, None), None),),
+    )
+    assert _remaining(without_weekly) is None
     assert _remaining(usage(source="session_log")) is None
     assert _remaining(usage(updated_at=time.time() - 601)) is None

@@ -1047,15 +1047,6 @@ static bool read_bounded_uint8(const cJSON *value, uint8_t maximum,
     return true;
 }
 
-static bool read_quota_percent(const cJSON *value, uint8_t *output)
-{
-    if (cJSON_IsNull(value)) {
-        *output = 255u;
-        return true;
-    }
-    return read_bounded_uint8(value, 100u, output);
-}
-
 static bool read_lighting_preview_rgb(const cJSON *value,
                                       board_rgb_t *output)
 {
@@ -2259,20 +2250,18 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
             break;
         }
         const cJSON *source = cJSON_GetObjectItemCaseSensitive(request, "source");
-        uint8_t weekly = 255u, five_hour = 255u;
+        uint8_t weekly = 0u;
         if (!cJSON_IsObject(request) || !cJSON_IsString(source) ||
             strcmp(source->valuestring, "codex") != 0 ||
-            cJSON_GetArraySize(request) != (set ? 3 : 1) ||
-            (set && (!read_quota_percent(
-                cJSON_GetObjectItemCaseSensitive(request, "weekly_remaining"), &weekly) ||
-                     !read_quota_percent(
-                cJSON_GetObjectItemCaseSensitive(request, "five_hour_remaining"), &five_hour)))) {
+            cJSON_GetArraySize(request) != (set ? 2 : 1) ||
+            (set && !read_bounded_uint8(
+                cJSON_GetObjectItemCaseSensitive(request, "weekly_remaining"),
+                100u, &weekly))) {
             send_nack(request_id, command, WMP_ERROR_VALIDATION_FAILED,
                       "VALIDATION_FAILED", "invalid Codex usage snapshot");
             break;
         }
-        if (set) board_mist_ui_set_codex_usage(weekly, five_hour,
-                                                protocol_uptime_ms());
+        if (set) board_mist_ui_set_codex_usage(weekly, protocol_uptime_ms());
         else board_mist_ui_clear_codex_usage();
         snprintf(response, sizeof(response),
                  "{\"command\":\"%s\",\"result\":{\"active\":%s,\"lease_ms\":%u}}",

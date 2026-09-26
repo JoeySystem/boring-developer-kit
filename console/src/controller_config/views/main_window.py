@@ -4665,7 +4665,7 @@ class MainWindow(QMainWindow):
         detail.setWordWrap(True)
         box.addWidget(detail)
         if self._codex_screen_bridge is not None:
-            toggle = QCheckBox("在设备屏幕显示额度（需支持的自定义固件）",
+            toggle = QCheckBox("在设备屏幕显示七天剩余额度（需支持的固件）",
                                objectName="codexScreenUsageEnabled")
             toggle.setChecked(self._codex_screen_bridge.enabled)
             toggle.toggled.connect(self._codex_screen_bridge.set_enabled)

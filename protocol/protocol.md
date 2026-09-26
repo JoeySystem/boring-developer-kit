@@ -396,11 +396,12 @@ before sending these commands. Existing official firmware does not advertise it.
 `SET_CODEX_USAGE` (0x2C) accepts exactly:
 
 ```json
-{"source":"codex","weekly_remaining":94,"five_hour_remaining":null}
+{"source":"codex","weekly_remaining":94}
 ```
 
-Both percentages are integers from 0 through 100 or `null` when unavailable.
-The command displays the remaining percentages on the idle NORMAL or CODEX
+The weekly remaining percentage is an integer from 0 through 100. If Codex
+does not provide a seven-day window, the Console sends CLEAR instead. The
+command displays the seven-day remaining percentage on the idle NORMAL or CODEX
 HOME page. Other pages, Claude Code mode, and active animations retain their
 existing rendering. The data is held
 only in RAM, expires 600 seconds after the last accepted SET, and is cleared on

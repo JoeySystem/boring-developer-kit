@@ -29,7 +29,6 @@ static EXT_RAM_BSS_ATTR uint8_t s_home_icon[SCREEN_ICON_TOTAL_BYTES];
 static screen_icon_metadata_t s_home_icon_metadata;
 static uint32_t s_glyph_epoch = UINT32_MAX;
 static EXT_RAM_BSS_ATTR screen_glyph_record_t s_glyph_records[SCREEN_GLYPH_COUNT];
-/* One atomic value keeps both percentages from ever coming from different updates. */
 static atomic_uint s_codex_usage;
 static atomic_uint s_codex_usage_expires_at;
 static unsigned s_rendered_codex_usage;
@@ -37,11 +36,10 @@ static bool s_codex_usage_visible;
 
 #define CODEX_USAGE_LEASE_MS 600000u
 
-void board_mist_ui_set_codex_usage(uint8_t weekly, uint8_t five_hour,
-                                   uint32_t now_ms)
+void board_mist_ui_set_codex_usage(uint8_t weekly, uint32_t now_ms)
 {
     atomic_store(&s_codex_usage_expires_at, now_ms + CODEX_USAGE_LEASE_MS);
-    atomic_store(&s_codex_usage, 0x10000u | ((unsigned)five_hour << 8) | weekly);
+    atomic_store(&s_codex_usage, 0x100u | weekly);
 }
 
 void board_mist_ui_clear_codex_usage(void)
@@ -51,25 +49,18 @@ void board_mist_ui_clear_codex_usage(void)
 
 static bool codex_usage_active(unsigned value, uint32_t now_ms)
 {
-    return (value & 0x10000u) != 0 &&
+    return (value & 0x100u) != 0 &&
         (int32_t)(now_ms - atomic_load(&s_codex_usage_expires_at)) < 0;
 }
 
 static void render_codex_usage(unsigned value)
 {
-    char weekly[16], five_hour[16];
+    char weekly[16];
     const unsigned weekly_percent = value & 0xffu;
-    const unsigned five_hour_percent = (value >> 8) & 0xffu;
-    if (weekly_percent <= 100u)
-        snprintf(weekly, sizeof(weekly), "7D  %u%%", weekly_percent);
-    else snprintf(weekly, sizeof(weekly), "7D  --");
-    if (five_hour_percent <= 100u)
-        snprintf(five_hour, sizeof(five_hour), "5H  %u%%", five_hour_percent);
-    else snprintf(five_hour, sizeof(five_hour), "5H  --");
+    snprintf(weekly, sizeof(weekly), "%u%% LEFT", weekly_percent);
     mist_glyph_page_context_t context = {
-        .title = "CODEX LEFT",
+        .title = "CODEX 7D",
         .primary = weekly,
-        .secondary = five_hour,
     };
     (void)mist_glyph_page_build(MIST_PAGE_LOCAL_TEXT, &context,
                                 &s_mist_display.current);

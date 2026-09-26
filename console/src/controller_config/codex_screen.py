@@ -19,7 +19,7 @@ HEARTBEAT_MS = 120_000
 REFRESH_MS = 60_000
 
 
-def _remaining(snapshot: CodexUsageSnapshot) -> tuple[int | None, int | None] | None:
+def _remaining(snapshot: CodexUsageSnapshot) -> int | None:
     if (snapshot.status is not CodexUsageStatus.AVAILABLE or
             snapshot.source != "app_server" or snapshot.updated_at is None or
             time.time() - snapshot.updated_at > LEASE_MS / 1000):
@@ -27,13 +27,9 @@ def _remaining(snapshot: CodexUsageSnapshot) -> tuple[int | None, int | None] | 
     bucket = next((item for item in snapshot.buckets if item.limit_id == "codex"), None)
     if bucket is None:
         return None
-    windows = {window.window_minutes: window
-               for window in (bucket.primary, bucket.secondary) if window is not None}
-    def percent(minutes: int) -> int | None:
-        window = windows.get(minutes)
-        return round(window.remaining_percent) if window is not None else None
-    result = (percent(10_080), percent(300))
-    return result if any(value is not None for value in result) else None
+    weekly = next((window for window in (bucket.primary, bucket.secondary)
+                   if window is not None and window.window_minutes == 10_080), None)
+    return round(weekly.remaining_percent) if weekly is not None else None
 
 
 class CodexScreenBridge(QObject):
@@ -130,8 +126,8 @@ class CodexScreenBridge(QObject):
             command = Command(CLEAR_CODEX_USAGE, 0x2D, {"source": "codex"}, timeout_ms=1200)
         elif force or values != self._last_sent:
             command = Command(SET_CODEX_USAGE, 0x2C,
-                              {"source": "codex", "weekly_remaining": values[0],
-                               "five_hour_remaining": values[1]}, timeout_ms=1200)
+                              {"source": "codex", "weekly_remaining": values},
+                              timeout_ms=1200)
         else:
             return
         self._pending = (command.name, values)
