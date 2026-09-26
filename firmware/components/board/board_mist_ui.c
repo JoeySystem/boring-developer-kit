@@ -35,11 +35,19 @@ static unsigned s_rendered_codex_usage;
 static bool s_codex_usage_visible;
 
 #define CODEX_USAGE_LEASE_MS 600000u
+#define CODEX_USAGE_VALID 0x100u
+#define CODEX_USAGE_FIVE_HOUR_VALID 0x200u
+#define CODEX_USAGE_SHOW_ON_HOME 0x400u
 
-void board_mist_ui_set_codex_usage(uint8_t weekly, uint32_t now_ms)
+void board_mist_ui_set_codex_usage(uint8_t weekly, int five_hour,
+                                   bool show_on_home, uint32_t now_ms)
 {
     atomic_store(&s_codex_usage_expires_at, now_ms + CODEX_USAGE_LEASE_MS);
-    atomic_store(&s_codex_usage, 0x100u | weekly);
+    unsigned value = CODEX_USAGE_VALID | weekly;
+    if (five_hour >= 0 && five_hour <= 100)
+        value |= CODEX_USAGE_FIVE_HOUR_VALID | ((unsigned)five_hour << 16);
+    if (show_on_home) value |= CODEX_USAGE_SHOW_ON_HOME;
+    atomic_store(&s_codex_usage, value);
 }
 
 void board_mist_ui_clear_codex_usage(void)
@@ -49,8 +57,19 @@ void board_mist_ui_clear_codex_usage(void)
 
 static bool codex_usage_active(unsigned value, uint32_t now_ms)
 {
-    return (value & 0x100u) != 0 &&
+    return (value & CODEX_USAGE_VALID) != 0 &&
         (int32_t)(now_ms - atomic_load(&s_codex_usage_expires_at)) < 0;
+}
+
+bool board_mist_ui_get_codex_usage(uint32_t now_ms, uint8_t *weekly,
+                                   int *five_hour)
+{
+    const unsigned value = atomic_load(&s_codex_usage);
+    if (!codex_usage_active(value, now_ms)) return false;
+    if (weekly != NULL) *weekly = (uint8_t)(value & 0xffu);
+    if (five_hour != NULL) *five_hour = (value & CODEX_USAGE_FIVE_HOUR_VALID)
+        ? (int)((value >> 16) & 0xffu) : -1;
+    return true;
 }
 
 static void render_codex_usage(unsigned value)
@@ -285,7 +304,8 @@ static bool map_request(mist_request_t *request, const board_mist_view_t *view)
         if (view->item_count == 5) request->page = MIST_PAGE_SETTINGS;
         else if (view->item_count == 2 && view->items[0] == BOARD_MIST_ICON_MACOS &&
                  view->items[1] == BOARD_MIST_ICON_WINDOWS) request->page = MIST_PAGE_SYSTEM;
-        else if ((view->item_count == 2 || view->item_count == 3) &&
+        else if ((view->item_count == 2 || view->item_count == 3 ||
+                  view->item_count == 4) &&
                  view->items[0] == BOARD_MIST_ICON_FOCUS &&
                  view->items[1] == BOARD_MIST_ICON_SETTINGS) request->page = MIST_PAGE_FUNCTION;
         else { request->page = MIST_PAGE_ALL_CAROUSEL; context->selected = byte_value(view->a); }
@@ -442,7 +462,8 @@ const mist_glyph_scene_t *board_mist_ui_frame(uint32_t now_ms)
         return base_changed ? &s_mist_display.current : NULL;
     }
     const unsigned value = atomic_load(&s_codex_usage);
-    if (codex_usage_active(value, now_ms)) {
+    if (codex_usage_active(value, now_ms) &&
+        (value & CODEX_USAGE_SHOW_ON_HOME) != 0) {
         if (base_changed || !s_codex_usage_visible ||
             value != s_rendered_codex_usage) {
             render_codex_usage(value);

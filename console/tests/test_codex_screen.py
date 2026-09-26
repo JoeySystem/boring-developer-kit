@@ -5,7 +5,9 @@ from types import SimpleNamespace
 
 from PySide6.QtCore import QObject, QSettings, Signal
 
-from controller_config.codex_screen import CodexScreenBridge, _remaining
+from controller_config.codex_screen import (
+    CodexScreenBridge, _five_hour_remaining, _remaining,
+)
 from controller_config.codex_usage import (
     CodexQuotaBucket,
     CodexQuotaWindow,
@@ -15,13 +17,14 @@ from controller_config.codex_usage import (
 from controller_config.models import AppState
 
 
-def usage(*, source="app_server", updated_at=None):
+def usage(*, source="app_server", updated_at=None, five_hour=False):
     return CodexUsageSnapshot(
         status=CodexUsageStatus.AVAILABLE,
         source=source,
         updated_at=time.time() if updated_at is None else updated_at,
-        buckets=(CodexQuotaBucket("codex", None, None,
-                                  CodexQuotaWindow(6, 10_080, None), None),),
+        buckets=(CodexQuotaBucket(
+            "codex", None, None, CodexQuotaWindow(6, 10_080, None),
+            CodexQuotaWindow(25, 300, None) if five_hour else None),),
     )
 
 
@@ -40,14 +43,15 @@ class Monitor(QObject):
 class ViewModel(QObject):
     changed = Signal(object)
 
-    def __init__(self, supported=True):
+    def __init__(self, supported=True, menu=False):
         super().__init__()
         self.model = SimpleNamespace(
             state=AppState.READY,
             snapshot=SimpleNamespace(
                 identity={"serial": "MIST-1"}, port_name="ble:MIST-1",
                 is_read_only=False,
-                capabilities={"features": {"codex_usage_display": supported}},
+                capabilities={"features": {"codex_usage_display": supported,
+                                            "codex_quota_menu": menu}},
             ),
         )
         self.firmware_update = SimpleNamespace(blocks_editing=False)
@@ -126,3 +130,38 @@ def test_remaining_handles_missing_weekly_window_and_old_snapshot():
     assert _remaining(without_weekly) is None
     assert _remaining(usage(source="session_log")) is None
     assert _remaining(usage(updated_at=time.time() - 601)) is None
+
+
+def test_menu_receives_both_quota_windows_without_home_overlay(qapp, tmp_path):
+    settings = QSettings(str(tmp_path / "settings.ini"), QSettings.Format.IniFormat)
+    monitor, gateway, model = Monitor(), Gateway(), ViewModel(menu=True)
+    monitor.snapshot = usage(five_hour=True)
+    bridge = CodexScreenBridge(model, gateway, monitor, settings=settings)
+
+    assert bridge.menu_supported
+    assert monitor.refresh_count == 1
+    assert gateway.commands[-1].payload == {
+        "source": "codex", "weekly_remaining": 94,
+        "five_hour_remaining": 75, "show_on_home": False,
+    }
+    ack(gateway, gateway.commands[-1])
+
+    bridge.set_enabled(True)
+    assert gateway.commands[-1].payload["show_on_home"] is True
+    ack(gateway, gateway.commands[-1])
+
+    bridge.set_enabled(False)
+    assert gateway.commands[-1].name == "SET_CODEX_USAGE"
+    assert gateway.commands[-1].payload["show_on_home"] is False
+    ack(gateway, gateway.commands[-1])
+
+    monitor.snapshot = usage(source="session_log", five_hour=True)
+    monitor.changed.emit(monitor.snapshot)
+    assert gateway.commands[-1].name == "CLEAR_CODEX_USAGE"
+    bridge.shutdown()
+
+
+def test_five_hour_remaining_requires_fresh_app_server_weekly_quota():
+    assert _five_hour_remaining(usage(five_hour=True)) == 75
+    assert _five_hour_remaining(usage()) is None
+    assert _five_hour_remaining(usage(source="session_log", five_hour=True)) is None

@@ -988,6 +988,8 @@ static void send_capabilities(uint32_t request_id)
     cJSON_AddBoolToObject(features, "claude_code_status", claude_status_supported());
     cJSON_AddBoolToObject(features, "codex_usage_display",
                           codex_usage_display_supported());
+    cJSON_AddBoolToObject(features, "codex_quota_menu",
+                          codex_usage_display_supported());
     cJSON_AddBoolToObject(features, "codex_agent_focus",
                           product && codex_micro_agent_focus_supported());
     cJSON_AddBoolToObject(features, "prompt_storage",
@@ -2250,18 +2252,30 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
             break;
         }
         const cJSON *source = cJSON_GetObjectItemCaseSensitive(request, "source");
+        const cJSON *five_hour_field = cJSON_GetObjectItemCaseSensitive(
+            request, "five_hour_remaining");
+        const cJSON *home_field = cJSON_GetObjectItemCaseSensitive(
+            request, "show_on_home");
         uint8_t weekly = 0u;
+        uint8_t five_hour = 0u;
+        const bool has_five_hour = five_hour_field != NULL;
+        const bool has_home = home_field != NULL;
         if (!cJSON_IsObject(request) || !cJSON_IsString(source) ||
             strcmp(source->valuestring, "codex") != 0 ||
-            cJSON_GetArraySize(request) != (set ? 2 : 1) ||
+            cJSON_GetArraySize(request) != (set ? 2 + has_five_hour + has_home : 1) ||
             (set && !read_bounded_uint8(
                 cJSON_GetObjectItemCaseSensitive(request, "weekly_remaining"),
-                100u, &weekly))) {
+                100u, &weekly)) ||
+            (set && has_five_hour && !read_bounded_uint8(
+                five_hour_field, 100u, &five_hour)) ||
+            (set && has_home && !cJSON_IsBool(home_field))) {
             send_nack(request_id, command, WMP_ERROR_VALIDATION_FAILED,
                       "VALIDATION_FAILED", "invalid Codex usage snapshot");
             break;
         }
-        if (set) board_mist_ui_set_codex_usage(weekly, protocol_uptime_ms());
+        if (set) board_mist_ui_set_codex_usage(
+            weekly, has_five_hour ? five_hour : -1,
+            has_home ? cJSON_IsTrue(home_field) : true, protocol_uptime_ms());
         else board_mist_ui_clear_codex_usage();
         snprintf(response, sizeof(response),
                  "{\"command\":\"%s\",\"result\":{\"active\":%s,\"lease_ms\":%u}}",

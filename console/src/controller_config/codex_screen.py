@@ -32,6 +32,17 @@ def _remaining(snapshot: CodexUsageSnapshot) -> int | None:
     return round(weekly.remaining_percent) if weekly is not None else None
 
 
+def _five_hour_remaining(snapshot: CodexUsageSnapshot) -> int | None:
+    if _remaining(snapshot) is None:
+        return None
+    bucket = next((item for item in snapshot.buckets if item.limit_id == "codex"), None)
+    if bucket is None:
+        return None
+    five_hour = next((window for window in (bucket.primary, bucket.secondary)
+                      if window is not None and window.window_minutes == 300), None)
+    return round(five_hour.remaining_percent) if five_hour is not None else None
+
+
 class CodexScreenBridge(QObject):
     changed = Signal()
 
@@ -73,6 +84,13 @@ class CodexScreenBridge(QObject):
                 isinstance(features, dict) and
                 features.get("codex_usage_display") is True)
 
+    @property
+    def menu_supported(self) -> bool:
+        snapshot = self._view_model.model.snapshot
+        features = snapshot.capabilities.get("features") if snapshot is not None else None
+        return self.supported and isinstance(features, dict) and (
+            features.get("codex_quota_menu") is True)
+
     def set_enabled(self, enabled: bool) -> None:
         self._enabled = bool(enabled)
         self._settings.setValue(SETTING_KEY, self._enabled)
@@ -109,7 +127,7 @@ class CodexScreenBridge(QObject):
             self._flush(force=True)
 
     def _refresh_usage(self) -> None:
-        if self._enabled and self.supported:
+        if (self._enabled or self.menu_supported) and self.supported:
             self._monitor.refresh()
 
     def _flush(self, *, force: bool = False) -> None:
@@ -119,14 +137,22 @@ class CodexScreenBridge(QObject):
             return
         if self._usage.status is CodexUsageStatus.LOADING:
             return
-        values = _remaining(self._usage) if self._enabled else None
+        weekly = _remaining(self._usage)
+        values = None
+        if weekly is not None and (self._enabled or self.menu_supported):
+            values = {"source": "codex", "weekly_remaining": weekly}
+            if self.menu_supported:
+                values["show_on_home"] = self._enabled
+                five_hour = _five_hour_remaining(self._usage)
+                if five_hour is not None:
+                    values["five_hour_remaining"] = five_hour
         if values is None:
             if self._last_sent is None:
                 return
             command = Command(CLEAR_CODEX_USAGE, 0x2D, {"source": "codex"}, timeout_ms=1200)
         elif force or values != self._last_sent:
             command = Command(SET_CODEX_USAGE, 0x2C,
-                              {"source": "codex", "weekly_remaining": values},
+                              values,
                               timeout_ms=1200)
         else:
             return
