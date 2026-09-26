@@ -24,6 +24,12 @@ console/.venv/Scripts/python.exe -m controller_config --demo ready
 
 运行扩展只需要仓库根目录的 SDK 和 `examples/extensions/`，不需要复制进 `console/`。脚本使用控制台注入的 API 地址，不要硬编码官方宿主的本地服务名。
 
+## 在设备屏幕显示 Codex 剩余额度
+
+macOS 社区版控制台连接到支持 `codex_usage_display` 能力的 MIST Matrix12 Power V2 自定义固件后，在首页 Codex 额度卡片勾选“在设备屏幕显示额度”。控制台每分钟读取本机 Codex app-server 的五小时和七天额度，通过当前已认证的 USB 或蓝牙配置连接发送；屏幕在 NORMAL/CODEX 空闲首页显示剩余百分比。缺少某个窗口时显示 `--`，失去新鲜数据或关闭选项时清除，十分钟未收到更新也会自动恢复原首页。
+
+该功能需要本仓库中固件和控制台的配套构建；已安装的官方控制台与官方固件不会因更新源码而自动获得此功能。先按[固件 DIY 边界](../firmware/DIY-GUIDE.md)完成编译及恢复条件检查，再考虑在实体设备安装。社区版控制台可按上面的命令从源码运行；不要同时运行官方控制台占用同一设备会话。
+
 ## 公开适配与认证
 
 - 系统字体替换内部 BORING 5R 字库，不附官方图标；窗口标记 Community。`digital_font.py` 和 `Boring5RLabel` 保留调用入口，字体绘制实现不同。

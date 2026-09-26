@@ -153,6 +153,8 @@ Requests use flags `0x00`. Every valid request produces either `ACK` with flags
 | `0x29` | `CLEAR_AGENT_STATUS` | Clear the Claude Code status source, idempotently |
 | `0x2A` | `NORMAL_AGENT_BEHAVIOR_GET` | Read the device-wide NORMAL Agent-key choice |
 | `0x2B` | `NORMAL_AGENT_BEHAVIOR_SET` | Persist and apply the device-wide NORMAL Agent-key choice |
+| `0x2C` | `SET_CODEX_USAGE` | Show a volatile Codex quota snapshot on the idle MIST screen |
+| `0x2D` | `CLEAR_CODEX_USAGE` | Clear the volatile Codex quota snapshot |
 | `0x30` | `FACTORY_DEFAULT` | Current `base_generation` and confirmation token |
 | `0x40` | `FW_BEGIN` | Declare image identity, version, size and SHA-256 |
 | `0x41` | `FW_DATA` | Sequential base64 image chunk and byte offset |
@@ -384,6 +386,36 @@ not that existing Agent controls are disabled. The macOS helper foregrounds
 ChatGPT only in response to a press; completion/status changes alone do not steal
 focus. This is not permanent window pinning and does not imply host task IDs are
 available through WMP.
+
+### Codex quota on the MIST screen
+
+`CAPABILITIES.features.codex_usage_display` is `true` only on a MIST Matrix12
+Power V2 build implementing this extension. A Console must check the capability
+before sending these commands. Existing official firmware does not advertise it.
+
+`SET_CODEX_USAGE` (0x2C) accepts exactly:
+
+```json
+{"source":"codex","weekly_remaining":94,"five_hour_remaining":null}
+```
+
+Both percentages are integers from 0 through 100 or `null` when unavailable.
+The command displays the remaining percentages on the idle NORMAL or CODEX
+HOME page. Other pages, Claude Code mode, and active animations retain their
+existing rendering. The data is held
+only in RAM, expires 600 seconds after the last accepted SET, and is cleared on
+protocol session reset or reboot. Each SET needs a fresh request ID to renew
+the lease. `CLEAR_CODEX_USAGE` (0x2D) accepts exactly `{"source":"codex"}` and
+clears the display idempotently. Both commands ACK with
+`{"active":true|false,"lease_ms":600000}` in `result`. Unsupported targets
+return `READ_ONLY`; invalid payloads return `VALIDATION_FAILED`.
+
+The Console checks the local Codex app-server every 60 seconds, sends a full
+snapshot when values change and every 120 seconds while enabled, connected,
+and the app-server has fresh data. It sends
+CLEAR on disable, unavailable data, and orderly exit. This feature does not
+write device settings or change the Codex input transport. It works over the
+Console's authenticated USB or BLE configuration connection.
 
 ### Claude Code status bridge (USB CDC)
 

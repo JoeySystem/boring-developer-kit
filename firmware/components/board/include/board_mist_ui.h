@@ -67,3 +67,8 @@ void board_mist_ui_render_scene_strip(const mist_glyph_scene_t *scene,
 bool board_mist_ui_request(const board_mist_view_t *view, uint32_t now_ms);
 const mist_glyph_scene_t *board_mist_ui_frame(uint32_t now_ms);
 void board_mist_ui_finish_motion(void);
+
+/* Volatile host quota overlay. 255 means that a window is unavailable. */
+void board_mist_ui_set_codex_usage(uint8_t weekly, uint8_t five_hour,
+                                   uint32_t now_ms);
+void board_mist_ui_clear_codex_usage(void);

@@ -17,6 +17,7 @@
 
 #include "cJSON.h"
 #include "board.h"
+#include "board_mist_ui.h"
 #include "codex_micro.h"
 #include "claude_status.h"
 #include "claude_status_codec.h"
@@ -194,6 +195,15 @@ static bool screen_icon_supported(void)
 {
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
     return screen_icon_store_ready();
+#else
+    return false;
+#endif
+}
+
+static bool codex_usage_display_supported(void)
+{
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    return true;
 #else
     return false;
 #endif
@@ -976,6 +986,8 @@ static void send_capabilities(uint32_t request_id)
                        CODEX_MICRO_KEY_LAYOUT_MATRIX12);
     cJSON_AddBoolToObject(features, "firmware_update", product);
     cJSON_AddBoolToObject(features, "claude_code_status", claude_status_supported());
+    cJSON_AddBoolToObject(features, "codex_usage_display",
+                          codex_usage_display_supported());
     cJSON_AddBoolToObject(features, "codex_agent_focus",
                           product && codex_micro_agent_focus_supported());
     cJSON_AddBoolToObject(features, "prompt_storage",
@@ -1033,6 +1045,15 @@ static bool read_bounded_uint8(const cJSON *value, uint8_t maximum,
     }
     *output = (uint8_t)value->valueint;
     return true;
+}
+
+static bool read_quota_percent(const cJSON *value, uint8_t *output)
+{
+    if (cJSON_IsNull(value)) {
+        *output = 255u;
+        return true;
+    }
+    return read_bounded_uint8(value, 100u, output);
 }
 
 static bool read_lighting_preview_rgb(const cJSON *value,
@@ -2228,6 +2249,37 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
         send_frame(WMP_MSG_ACK, WMP_FLAG_RESPONSE, request_id, response);
         break;
     }
+    case WMP_MSG_SET_CODEX_USAGE:
+    case WMP_MSG_CLEAR_CODEX_USAGE: {
+        const bool set = message_type == WMP_MSG_SET_CODEX_USAGE;
+        const char *command = set ? "SET_CODEX_USAGE" : "CLEAR_CODEX_USAGE";
+        if (!codex_usage_display_supported()) {
+            send_nack(request_id, command, WMP_ERROR_READ_ONLY, "READ_ONLY",
+                      "Codex usage display is not supported on this target");
+            break;
+        }
+        const cJSON *source = cJSON_GetObjectItemCaseSensitive(request, "source");
+        uint8_t weekly = 255u, five_hour = 255u;
+        if (!cJSON_IsObject(request) || !cJSON_IsString(source) ||
+            strcmp(source->valuestring, "codex") != 0 ||
+            cJSON_GetArraySize(request) != (set ? 3 : 1) ||
+            (set && (!read_quota_percent(
+                cJSON_GetObjectItemCaseSensitive(request, "weekly_remaining"), &weekly) ||
+                     !read_quota_percent(
+                cJSON_GetObjectItemCaseSensitive(request, "five_hour_remaining"), &five_hour)))) {
+            send_nack(request_id, command, WMP_ERROR_VALIDATION_FAILED,
+                      "VALIDATION_FAILED", "invalid Codex usage snapshot");
+            break;
+        }
+        if (set) board_mist_ui_set_codex_usage(weekly, five_hour,
+                                                protocol_uptime_ms());
+        else board_mist_ui_clear_codex_usage();
+        snprintf(response, sizeof(response),
+                 "{\"command\":\"%s\",\"result\":{\"active\":%s,\"lease_ms\":%u}}",
+                 command, set ? "true" : "false", 600000u);
+        send_frame(WMP_MSG_ACK, WMP_FLAG_RESPONSE, request_id, response);
+        break;
+    }
     case WMP_MSG_FACTORY_DEFAULT: {
         if (!board_is_product_target()) {
             send_nack(request_id, "FACTORY_DEFAULT", WMP_ERROR_READ_ONLY, "READ_ONLY",
@@ -2528,6 +2580,7 @@ void config_protocol_reset(void)
     s_ble_name_write.pending = false;
     screen_icon_protocol_reset_session();
     claude_status_clear();
+    board_mist_ui_clear_codex_usage();
     calibration_end();
     publish_diagnostic_capture_request(
         CONFIG_PROTOCOL_DIAGNOSTIC_CAPTURE_STOP);
