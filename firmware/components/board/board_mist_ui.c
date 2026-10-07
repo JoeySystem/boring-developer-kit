@@ -4,6 +4,7 @@
 #include "screen_glyph_store.h"
 
 #include <stdio.h>
+#include <stdatomic.h>
 #include <string.h>
 
 #ifdef ESP_PLATFORM
@@ -28,6 +29,63 @@ static EXT_RAM_BSS_ATTR uint8_t s_home_icon[SCREEN_ICON_TOTAL_BYTES];
 static screen_icon_metadata_t s_home_icon_metadata;
 static uint32_t s_glyph_epoch = UINT32_MAX;
 static EXT_RAM_BSS_ATTR screen_glyph_record_t s_glyph_records[SCREEN_GLYPH_COUNT];
+static atomic_uint s_codex_usage;
+static atomic_uint s_codex_usage_expires_at;
+static unsigned s_rendered_codex_usage;
+static bool s_codex_usage_visible;
+
+#define CODEX_USAGE_LEASE_MS 600000u
+#define CODEX_USAGE_VALID 0x100u
+#define CODEX_USAGE_FIVE_HOUR_VALID 0x200u
+#define CODEX_USAGE_SHOW_ON_HOME 0x400u
+
+void board_mist_ui_set_codex_usage(uint8_t weekly, int five_hour,
+                                   bool show_on_home, uint32_t now_ms)
+{
+    atomic_store(&s_codex_usage_expires_at, now_ms + CODEX_USAGE_LEASE_MS);
+    unsigned value = CODEX_USAGE_VALID | weekly;
+    if (five_hour >= 0 && five_hour <= 100)
+        value |= CODEX_USAGE_FIVE_HOUR_VALID | ((unsigned)five_hour << 16);
+    if (show_on_home) value |= CODEX_USAGE_SHOW_ON_HOME;
+    atomic_store(&s_codex_usage, value);
+}
+
+void board_mist_ui_clear_codex_usage(void)
+{
+    atomic_store(&s_codex_usage, 0);
+}
+
+static bool codex_usage_active(unsigned value, uint32_t now_ms)
+{
+    return (value & CODEX_USAGE_VALID) != 0 &&
+        (int32_t)(now_ms - atomic_load(&s_codex_usage_expires_at)) < 0;
+}
+
+bool board_mist_ui_get_codex_usage(uint32_t now_ms, uint8_t *weekly,
+                                   int *five_hour)
+{
+    const unsigned value = atomic_load(&s_codex_usage);
+    if (!codex_usage_active(value, now_ms)) return false;
+    if (weekly != NULL) *weekly = (uint8_t)(value & 0xffu);
+    if (five_hour != NULL) *five_hour = (value & CODEX_USAGE_FIVE_HOUR_VALID)
+        ? (int)((value >> 16) & 0xffu) : -1;
+    return true;
+}
+
+static void render_codex_usage(unsigned value)
+{
+    char weekly[16];
+    const unsigned weekly_percent = value & 0xffu;
+    snprintf(weekly, sizeof(weekly), "%u%% LEFT", weekly_percent);
+    mist_glyph_page_context_t context = {
+        .title = "CODEX 7D",
+        .primary = weekly,
+    };
+    (void)mist_glyph_page_build(MIST_PAGE_LOCAL_TEXT, &context,
+                                &s_mist_display.current);
+    s_rendered_codex_usage = value;
+    s_codex_usage_visible = true;
+}
 
 static void refresh_glyphs(void)
 {
@@ -246,7 +304,8 @@ static bool map_request(mist_request_t *request, const board_mist_view_t *view)
         if (view->item_count == 5) request->page = MIST_PAGE_SETTINGS;
         else if (view->item_count == 2 && view->items[0] == BOARD_MIST_ICON_MACOS &&
                  view->items[1] == BOARD_MIST_ICON_WINDOWS) request->page = MIST_PAGE_SYSTEM;
-        else if ((view->item_count == 2 || view->item_count == 3) &&
+        else if ((view->item_count == 2 || view->item_count == 3 ||
+                  view->item_count == 4) &&
                  view->items[0] == BOARD_MIST_ICON_FOCUS &&
                  view->items[1] == BOARD_MIST_ICON_SETTINGS) request->page = MIST_PAGE_FUNCTION;
         else { request->page = MIST_PAGE_ALL_CAROUSEL; context->selected = byte_value(view->a); }
@@ -342,6 +401,7 @@ void board_mist_ui_render_scene_strip(const mist_glyph_scene_t *scene,
                                      uint16_t *pixels, int y, int lines)
 {
     if (scene != &s_mist_display.current || !normal_idle_home() ||
+        s_codex_usage_visible ||
         !s_home_icon_metadata.custom) {
         mist_glyph_render_band(scene, pixels, 128, y, lines);
         return;
@@ -394,8 +454,30 @@ const mist_glyph_scene_t *board_mist_ui_frame(uint32_t now_ms)
         s_mist_display.dirty = false;
         return &s_mist_display.current;
     }
-    return mist_display_model_frame(&s_mist_display, now_ms, &s_mist_display.current)
-        ? &s_mist_display.current : NULL;
+    const bool base_changed = mist_display_model_frame(
+        &s_mist_display, now_ms, &s_mist_display.current);
+    if (s_mist_display.page != MIST_PAGE_HOME || s_mist_display.motion.active ||
+        s_mist_display.context.mode == MIST_MODE_CLAUDE_CODE) {
+        s_codex_usage_visible = false;
+        return base_changed ? &s_mist_display.current : NULL;
+    }
+    const unsigned value = atomic_load(&s_codex_usage);
+    if (codex_usage_active(value, now_ms) &&
+        (value & CODEX_USAGE_SHOW_ON_HOME) != 0) {
+        if (base_changed || !s_codex_usage_visible ||
+            value != s_rendered_codex_usage) {
+            render_codex_usage(value);
+            return &s_mist_display.current;
+        }
+        return NULL;
+    }
+    if (s_codex_usage_visible) {
+        s_codex_usage_visible = false;
+        (void)mist_glyph_page_build(MIST_PAGE_HOME, &s_mist_display.context,
+                                    &s_mist_display.current);
+        return &s_mist_display.current;
+    }
+    return base_changed ? &s_mist_display.current : NULL;
 }
 
 void board_mist_ui_finish_motion(void)

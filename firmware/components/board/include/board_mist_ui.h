@@ -67,3 +67,10 @@ void board_mist_ui_render_scene_strip(const mist_glyph_scene_t *scene,
 bool board_mist_ui_request(const board_mist_view_t *view, uint32_t now_ms);
 const mist_glyph_scene_t *board_mist_ui_frame(uint32_t now_ms);
 void board_mist_ui_finish_motion(void);
+
+/* Volatile host-provided quota; percentages are remaining, never token counts. */
+void board_mist_ui_set_codex_usage(uint8_t weekly, int five_hour,
+                                   bool show_on_home, uint32_t now_ms);
+bool board_mist_ui_get_codex_usage(uint32_t now_ms, uint8_t *weekly,
+                                   int *five_hour);
+void board_mist_ui_clear_codex_usage(void);

@@ -36,6 +36,7 @@ from controller_config.protocol.device_auth import load_default_authenticator
 from controller_config.build_identity import load_build_identity
 from controller_config.claude_usage import ClaudeUsageMonitor
 from controller_config.codex_usage import CodexUsageMonitor
+from controller_config.codex_screen import CodexScreenBridge
 from controller_config.background_helper import (
     ApplicationInstanceCoordinator,
     MacLaunchAgent,
@@ -180,6 +181,10 @@ def main(argv: list[str] | None = None) -> int:
         else None
     )
     codex_usage = CodexUsageMonitor() if sys.platform == "darwin" else None
+    codex_screen = (
+        CodexScreenBridge(view_model, gateway, codex_usage, settings=ui_settings)
+        if codex_usage is not None and not args.demo else None
+    )
     claude_usage = ClaudeUsageMonitor() if sys.platform == "darwin" else None
     background = PromptBackgroundController(
         app,
@@ -194,6 +199,7 @@ def main(argv: list[str] | None = None) -> int:
         view_model,
         language_manager=language_manager,
         background_controller=background,
+        codex_screen_bridge=codex_screen,
         onboarding_settings=ui_settings,
         build_identity=build_identity,
     )
@@ -216,6 +222,8 @@ def main(argv: list[str] | None = None) -> int:
     from controller_config.views.device_silhouette import DeviceModelCanvas
     background.attach_window(window)
     instance.activate_requested.connect(background.show_window)
+    if codex_screen is not None:
+        app.aboutToQuit.connect(codex_screen.shutdown)
     app.aboutToQuit.connect(view_model.shutdown)
     if codex_usage is not None:
         app.aboutToQuit.connect(codex_usage.stop)

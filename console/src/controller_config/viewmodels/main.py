@@ -2383,6 +2383,8 @@ class MainViewModel(QObject):
             return
         if command_name in {"SET_AGENT_STATUS", "CLEAR_AGENT_STATUS"}:
             return
+        if command_name in {"SET_CODEX_USAGE", "CLEAR_CODEX_USAGE"}:
+            return
         if command_name in {SET_LIGHTING_PREVIEW, CLEAR_LIGHTING_PREVIEW}:
             self._on_lighting_preview_command_completed(command_name, payload)
             return
@@ -2484,6 +2486,8 @@ class MainViewModel(QObject):
         if self.screen_icon.failed(command_name, error):
             return
         if command_name in {"SET_AGENT_STATUS", "CLEAR_AGENT_STATUS"}:
+            return
+        if command_name in {"SET_CODEX_USAGE", "CLEAR_CODEX_USAGE"}:
             return
         if command_name in {SET_LIGHTING_PREVIEW, CLEAR_LIGHTING_PREVIEW}:
             self._on_lighting_preview_command_failed(command_name, error)

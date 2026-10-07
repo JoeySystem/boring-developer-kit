@@ -455,12 +455,13 @@ static void build_battery(const mist_glyph_page_context_t *context,
 
 static unsigned function_item_count(const mist_glyph_page_context_t *context)
 {
-    return context->item_count == 3 ? 3u : 2u;
+    return context->item_count >= 2 && context->item_count <= 4
+        ? context->item_count : 2u;
 }
 
 static uint8_t function_icon(unsigned selected)
 {
-    static const uint8_t resources[] = {0, 1, 27};
+    static const uint8_t resources[] = {0, 1, 27, 23};
     return resources[selected];
 }
 
@@ -485,7 +486,8 @@ static void build_carousel(mist_glyph_page_id_t page,
     draw_icon_centered(scene, resource, 11, gray_level(242));
     if (page == MIST_PAGE_FUNCTION)
         add_overlay_centered(scene, resource == 0 ? "FOCUS"
-                             : resource == 1 ? "SETTINGS" : "BATTERY", 94,
+                             : resource == 1 ? "SETTINGS"
+                             : resource == 27 ? "BATTERY" : "CODEX", 94,
                              gray_level(204));
     if (page == MIST_PAGE_ALL_CAROUSEL) {
         static const char *const labels[] = {
