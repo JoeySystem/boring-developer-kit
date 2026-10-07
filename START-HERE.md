@@ -1,5 +1,9 @@
 # 从这里开始
 
+## 设备无法启动，需要恢复
+
+先看 [恢复工具使用说明](recovery-tool/README.md)，下载独立 DMG；无法运行或恢复失败时，使用 [AI 提示词](recovery-tool/AI-RECOVERY-PROMPT.md) 配合源码定位。USB 完全不响应时请联系售后。
+
 ## 只想使用设备
 
 下载 [官方 macOS 或 Windows 安装包](docs/install-console.md)。不需要编译源码。
@@ -16,6 +20,6 @@
 
 ## 固件
 
-本次保留 preview.9 固件源码参考（20260916.01），未发布新固件。源码 ZIP 不能当作维护包导入。请先阅读 [DIY 边界](firmware/DIY-GUIDE.md)。
+原 firmware/ 保留 preview.9 固件源码参考；20261007.01 恢复固件源码在 recovery-firmware/。源码 ZIP 不能当作维护包导入。请先阅读 [DIY 边界](firmware/DIY-GUIDE.md)。
 
 原创部分使用 [非商业许可](LICENSING.md)。验证与已知限制见 [本次记录](docs/verification-console-0.2.1.md)。

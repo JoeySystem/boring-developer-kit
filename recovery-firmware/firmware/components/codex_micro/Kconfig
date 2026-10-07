@@ -1,0 +1,24 @@
+menu "Codex Micro compatibility"
+
+    config CODEX_MICRO_BLE_ENABLED
+        bool "Enable the unofficial Codex Micro BLE compatibility transport"
+        default n
+        depends on BT_ENABLED && BT_BLUEDROID_ENABLED && BT_BLE_ENABLED
+        help
+            Adds a composite BLE HID transport with standard keyboard,
+            consumer and mouse reports plus the vendor channel understood by
+            ChatGPT Desktop. USB HID + CDC remains enabled and has priority
+            for standard input. This compatibility protocol is unofficial and
+            may change when the desktop application changes.
+
+    config CODEX_MICRO_USB_ENABLED
+        bool "Enable the unofficial Codex Micro native-USB vendor channel"
+        default n
+        depends on CODEX_MICRO_BLE_ENABLED
+        help
+            Extends the native USB composite HID interface with the Codex
+            vendor Input/Output Report ID 6 and the compatibility VID/PID.
+            The BLE compatibility runtime remains available as a fallback,
+            while Codex vendor traffic prefers USB whenever it is mounted.
+
+endmenu

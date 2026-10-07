@@ -2,13 +2,15 @@
 
 让用户通过扩展、设备协议、控制台与固件源码，定义自己的 BORING 使用方式。
 
+**MIST 无法正常启动？** [下载 20261007.01 USB 恢复工具（M 系列 Mac）](https://github.com/JoeySystem/boring-developer-kit/releases/tag/mist-recovery-20261007.01) · [使用说明](recovery-tool/README.md) · [交给 AI 的恢复提示词](recovery-tool/AI-RECOVERY-PROMPT.md)。附 DMG、工具源码及配套固件源码；需要设备仍能响应 USB 通信，不能替代硬件维修。
+
 **固件源码已公开：[编译入口](firmware/README.md) · [DIY 可改、慎改与禁止改动范围](firmware/DIY-GUIDE.md) · [维护包格式与导入条件](firmware/PACKAGE-FORMAT.md)。USB、认证、更新、启动、分区、电源和存储底层坚决不要改。只有设备仍可正常连接、认证和更新时，才具备控制台恢复官方固件的前提。**
 
 **控制台公开源码已更新至 0.2.1，SDK 1.1.0 / API 1.1。**
 
 - **下载源码开发包：**[v0.1.0-preview.10](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.10)，含控制台、SDK、四个扩展示例和协议资料。
 - **从 GitHub 下载安装包：**[macOS Apple Silicon 0.2.1](https://github.com/JoeySystem/boring-developer-kit/releases/download/v0.1.0-preview.10/BORING-Console-0.2.1-macOS-arm64.dmg) · [Windows x86_64 0.2.1](https://github.com/JoeySystem/boring-developer-kit/releases/download/v0.1.0-preview.10/BORING-Console-0.2.1-Windows-x86_64-Setup.exe) · [安装说明](docs/install-console.md)。
-- **固件：**保留 preview.9 的源码参考与[20260916.01 维护包说明](docs/official-firmware-20260916.01.md)，本次没有更新固件。
+- **固件：**保留 preview.9 的源码参考与[20260916.01 维护包说明](docs/official-firmware-20260916.01.md)，另有上方独立发布的售后恢复固件。
 
 社区构建使用独立设置、系统字体和简化设备示意，不附内部品牌模型或演示动画，也不订阅官方自动更新。原创内容采用 **PolyForm Noncommercial 1.0.0**，商业复用需另行授权。
 

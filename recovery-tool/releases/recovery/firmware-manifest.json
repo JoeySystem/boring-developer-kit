@@ -1,0 +1,18 @@
+{
+  "format": "wmp-firmware-update-v1",
+  "product_id": "wired-macro-pad-v1",
+  "hardware_id": "WMP-S3-MATRIX12-POWER-V2",
+  "version": "0.3.0-alpha.1",
+  "image": "wmp-matrix12-power-v2-codex-usb-v0.3.0-alpha.1-20261007.01-gae3b06fb-dirty.bin",
+  "size": 1155104,
+  "sha256": "b6e4d35dafc3f55cfb7b2953797d975059e53877951f09944c6e1bcae008eff7",
+  "build_target": "matrix12-power-v2-codex-usb",
+  "build_id": "20261007.01-gae3b06fb-dirty",
+  "git_commit": "ae3b06fbe40a3140016202440b9e8d3aee3a14a3",
+  "git_dirty": true,
+  "validation_state": "built",
+  "built_at": "2026-10-07T11:48:56Z",
+  "minimum_app_version": "0.2.1",
+  "release_notes": "官方售后恢复固件：修复首次电量读取失败造成的错误关机状态，以及启动自检灯光计时。已验证样机启动和 Console 0.2.1 USB 配置读写；蓝牙兼容问题仍在调查。请通过 USB 使用。",
+  "signature": "ed25519-v1:3b9DJgz0VY59/nF3aSiuJfHU8y+XXYYlcw1wnZ79ytPWgh17Pyj9lZKOOep9STzW3NEw5qewYRxA/B8Y8UWMDw=="
+}

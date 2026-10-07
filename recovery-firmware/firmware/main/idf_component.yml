@@ -1,0 +1,5 @@
+dependencies:
+  idf: ">=6.0.2,<6.1.0"
+  espressif/cjson: "==1.7.19"
+  espressif/esp_tinyusb: "==2.0.0"
+  espressif/esp_secure_cert_mgr: "==2.9.3"

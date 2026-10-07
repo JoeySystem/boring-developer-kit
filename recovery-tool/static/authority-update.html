@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BORING MIST 固件恢复</title>
+  <link rel="stylesheet" href="/authority-update.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand-mark" aria-hidden="true">⚡</div>
+      <div>
+        <p class="eyebrow">BORING SERVICE TOOL</p>
+        <h1>恢复你的 BORING MIST</h1>
+      </div>
+      <button id="exitButton" class="quiet-button" type="button">退出工具</button>
+    </header>
+
+    <section class="notice" aria-label="工具边界">
+      <strong>先退出 Boring Console，再连接 USB</strong>
+      <span>即使屏幕不亮也可以尝试检测。工具会检查 USB 通信，恢复固件并登记官方来源；保留设备身份和个人设置，不需要拆机。</span>
+    </section>
+
+    <section class="workspace">
+      <article class="authority-card">
+        <p class="eyebrow">内置官方恢复固件</p>
+        <div class="authority-row">
+          <div>
+            <h2 id="releaseId">正在读取…</h2>
+            <p id="buildId" class="muted">—</p>
+          </div>
+          <span id="validationState" class="badge">校验中</span>
+        </div>
+      </article>
+
+      <article id="deviceCard" class="device-card waiting">
+        <div class="device-icon" aria-hidden="true">◎</div>
+        <div class="device-copy">
+          <p class="eyebrow">当前设备</p>
+          <h2 id="deviceTitle">请接入 1 台设备</h2>
+          <p id="deviceMessage" class="muted">工具会自动扫描。</p>
+          <p id="devicePort" class="device-port" hidden></p>
+        </div>
+        <button id="scanButton" class="quiet-button" type="button">重新扫描</button>
+      </article>
+
+      <article id="progressCard" class="progress-card" hidden>
+        <div class="progress-heading">
+          <div>
+            <p class="eyebrow">更新进度</p>
+            <h2 id="progressTitle">准备更新</h2>
+          </div>
+          <div class="progress-numbers">
+            <strong id="progressPercent">0%</strong>
+            <span id="elapsedTime">已用时 00:00</span>
+          </div>
+        </div>
+        <div class="progress-track" aria-hidden="true"><i id="progressFill"></i></div>
+        <p id="progressMessage" class="muted">请保持 USB 连接。</p>
+        <ol id="eventList" class="event-list"></ol>
+      </article>
+
+      <article id="resultCard" class="result-card" hidden>
+        <p class="eyebrow">更新结果</p>
+        <h2 id="resultTitle"></h2>
+        <p id="resultMessage" class="muted"></p>
+        <dl id="resultDetails"></dl>
+      </article>
+
+      <div id="errorBanner" class="error-banner" role="alert" hidden></div>
+
+      <button id="primaryButton" class="primary-button" type="button" disabled>
+        等待设备
+      </button>
+      <p class="shortcut-hint">恢复过程中请保持 USB 连接。未检测到设备或恢复失败时，请将诊断文件发给售后。</p>
+      <a class="quiet-button" href="/api/authority-update/report" download>保存诊断信息</a>
+    </section>
+  </main>
+  <script src="/authority-update.js"></script>
+</body>
+</html>

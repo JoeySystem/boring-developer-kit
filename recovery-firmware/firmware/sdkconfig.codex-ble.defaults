@@ -1,0 +1,19 @@
+# Optional Codex Micro compatibility variant. The normal rev-a target does not
+# include this file and therefore keeps Bluetooth disabled.
+CONFIG_BT_ENABLED=y
+CONFIG_BT_BLUEDROID_ENABLED=y
+# WMP1 authentication runs synchronously on BTC_TASK. The default 3072-byte
+# stack overflows while serializing the device certificate (verified in the
+# 20260909.08 core dump); reserve the same 8 KiB used by the USB parser task.
+CONFIG_BT_BTC_TASK_STACK_SIZE=8192
+CONFIG_BT_BLE_ENABLED=y
+CONFIG_BT_BLE_42_FEATURES_SUPPORTED=y
+CONFIG_BT_BLE_42_ADV_EN=y
+CONFIG_BT_BLE_42_SCAN_EN=n
+CONFIG_BT_BLE_50_FEATURES_SUPPORTED=n
+CONFIG_BT_NIMBLE_ENABLED=n
+CONFIG_BT_SMP_MAX_BONDS=3
+CONFIG_BT_CLASSIC_ENABLED=n
+CONFIG_CODEX_MICRO_BLE_ENABLED=y
+# Refresh bonded hosts after an OTA adds the WMP service after the HID database.
+CONFIG_BT_GATTS_SEND_SERVICE_CHANGE_MANUAL=y

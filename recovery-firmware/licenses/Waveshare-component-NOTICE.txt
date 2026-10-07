@@ -1,0 +1,3 @@
+waveshare/esp_lcd_st7735 2.0.0
+Component manifest declares MIT; upstream repository includes the separately retained Apache-2.0 license.
+Source: https://github.com/waveshareteam/Waveshare-ESP32-components/tree/9daffb7168b3c093a330da700988a22092294eef/display/lcd/esp_lcd_st7735

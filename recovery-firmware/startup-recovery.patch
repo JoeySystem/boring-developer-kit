@@ -1,0 +1,238 @@
+diff --git a/software/firmware/components/action_engine/action_engine.c b/software/firmware/components/action_engine/action_engine.c
+index f194b9e1..a0a2a055 100644
+--- a/software/firmware/components/action_engine/action_engine.c
++++ b/software/firmware/components/action_engine/action_engine.c
+@@ -368,14 +368,20 @@ static bool should_start_usb_charge_session(void)
+         return false;
+     }
+     /* A battery-backed ON session may restart during USB power handover.
+-     * Do not turn that restart into a new OFF session. Gauge presence or
+-     * successful I2C alone is insufficient: require a usable single-cell
+-     * voltage as well. Explicit user OFF always remains OFF. */
++     * Do not turn a missing first sample into a new OFF session. When a
++     * sample is available, retain the existing usable-cell check. Explicit
++     * user OFF always remains OFF. */
+     fuel_gauge_sample_t battery;
+-    if (config_store_get_user_powered_on() &&
+-        fuel_gauge_latest(&battery) && battery.present &&
+-        battery.voltage_v >= 2.5f && battery.voltage_v <= 4.5f) {
+-        return false;
++    if (config_store_get_user_powered_on()) {
++        /* An unavailable first sample is not a user OFF request. Resume the
++         * saved ON session; the normal gauge poll will retry independently. */
++        if (!fuel_gauge_latest(&battery)) {
++            return false;
++        }
++        if (battery.present && battery.voltage_v >= 2.5f &&
++            battery.voltage_v <= 4.5f) {
++            return false;
++        }
+     }
+     /* Persist this new off session as well, so an OTA from USB standby
+      * restores standby instead of the old pre-power-loss state. */
+@@ -1648,6 +1654,11 @@ static void update_under_key_self_test(void)
+     if (!s_under_key_self_test_active) {
+         return;
+     }
++    /* Start the clock on the first main-loop frame, after boot services have
++     * initialized, so their startup time cannot consume the LED sequence. */
++    if (s_under_key_self_test_last_step == SIZE_MAX) {
++        s_under_key_self_test_started_at = xTaskGetTickCount();
++    }
+     under_key_self_test_rgb_t rendered[UNDER_KEY_SELF_TEST_LED_COUNT];
+     const size_t led_count = board_under_key_rgb_count();
+     const uint32_t elapsed_ms =
+@@ -4408,7 +4419,6 @@ esp_err_t action_engine_init(void)
+     reset_function_key_gesture();
+     reset_prompt_palette_key_gesture();
+     usb_service_set_standard_enabled(true);
+-    update_under_key_self_test();
+     enter_initial_page();
+     return ESP_OK;
+ }
+diff --git a/software/firmware/docs/user-operation-guide.md b/software/firmware/docs/user-operation-guide.md
+index 929a6cdd..b84bd097 100644
+--- a/software/firmware/docs/user-operation-guide.md
++++ b/software/firmware/docs/user-operation-guide.md
+@@ -18,7 +18,9 @@ Key3 的 1 秒长按从 `20260904.03` 候选开始，已通过实机验收；当
+ - 从 `20260905.03` 候选起，USB-only 冷启动进入待机，等待旋钮长按。
+   `.07`（2026-09-06）候选补充：启动时取得可用电池读数且保存状态为开机，
+   则恢复运行，以处理电池 / USB 切换期间的 MCU 复位。明确关机仍保持待机。
+-  这项候选规则正在等待实际电源切换验收。
++  2026-10-07 恢复候选进一步保留首次电量读取失败时的既有开机状态，
++  电量计由后台重试；明确关机仍保持待机。若读到有效但不可用的电池电压，
++  仍沿用待机处理。恢复候选尚待实机验证。
+ - 菜单重启和普通 USB CDC 固件升级重启恢复此前的开关机状态：
+   开机时重启后保持开机，USB 关机待机时升级后仍待机。
+ - 设置菜单里的“重启”会保留用户设置和蓝牙槽位。固件完全无响应时，
+diff --git a/software/firmware/tools/tests/test_usb_connection_feedback.py b/software/firmware/tools/tests/test_usb_connection_feedback.py
+index 5e6aa917..ac9c7aad 100644
+--- a/software/firmware/tools/tests/test_usb_connection_feedback.py
++++ b/software/firmware/tools/tests/test_usb_connection_feedback.py
+@@ -87,13 +87,13 @@ int charger_second_long_press(void) {
+     def tearDownClass(cls):
+         cls.temp.cleanup()
+ 
+-    def test_cold_usb_start_ignores_old_on_and_persists_standby_for_next_restart(self):
++    def test_unavailable_gauge_preserves_last_power_intent_across_restart(self):
+         for reason in (1, 9):
+             for old_on in (False, True):
+                 with self.subTest(reason=reason, old_on=old_on):
+-                    self.assertEqual(self.lib.boot(reason, old_on, False), 1)
+-                    self.assertEqual(self.lib.persisted_on(), 0)
+-                    self.assertEqual(self.lib.boot(3, self.lib.persisted_on(), False), 1)
++                    self.assertEqual(self.lib.boot(reason, old_on, False), not old_on)
++                    self.assertEqual(self.lib.persisted_on(), old_on)
++                    self.assertEqual(self.lib.boot(3, self.lib.persisted_on(), False), not old_on)
+ 
+     def test_software_restart_restores_both_power_states_even_if_control_is_held(self):
+         for old_on in (False, True):
+@@ -126,7 +126,7 @@ int charger_second_long_press(void) {
+ 
+     def test_readable_gauge_without_usable_cell_voltage_cannot_resume_stale_on(self):
+         for present, valid, voltage in (
+-            (False, False, 0), (True, False, 3.8), (False, True, 3.8),
++            (False, True, 3.8),
+             (True, True, 0), (True, True, 2.4), (True, True, 5.0),
+         ):
+             with self.subTest(present=present, valid=valid, voltage=voltage):
+@@ -134,6 +134,14 @@ int charger_second_long_press(void) {
+                 self.assertEqual(self.lib.boot(1, True, False), 1)
+                 self.assertEqual(self.lib.persisted_on(), 0)
+ 
++    def test_unavailable_sample_resumes_saved_on_then_accepts_recovered_gauge(self):
++        for present, voltage in ((False, 0), (True, 3.8)):
++            self.lib.set_battery(present, False, voltage)
++            self.assertEqual(self.lib.boot(1, True, False), 0)
++            self.assertEqual(self.lib.persisted_on(), 1)
++            self.lib.set_battery(True, True, 3.8)
++            self.assertEqual(self.lib.boot(1, self.lib.persisted_on(), False), 0)
++
+     def test_software_restart_keeps_intent_when_battery_sample_is_unavailable(self):
+         self.lib.set_battery(True, False, 0)
+         self.assertEqual(self.lib.boot(3, True, False), 0)
+diff --git a/software/firmware/tools/tests/test_startup_recovery.py b/software/firmware/tools/tests/test_startup_recovery.py
+new file mode 100644
+index 00000000..ae2d9194
+--- /dev/null
++++ b/software/firmware/tools/tests/test_startup_recovery.py
+@@ -0,0 +1,119 @@
++"""Run production boot decisions and delayed self-test with hardware stubs."""
++import ctypes
++import subprocess
++import tempfile
++import unittest
++from pathlib import Path
++from test_lighting_preview_protocol import c_function
++
++ROOT = Path(__file__).resolve().parents[2]
++SOURCE = ROOT / "components/action_engine/action_engine.c"
++
++class StartupRecoveryTests(unittest.TestCase):
++    @classmethod
++    def setUpClass(cls):
++        cls.temp = tempfile.TemporaryDirectory()
++        cls.addClassCleanup(cls.temp.cleanup)
++        source = SOURCE.read_text()
++        code = r'''#include <stdbool.h>
++#include <stdint.h>
++#include <stddef.h>
++#include <string.h>
++#include "under_key_self_test.h"
++#define CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2 1
++#define ESP_RST_SW 3
++#define STATUS_INDICATOR_LED_COUNT 6
++static int reset_reason;
++static bool held, saved_on, sample_valid;
++static float voltage;
++typedef struct { bool present; float voltage_v; } fuel_gauge_sample_t;
++static int esp_reset_reason(void) { return reset_reason; }
++static bool encoder_power_button_pressed_at_boot(void) { return held; }
++static bool config_store_get_user_powered_on(void) { return saved_on; }
++static int config_store_set_user_powered_on(bool v) { saved_on=v; return 0; }
++static bool fuel_gauge_latest(fuel_gauge_sample_t *b) {
++    b->present=sample_valid; b->voltage_v=voltage; return sample_valid;
++}
++typedef uint32_t TickType_t;
++typedef under_key_self_test_rgb_t board_rgb_t;
++static bool s_under_key_self_test_active;
++static size_t s_under_key_self_test_last_step;
++static TickType_t s_under_key_self_test_started_at, now;
++static board_rgb_t visible[12];
++static unsigned restore_count;
++static TickType_t xTaskGetTickCount(void) { return now; }
++static uint32_t ticks_to_ms(TickType_t v) { return v; }
++static size_t board_under_key_rgb_count(void) { return 12; }
++static void apply_feedback_config(void) { restore_count++; memset(visible,0,sizeof(visible)); }
++static void render_status_output(board_rgb_t *v) { memset(v,0,6*sizeof(*v)); }
++static int board_apply_rgb(const board_rgb_t *status, const board_rgb_t *keys) {
++    memcpy(visible,keys,sizeof(visible)); return 0;
++}
++'''
++        code += c_function(source, "static bool should_start_usb_charge_session(void)")
++        code += c_function(source, "static void update_under_key_self_test(void)")
++        code += r'''
++int boot(int reason, bool pressed, bool on, bool valid, float volts) {
++    reset_reason=reason; held=pressed; saved_on=on; sample_valid=valid; voltage=volts;
++    return should_start_usb_charge_session();
++}
++int saved(void) { return saved_on; }
++void reset_lights(void) {
++    now=0; s_under_key_self_test_started_at=0;
++    s_under_key_self_test_active=true; s_under_key_self_test_last_step=SIZE_MAX;
++    restore_count=0; memset(visible,0,sizeof(visible));
++}
++int tick(uint32_t t) {
++    now=t; update_under_key_self_test();
++    for(int i=0;i<12;i++) if(visible[i].red || visible[i].green || visible[i].blue) return i;
++    return -1;
++}
++int active(void) { return s_under_key_self_test_active; }
++'''
++        path = Path(cls.temp.name)/"startup.c"
++        path.write_text(code)
++        lib = path.with_suffix(".dylib")
++        subprocess.run(["cc", "-std=c11", "-shared", "-fPIC", "-I",
++            str(ROOT/"components/action_engine/include"), str(path),
++            str(ROOT/"components/action_engine/under_key_self_test.c"),
++            "-o", str(lib)],check=True,capture_output=True)
++        cls.lib=ctypes.CDLL(str(lib))
++        cls.lib.boot.argtypes=[ctypes.c_int,ctypes.c_bool,ctypes.c_bool,ctypes.c_bool,ctypes.c_float]
++        cls.lib.tick.argtypes=[ctypes.c_uint32]
++
++    def test_unavailable_first_sample_preserves_and_resumes_saved_on(self):
++        for reason in (1,4,5,6,9):
++            with self.subTest(reason=reason):
++                self.assertEqual(self.lib.boot(reason,False,True,False,0),0)
++                self.assertEqual(self.lib.saved(),1)
++
++    def test_explicit_off_remains_off_even_if_gauge_unavailable(self):
++        for valid in (False,True):
++            self.assertEqual(self.lib.boot(1,False,False,valid,3.8),1)
++            self.assertEqual(self.lib.saved(),0)
++
++    def test_button_and_software_restart_keep_existing_behavior(self):
++        self.assertEqual(self.lib.boot(1,True,False,False,0),0)
++        self.assertEqual(self.lib.saved(),1)
++        for on in (False,True):
++            self.assertEqual(self.lib.boot(3,False,on,False,0),not on)
++            self.assertEqual(self.lib.saved(),on)
++
++    def test_valid_battery_presence_policy_is_unchanged(self):
++        self.assertEqual(self.lib.boot(1,False,True,True,3.8),0)
++        self.assertEqual(self.lib.boot(1,False,True,True,0),1)
++
++    def test_slow_initialization_does_not_consume_self_test(self):
++        for delay in (1500,5000):
++            self.lib.reset_lights()
++            for i in range(12):
++                self.assertEqual(self.lib.tick(delay+i*120),i)
++            self.assertEqual(self.lib.tick(delay+1440),-1)
++            self.assertEqual(self.lib.active(),0)
++
++    def test_action_init_defers_self_test_until_polling(self):
++        init=c_function(SOURCE.read_text(),"esp_err_t action_engine_init(void)")
++        self.assertNotIn("update_under_key_self_test();",init)
++
++if __name__ == "__main__":
++    unittest.main()
