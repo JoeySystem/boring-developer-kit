@@ -14,6 +14,8 @@ typedef esp_err_t (*config_protocol_tx_fn)(const uint8_t *data, size_t length, v
 
 /** Keep config activation separate from an in-progress image transaction. */
 bool config_protocol_screen_icon_upload_active(void);
+/** A queued name write or existing configuration/firmware maintenance blocks a wake restart. */
+bool config_protocol_restart_busy(void);
 /** Factory Default only; serialize namespace erase against protocol writes. */
 esp_err_t config_protocol_screen_icon_factory_default(void);
 
@@ -86,6 +88,17 @@ void config_protocol_set_lighting_preview_busy(bool busy);
 void config_protocol_set_diagnostic_capture_status(
     bool active, bool waiting_for_neutral, uint32_t event_sequence,
     const char *last_control, bool last_pressed);
+
+/** Main-loop handshake for exclusive, output-suppressed joystick calibration. */
+bool config_protocol_calibration_ownership_requested(void);
+void config_protocol_set_calibration_ownership(bool owned);
+/** Latched before CALIBRATION_START ACK; released only after neutral input. */
+bool config_protocol_calibration_output_interlock_active(void);
+void config_protocol_release_calibration_output_interlock(void);
+/** Only the confirmed calibration candidate may activate without old-config neutral. */
+bool config_protocol_calibration_candidate_pending(void);
+bool config_protocol_calibration_activation_ready(void);
+void config_protocol_calibration_activated(void);
 
 /** Publish existing Action Engine state through the read-only GET_STATUS diagnostics. */
 void config_protocol_set_action_diagnostics(

@@ -19,6 +19,9 @@ typedef struct {
 /** Initialize runtime action state and apply the active persisted config. */
 esp_err_t action_engine_init(void);
 
+/** Initial user-off charge session, decided before BLE initialization. */
+bool action_engine_ble_start_suspended(void);
+
 /** Execute one logical board event through the active profile mapping. */
 void action_engine_handle_event(const board_event_t *event);
 

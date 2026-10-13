@@ -15,8 +15,8 @@ void prompt_joystick_model_init(prompt_joystick_model_t *model)
     *model = (prompt_joystick_model_t) {0};
 }
 
-static uint8_t direction_from_angle(float angle_turns,
-                                    uint8_t fallback_direction)
+uint8_t prompt_joystick_direction_from_angle(float angle_turns,
+                                              uint8_t fallback_direction)
 {
     if (angle_turns < 0.0f || angle_turns >= 1.0f) {
         return fallback_direction;
@@ -67,8 +67,8 @@ prompt_joystick_result_t prompt_joystick_model_update(
         model->locked = true;
         model->eligible_mask = eligible_mask;
         model->selected_direction = radial_active
-                                        ? direction_from_angle(angle_turns,
-                                                               direction)
+                                        ? prompt_joystick_direction_from_angle(
+                                              angle_turns, direction)
                                         : direction;
         if ((eligible_mask &
              (uint8_t)(1u << model->selected_direction)) == 0u) {

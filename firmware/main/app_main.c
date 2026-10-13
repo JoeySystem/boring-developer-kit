@@ -11,6 +11,7 @@
 #include "esp_pm.h"
 #include "firmware_update.h"
 #include "prompt_store.h"
+#include "host_action_events.h"
 #include "screen_icon_store.h"
 #include "screen_glyph_store.h"
 #include "cw2015.h"
@@ -78,6 +79,7 @@ static void make_serial(char serial[18])
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 
+
 void app_main(void)
 {
     firmware_update_boot_stage(FIRMWARE_BOOT_STAGE_APP_ENTRY);
@@ -97,6 +99,7 @@ void app_main(void)
                  esp_err_to_name(fuel_gauge_result));
     }
     ESP_ERROR_CHECK(config_store_init());
+    ESP_ERROR_CHECK(host_action_events_init());
     const esp_err_t prompt_store_result = prompt_store_init();
     if (prompt_store_result != ESP_OK) {
         ESP_LOGW(TAG, "prompt storage unavailable: %s",
@@ -132,7 +135,14 @@ void app_main(void)
     /* Begin from a known neutral HID state before processing physical input. */
     usb_service_release_all();
     ble_config_service_prepare();
-    const esp_err_t codex_micro_result = codex_micro_init(serial);
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    const bool initially_suspended =
+        action_engine_ble_start_suspended() || usb_service_is_mounted();
+#else
+    const bool initially_suspended = usb_service_is_mounted();
+#endif
+    const esp_err_t codex_micro_result =
+        codex_micro_init(serial, initially_suspended);
     if (codex_micro_result != ESP_OK) {
         ESP_LOGW(TAG, "Codex Micro compatibility unavailable: %s",
                  esp_err_to_name(codex_micro_result));
@@ -192,10 +202,16 @@ void app_main(void)
         }
         action_engine_poll();
         if (!config_protocol_screen_icon_upload_active() &&
-            config_store_has_pending() &&
-            config_store_poll(action_engine_config_activation_ready() ||
-                              board_inputs_neutral())) {
-            action_engine_config_activated();
+            config_store_has_pending()) {
+            const bool activation_ready =
+                config_protocol_calibration_ownership_requested()
+                    ? config_protocol_calibration_activation_ready()
+                    : action_engine_config_activation_ready() ||
+                          board_inputs_neutral();
+            if (config_store_poll(activation_ready)) {
+                config_protocol_calibration_activated();
+                action_engine_config_activated();
+            }
         }
         action_engine_diagnostics_t action_diagnostics;
         action_engine_get_diagnostics(&action_diagnostics);

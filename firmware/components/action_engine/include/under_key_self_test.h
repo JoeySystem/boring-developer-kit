@@ -25,6 +25,12 @@ bool under_key_self_test_render(
     uint32_t elapsed_ms, size_t led_count,
     under_key_self_test_rgb_t output[UNDER_KEY_SELF_TEST_LED_COUNT]);
 
+/* Same chase with a caller-selected dwell time. Assembly firmware uses a
+ * slower step so an operator can inspect every physical key position. */
+bool under_key_self_test_render_timed(
+    uint32_t elapsed_ms, size_t led_count, uint32_t step_ms,
+    under_key_self_test_rgb_t output[UNDER_KEY_SELF_TEST_LED_COUNT]);
+
 #ifdef __cplusplus
 }
 #endif

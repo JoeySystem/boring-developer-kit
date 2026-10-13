@@ -22,11 +22,10 @@ bool diagnostic_capture_model_start(diagnostic_capture_model_t *model,
                                     uint32_t now_ms,
                                     uint32_t timeout_ms)
 {
-    if (model == NULL || timeout_ms == 0u ||
-        model->state == DIAGNOSTIC_CAPTURE_WAIT_NEUTRAL) {
+    if (model == NULL || timeout_ms == 0u) {
         return false;
     }
-    if (model->state == DIAGNOSTIC_CAPTURE_INACTIVE) {
+    if (model->state != DIAGNOSTIC_CAPTURE_ACTIVE) {
         model->event_sequence = 0u;
         model->last_control = UINT8_MAX;
         model->has_last_event = false;

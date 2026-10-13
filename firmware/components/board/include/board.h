@@ -114,6 +114,7 @@ typedef struct {
 /** Read-only snapshot used to diagnose analog joystick input and normalization. */
 typedef struct {
     bool supported;
+    uint32_t sample_count;
     int raw_x;
     int raw_y;
     int filtered_x;
@@ -131,6 +132,25 @@ typedef struct {
     bool radial_valid;
     float radial_angle_turns;
 } board_joystick_diagnostics_t;
+
+typedef struct {
+    uint32_t sample_count;
+    uint32_t sample_timestamp_ms;
+    uint32_t recent_sample_age_ms;
+    uint32_t adc_failure_count;
+    uint32_t window_start_ms;
+    uint32_t window_end_ms;
+    uint32_t window_sample_count;
+    int raw_x_min, raw_x_max, raw_x_mean;
+    int raw_y_min, raw_y_max, raw_y_mean;
+    int filtered_x_min, filtered_x_max, filtered_x_mean;
+    int filtered_y_min, filtered_y_max, filtered_y_mean;
+} board_joystick_observation_t;
+
+typedef struct {
+    uint32_t board;
+    uint32_t encoder_isr;
+} board_input_loss_counts_t;
 
 /** Initialize the selected board target and leave all outputs in a safe state. */
 esp_err_t board_init(void);
@@ -187,6 +207,12 @@ bool board_get_joystick_radial(float *angle_turns);
 
 /** Copy a read-only joystick diagnostic snapshot without changing input state. */
 bool board_get_joystick_diagnostics(board_joystick_diagnostics_t *diagnostics);
+
+/** Take Power V2 sampling totals and the successful-sample window since the last take. */
+bool board_take_joystick_observation(board_joystick_observation_t *observation);
+
+/** Read cumulative physical-input queue losses where supported. */
+bool board_get_input_loss_counts(board_input_loss_counts_t *counts);
 
 /**
  * Keep analog sampling active while preventing joystick movement or press

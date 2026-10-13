@@ -240,16 +240,20 @@ static void format_percent(char output[4], int percent)
     }
 }
 
+static void build_boot(mist_glyph_scene_t *scene);
+
 static void build_home(const mist_glyph_page_context_t *context,
                        mist_glyph_scene_t *scene)
 {
     static const uint8_t resources[] = {22, 23, 24};
     const unsigned mode = context->mode <= MIST_MODE_CLAUDE_CODE
-        ? (unsigned)context->mode : 0u;
+        ? (unsigned)context->mode : (unsigned)MIST_MODE_NORMAL;
+    if (mode == MIST_MODE_NORMAL) {
+        build_boot(scene);
+        return;
+    }
     draw_icon_centered(scene, resources[mode], 12, gray_level(242));
 }
-
-static void build_boot(mist_glyph_scene_t *scene);
 
 static bool boring_cell_at(int x, int y)
 {
@@ -309,12 +313,10 @@ bool mist_glyph_boot_frame(uint32_t elapsed_ms, mist_glyph_mode_t mode,
                            mist_glyph_scene_t *scene)
 {
     if (scene == NULL) return false;
+    (void)mode;
     mist_glyph_scene_clear(scene, MIST_GLYPH_GRID_DIM);
     if (elapsed_ms >= MIST_GLYPH_BOOT_TOTAL_MS) {
-        mist_glyph_page_context_t context;
-        mist_glyph_page_context_default(&context);
-        context.mode = mode;
-        build_home(&context, scene);
+        build_boot(scene);
         return true;
     }
     if (elapsed_ms < MIST_GLYPH_BOOT_LOGO_MS) {
@@ -370,14 +372,11 @@ bool mist_glyph_boot_frame(uint32_t elapsed_ms, mist_glyph_mode_t mode,
         return true;
     }
     elapsed_ms -= MIST_GLYPH_BOOT_CLOSE_MS;
-    mist_glyph_page_context_t context;
-    mist_glyph_page_context_default(&context);
-    context.mode = mode;
-    static const uint8_t resources[] = {22, 23, 24};
-    const unsigned gain = 242u * smooth_thousand((int)elapsed_ms * 1000 /
+    const unsigned gain = 235u * smooth_thousand((int)elapsed_ms * 1000 /
                                                   MIST_GLYPH_BOOT_EXPAND_MS) / 1000u;
-    draw_icon_centered(scene, resources[mode <= MIST_MODE_CLAUDE_CODE ? mode : 0],
-                       12, gray_level(gain));
+    for (size_t index = 0; index < MIST_GLYPH_BORING_CELL_COUNT; ++index)
+        mist_glyph_scene_set(scene, mist_glyph_boring_cells[index].x,
+                            mist_glyph_boring_cells[index].y, gray_level(gain));
     return true;
 }
 
@@ -908,7 +907,7 @@ static void build_ble(const mist_glyph_page_context_t *context,
         snprintf(host, sizeof(host), "HOST %u", context->slot);
         add_overlay_centered(scene, host, 79, gray_level(204));
         add_overlay_centered(scene, state == 2 ? "LINKED"
-                                   : state == 1 ? "PAIRED" : "EMPTY",
+                                   : state == 1 ? "PAIRED" : "NEW PC",
                              97, gray_level(148));
         draw_marks_row(scene, 3, context->slot >= 1 && context->slot <= 3
                                   ? context->slot - 1 : 0, 26);

@@ -129,3 +129,44 @@ uint8_t board_joystick_classify_axes_hysteresis(int x, int y, int center_x, int 
     }
     return directions;
 }
+
+uint8_t board_joystick_limit_diagonal(uint8_t directions,
+                                      int x, int y, int center_x, int center_y,
+                                      int span_x, int span_y,
+                                      uint8_t previous_directions)
+{
+    const uint8_t horizontal = BOARD_JOYSTICK_LEFT | BOARD_JOYSTICK_RIGHT;
+    const uint8_t vertical = BOARD_JOYSTICK_UP | BOARD_JOYSTICK_DOWN;
+    if (!(directions & (horizontal | vertical))) {
+        return directions;
+    }
+    if (span_x <= 0 || span_y <= 0) {
+        return directions;
+    }
+    const int64_t distance_x =
+        (int64_t)(x >= center_x ? x - center_x : center_x - x) * span_y;
+    const int64_t distance_y =
+        (int64_t)(y >= center_y ? y - center_y : center_y - y) * span_x;
+    /* One axis can cross its smaller deadzone first. Do not emit it when the
+     * other axis already carries the larger share of the same movement. */
+    if (!(directions & vertical)) {
+        return distance_y >= distance_x ? 0 : directions;
+    }
+    if (!(directions & horizontal)) {
+        return distance_x >= distance_y ? 0 : directions;
+    }
+    const bool was_diagonal = (previous_directions & horizontal) &&
+                              (previous_directions & vertical);
+    if (distance_x < distance_y) {
+        const int threshold = was_diagonal ? 60 : 70;
+        if (distance_x * 100 < distance_y * threshold) {
+            return directions & (uint8_t)~horizontal;
+        }
+    } else if (distance_y < distance_x) {
+        const int threshold = was_diagonal ? 60 : 70;
+        if (distance_y * 100 < distance_x * threshold) {
+            return directions & (uint8_t)~vertical;
+        }
+    }
+    return directions;
+}

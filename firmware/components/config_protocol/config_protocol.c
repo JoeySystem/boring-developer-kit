@@ -37,6 +37,7 @@
 #include "cw2015.h"
 #include "joystick_calibration_model.h"
 #include "prompt_store.h"
+#include "host_action_events.h"
 #include "psa/crypto.h"
 #include "protocol_contract.h"
 #include "screen_icon_protocol.h"
@@ -50,6 +51,7 @@
 #define REPLAY_CACHE_ENTRIES 4u
 #define REPLAY_CACHE_BYTES (24u * 1024u)
 #define DIAGNOSTIC_EVENT_QUEUE_CAPACITY 64u
+#define DIAGNOSTIC_STATUS_EVENT_BATCH 16u
 
 #ifndef WMP_BUILD_ID
 #define WMP_BUILD_ID "local-unidentified"
@@ -68,6 +70,7 @@ typedef struct {
 
 typedef struct {
     uint32_t sequence;
+    uint32_t timestamp_ms;
     char control[24];
     bool pressed;
 } diagnostic_protocol_event_t;
@@ -147,6 +150,13 @@ static struct {
     uint8_t digest[PSA_HASH_LENGTH(PSA_ALG_SHA_256)];
     char name[WMP_BLE_NAME_MAX_UTF8_BYTES + 1u];
 } s_ble_name_write;
+static struct {
+    bool pending;
+    uint32_t request_id;
+    uint32_t payload_length;
+    uint8_t digest[PSA_HASH_LENGTH(PSA_ALG_SHA_256)];
+    config_normal_agent_behavior_t behavior;
+} s_normal_agent_write;
 static atomic_bool s_session_active;
 static atomic_bool s_ble_service_ready;
 static const char *s_action_host_output_state = "unknown";
@@ -179,8 +189,18 @@ static diagnostic_protocol_event_t
     s_diagnostic_capture_events[DIAGNOSTIC_EVENT_QUEUE_CAPACITY];
 static size_t s_diagnostic_capture_event_read;
 static size_t s_diagnostic_capture_event_count;
+static uint32_t s_diagnostic_protocol_event_losses;
 static joystick_calibration_model_t s_joystick_calibration;
 static uint32_t s_next_calibration_session_id = 1;
+static atomic_bool s_calibration_owner_requested;
+static atomic_bool s_calibration_owner_active;
+static atomic_bool s_calibration_output_interlock;
+static bool s_calibration_start_pending;
+static uint32_t s_calibration_board_sample_count;
+static uint32_t s_calibration_fresh_at_ms;
+static atomic_bool s_calibration_candidate_confirmed;
+static uint32_t s_calibration_candidate_generation;
+static config_joystick_calibration_t s_calibration_candidate;
 static bool s_screen_icon_factory_reset;
 
 static uint32_t protocol_uptime_ms(void)
@@ -219,9 +239,18 @@ static bool ble_name_supported(void)
 #endif
 }
 
-static bool ble_name_write_busy(void)
+static bool preference_maintenance_busy(void)
 {
     return screen_icon_maintenance_busy() || screen_icon_protocol_active();
+}
+
+static bool normal_agent_behavior_supported(void)
+{
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2 && CONFIG_CODEX_MICRO_BLE_ENABLED
+    return board_is_product_target() && codex_micro_agent_focus_supported();
+#else
+    return false;
+#endif
 }
 
 static const char *calibration_state_name(joystick_calibration_state_t state)
@@ -241,6 +270,73 @@ static void calibration_end(void)
 {
     board_set_joystick_calibration_active(false);
     joystick_calibration_model_cancel(&s_joystick_calibration);
+    s_calibration_start_pending = false;
+    s_calibration_board_sample_count = 0;
+    s_calibration_fresh_at_ms = 0;
+    atomic_store(&s_calibration_owner_requested, false);
+    atomic_store(&s_calibration_candidate_confirmed, false);
+}
+
+bool config_protocol_calibration_ownership_requested(void)
+{
+    return atomic_load(&s_calibration_owner_requested);
+}
+
+void config_protocol_set_calibration_ownership(bool owned)
+{
+    atomic_store(&s_calibration_owner_active, owned);
+}
+
+bool config_protocol_calibration_output_interlock_active(void)
+{
+    return atomic_load(&s_calibration_output_interlock);
+}
+
+void config_protocol_release_calibration_output_interlock(void)
+{
+    atomic_store(&s_calibration_output_interlock, false);
+}
+
+bool config_protocol_calibration_candidate_pending(void)
+{
+    return atomic_load(&s_calibration_candidate_confirmed);
+}
+
+bool config_protocol_calibration_activation_ready(void)
+{
+    if (!atomic_load(&s_calibration_candidate_confirmed) ||
+        !atomic_load(&s_calibration_owner_active) ||
+        !board_joystick_calibration_active()) {
+        return false;
+    }
+    config_store_status_t status;
+    config_store_get_status(&status);
+    return status.pending && !status.activation_failed &&
+           status.pending_generation == s_calibration_candidate_generation;
+}
+
+void config_protocol_calibration_activated(void)
+{
+    if (!atomic_load(&s_calibration_candidate_confirmed)) {
+        return;
+    }
+    config_store_status_t status;
+    config_feedback_t feedback;
+    config_store_get_status(&status);
+    if (status.pending || status.active_generation !=
+                              s_calibration_candidate_generation ||
+        !config_store_get_feedback(&feedback) || !feedback.joystick_calibrated ||
+        feedback.joystick_minimum_x != s_calibration_candidate.minimum_x ||
+        feedback.joystick_center_x != s_calibration_candidate.center_x ||
+        feedback.joystick_maximum_x != s_calibration_candidate.maximum_x ||
+        feedback.joystick_minimum_y != s_calibration_candidate.minimum_y ||
+        feedback.joystick_center_y != s_calibration_candidate.center_y ||
+        feedback.joystick_maximum_y != s_calibration_candidate.maximum_y ||
+        feedback.joystick_deadzone_x != s_calibration_candidate.deadzone_x ||
+        feedback.joystick_deadzone_y != s_calibration_candidate.deadzone_y) {
+        return;
+    }
+    calibration_end();
 }
 
 void config_protocol_set_action_diagnostics(
@@ -357,6 +453,7 @@ void config_protocol_set_diagnostic_capture_status(
     if (new_event) {
         if (s_diagnostic_capture_event_count ==
             DIAGNOSTIC_EVENT_QUEUE_CAPACITY) {
+            ++s_diagnostic_protocol_event_losses;
             s_diagnostic_capture_event_read =
                 (s_diagnostic_capture_event_read + 1u) %
                 DIAGNOSTIC_EVENT_QUEUE_CAPACITY;
@@ -367,6 +464,7 @@ void config_protocol_set_diagnostic_capture_status(
              s_diagnostic_capture_event_count) %
             DIAGNOSTIC_EVENT_QUEUE_CAPACITY;
         s_diagnostic_capture_events[write].sequence = event_sequence;
+        s_diagnostic_capture_events[write].timestamp_ms = protocol_uptime_ms();
         snprintf(s_diagnostic_capture_events[write].control,
                  sizeof(s_diagnostic_capture_events[write].control), "%s",
                  last_control);
@@ -390,6 +488,9 @@ void config_protocol_set_diagnostic_capture_status(
 
 static bool diagnostic_capture_start_allowed(void)
 {
+    if (atomic_load(&s_calibration_owner_requested)) {
+        return false;
+    }
     bool active;
     bool waiting;
     bool start_pending;
@@ -403,12 +504,14 @@ static bool diagnostic_capture_start_allowed(void)
     if (active || start_pending) {
         return true;
     }
-    if (waiting ||
-        s_joystick_calibration.state != JOYSTICK_CALIBRATION_INACTIVE ||
-        strcmp(s_action_host_output_state, "enabled") != 0 ||
+    if (s_joystick_calibration.state != JOYSTICK_CALIBRATION_INACTIVE ||
+        ((!waiting && !atomic_load(&s_calibration_output_interlock) &&
+          strcmp(s_action_host_output_state, "enabled") != 0) ||
+         ((waiting || atomic_load(&s_calibration_output_interlock)) &&
+          strcmp(s_action_host_output_state, "wait_neutral") != 0)) ||
         strcmp(s_action_local_page, "none") != 0 ||
         s_action_quick_config_active || s_action_idle_standby_active ||
-        s_action_usb_standby_active || !board_inputs_neutral()) {
+        s_action_usb_standby_active || firmware_update_is_active()) {
         return false;
     }
     config_store_status_t status;
@@ -427,6 +530,16 @@ static bool diagnostic_capture_busy(void)
                 CONFIG_PROTOCOL_DIAGNOSTIC_CAPTURE_START);
     portEXIT_CRITICAL(&s_diagnostic_capture_lock);
     return busy;
+}
+
+static bool normal_agent_write_busy(void)
+{
+    return preference_maintenance_busy() || s_ble_name_write.pending ||
+           diagnostic_capture_busy() ||
+           strcmp(s_action_host_output_state, "enabled") != 0 ||
+           strcmp(s_action_local_page, "none") != 0 ||
+           s_action_idle_standby_active || s_action_usb_standby_active ||
+           !board_inputs_neutral() || codex_micro_has_active_control();
 }
 
 static void add_battery_status(cJSON *result)
@@ -469,6 +582,8 @@ static void add_diagnostic_capture_status(cJSON *result)
     bool has_last_event;
     bool last_pressed;
     char last_control[sizeof(s_diagnostic_capture_last_control)];
+    diagnostic_protocol_event_t events[DIAGNOSTIC_STATUS_EVENT_BATCH];
+    size_t event_count = 0;
     portENTER_CRITICAL(&s_diagnostic_capture_lock);
     active = s_diagnostic_capture_active;
     event_sequence = s_diagnostic_capture_event_sequence;
@@ -476,9 +591,11 @@ static void add_diagnostic_capture_status(cJSON *result)
     last_pressed = s_diagnostic_capture_last_pressed;
     snprintf(last_control, sizeof(last_control), "%s",
              s_diagnostic_capture_last_control);
-    if (active && s_diagnostic_capture_event_count > 0u) {
+    while (active && s_diagnostic_capture_event_count > 0u &&
+           event_count < DIAGNOSTIC_STATUS_EVENT_BATCH) {
         const diagnostic_protocol_event_t *event =
             &s_diagnostic_capture_events[s_diagnostic_capture_event_read];
+        events[event_count++] = *event;
         event_sequence = event->sequence;
         has_last_event = true;
         last_pressed = event->pressed;
@@ -496,6 +613,15 @@ static void add_diagnostic_capture_status(cJSON *result)
     cJSON_AddNumberToObject(capture, "timeout_ms",
                             CONFIG_PROTOCOL_DIAGNOSTIC_CAPTURE_TIMEOUT_MS);
     cJSON_AddNumberToObject(capture, "event_sequence", event_sequence);
+    cJSON *batch = cJSON_AddArrayToObject(capture, "events");
+    for (size_t index = 0; index < event_count; ++index) {
+        cJSON *item = cJSON_CreateObject();
+        cJSON_AddItemToArray(batch, item);
+        cJSON_AddNumberToObject(item, "sequence", events[index].sequence);
+        cJSON_AddNumberToObject(item, "timestamp_ms", events[index].timestamp_ms);
+        cJSON_AddStringToObject(item, "control", events[index].control);
+        cJSON_AddBoolToObject(item, "pressed", events[index].pressed);
+    }
     if (has_last_event) {
         cJSON_AddStringToObject(capture, "last_control", last_control);
         cJSON_AddBoolToObject(capture, "last_pressed", last_pressed);
@@ -503,6 +629,60 @@ static void add_diagnostic_capture_status(cJSON *result)
         cJSON_AddNullToObject(capture, "last_control");
         cJSON_AddNullToObject(capture, "last_pressed");
     }
+}
+
+static void add_input_event_losses(cJSON *result)
+{
+    board_input_loss_counts_t losses;
+    if (!board_get_input_loss_counts(&losses)) {
+        return;
+    }
+    cJSON *item = cJSON_AddObjectToObject(result, "input_event_losses");
+    cJSON_AddNumberToObject(item, "board", losses.board);
+    cJSON_AddNumberToObject(item, "encoder_isr", losses.encoder_isr);
+    portENTER_CRITICAL(&s_diagnostic_capture_lock);
+    const uint32_t protocol_losses = s_diagnostic_protocol_event_losses;
+    portEXIT_CRITICAL(&s_diagnostic_capture_lock);
+    cJSON_AddNumberToObject(item, "diagnostic_protocol",
+                            protocol_losses);
+}
+
+static void add_joystick_observation(cJSON *joystick)
+{
+    board_joystick_observation_t observation;
+    if (!board_take_joystick_observation(&observation)) {
+        return;
+    }
+    cJSON_AddNumberToObject(joystick, "sample_count", observation.sample_count);
+    if (observation.sample_count > 0) {
+        cJSON_AddNumberToObject(joystick, "sample_timestamp_ms",
+                                observation.sample_timestamp_ms);
+        cJSON_AddNumberToObject(joystick, "recent_sample_age_ms",
+                                observation.recent_sample_age_ms);
+    } else {
+        cJSON_AddNullToObject(joystick, "sample_timestamp_ms");
+        cJSON_AddNullToObject(joystick, "recent_sample_age_ms");
+    }
+    cJSON_AddNumberToObject(joystick, "adc_failure_count",
+                            observation.adc_failure_count);
+    cJSON *window = cJSON_AddObjectToObject(joystick, "window");
+    cJSON_AddNumberToObject(window, "sample_count", observation.window_sample_count);
+    if (observation.window_sample_count == 0) {
+        cJSON_AddNullToObject(window, "start_ms");
+        cJSON_AddNullToObject(window, "end_ms");
+        return;
+    }
+    cJSON_AddNumberToObject(window, "start_ms", observation.window_start_ms);
+    cJSON_AddNumberToObject(window, "end_ms", observation.window_end_ms);
+#define ADD_WINDOW_AXIS(name) \
+    cJSON_AddNumberToObject(window, #name "_min", observation.name##_min); \
+    cJSON_AddNumberToObject(window, #name "_max", observation.name##_max); \
+    cJSON_AddNumberToObject(window, #name "_mean", observation.name##_mean)
+    ADD_WINDOW_AXIS(raw_x);
+    ADD_WINDOW_AXIS(raw_y);
+    ADD_WINDOW_AXIS(filtered_x);
+    ADD_WINDOW_AXIS(filtered_y);
+#undef ADD_WINDOW_AXIS
 }
 
 static void add_active_controls(cJSON *result)
@@ -836,7 +1016,8 @@ static void handle_ble_name(uint8_t message_type, uint32_t request_id,
         send_ble_name(request_id, command);
         return;
     }
-    if (s_ble_name_write.pending || ble_name_write_busy()) {
+    if (s_ble_name_write.pending || s_normal_agent_write.pending ||
+        preference_maintenance_busy()) {
         send_nack(request_id, command, WMP_ERROR_BUSY, "BUSY",
                   "finish the pending device operation first");
         return;
@@ -859,13 +1040,107 @@ static void poll_ble_name_write(void)
     memcpy(s_inflight_request_digest, s_ble_name_write.digest,
            sizeof(s_inflight_request_digest));
     s_capture_response = true;
-    const esp_err_t error = ble_name_write_busy() ? ESP_ERR_INVALID_STATE
+    const esp_err_t error = preference_maintenance_busy() ? ESP_ERR_INVALID_STATE
         : config_store_set_ble_name(s_ble_name_write.name);
     if (error == ESP_OK) {
         send_ble_name(s_ble_name_write.request_id, "BLE_NAME_SET");
     } else {
         send_store_error(s_ble_name_write.request_id, "BLE_NAME_SET", error,
                          "Bluetooth name could not be saved");
+    }
+    s_capture_response = false;
+}
+
+static void send_normal_agent_behavior(uint32_t request_id, const char *command)
+{
+    config_normal_agent_behavior_t behavior;
+    const esp_err_t error = config_store_get_normal_agent_behavior(&behavior);
+    if (error != ESP_OK) {
+        send_store_error(request_id, command, error, "could not read Agent key behavior");
+        return;
+    }
+    cJSON *root = cJSON_CreateObject();
+    cJSON *result = root == NULL ? NULL : cJSON_AddObjectToObject(root, "result");
+    const char *value = behavior == CONFIG_NORMAL_AGENT_BEHAVIOR_OPEN_CONVERSATION
+        ? "open_conversation" : "status_only";
+    const bool built = result != NULL &&
+        cJSON_AddStringToObject(root, "command", command) &&
+        (behavior == CONFIG_NORMAL_AGENT_BEHAVIOR_UNSELECTED
+             ? cJSON_AddNullToObject(result, "behavior")
+             : cJSON_AddStringToObject(result, "behavior", value));
+    if (built) {
+        send_json_value(request_id, root);
+    } else {
+        send_nack(request_id, command, WMP_ERROR_INTERNAL, "INTERNAL",
+                  "could not encode Agent key behavior");
+    }
+    cJSON_Delete(root);
+}
+
+static void handle_normal_agent_behavior(uint8_t message_type, uint32_t request_id,
+                                         const cJSON *request)
+{
+    const bool set = message_type == WMP_MSG_NORMAL_AGENT_BEHAVIOR_SET;
+    const char *command = set ? "NORMAL_AGENT_BEHAVIOR_SET" :
+                                "NORMAL_AGENT_BEHAVIOR_GET";
+    if (!normal_agent_behavior_supported()) {
+        send_nack(request_id, command, WMP_ERROR_READ_ONLY, "READ_ONLY",
+                  "target does not support Agent key behavior");
+        return;
+    }
+    if (!atomic_load(&s_session_active)) {
+        send_nack(request_id, command, WMP_ERROR_BUSY, "BUSY", "HELLO is required");
+        return;
+    }
+    const cJSON *item = cJSON_GetObjectItemCaseSensitive(request, "behavior");
+    if (!cJSON_IsObject(request) ||
+        cJSON_GetArraySize(request) != (set ? 1 : 0) ||
+        (set && (!cJSON_IsString(item) || item->valuestring == NULL ||
+                 (strcmp(item->valuestring, "open_conversation") != 0 &&
+                  strcmp(item->valuestring, "status_only") != 0)))) {
+        send_nack(request_id, command, WMP_ERROR_VALIDATION_FAILED,
+                  "VALIDATION_FAILED", "invalid Agent key behavior request");
+        return;
+    }
+    if (!set) {
+        send_normal_agent_behavior(request_id, command);
+        return;
+    }
+    if (s_normal_agent_write.pending || normal_agent_write_busy()) {
+        send_nack(request_id, command, WMP_ERROR_BUSY, "BUSY",
+                  "release controls and finish the device operation first");
+        return;
+    }
+    s_normal_agent_write.request_id = request_id;
+    s_normal_agent_write.payload_length = s_inflight_payload_length;
+    memcpy(s_normal_agent_write.digest, s_inflight_request_digest,
+           sizeof(s_normal_agent_write.digest));
+    s_normal_agent_write.behavior = strcmp(item->valuestring, "open_conversation") == 0
+        ? CONFIG_NORMAL_AGENT_BEHAVIOR_OPEN_CONVERSATION
+        : CONFIG_NORMAL_AGENT_BEHAVIOR_STATUS_ONLY;
+    s_normal_agent_write.pending = true;
+}
+
+static void poll_normal_agent_write(void)
+{
+    if (!s_normal_agent_write.pending) return;
+    s_normal_agent_write.pending = false;
+    s_inflight_request_id = s_normal_agent_write.request_id;
+    s_inflight_message_type = WMP_MSG_NORMAL_AGENT_BEHAVIOR_SET;
+    s_inflight_payload_length = s_normal_agent_write.payload_length;
+    memcpy(s_inflight_request_digest, s_normal_agent_write.digest,
+           sizeof(s_inflight_request_digest));
+    s_capture_response = true;
+    const esp_err_t error = normal_agent_write_busy() ? ESP_ERR_INVALID_STATE
+        : config_store_set_normal_agent_behavior(s_normal_agent_write.behavior);
+    if (error == ESP_OK) {
+        codex_micro_clear_agent_press();
+        send_normal_agent_behavior(s_normal_agent_write.request_id,
+                                   "NORMAL_AGENT_BEHAVIOR_SET");
+    } else {
+        send_store_error(s_normal_agent_write.request_id,
+                         "NORMAL_AGENT_BEHAVIOR_SET", error,
+                         "Agent key behavior could not be saved");
     }
     s_capture_response = false;
 }
@@ -891,6 +1166,13 @@ static void add_control_name(cJSON *controls, board_control_t control)
     }
 }
 
+static bool host_action_supported(void)
+{
+    return board_is_product_target() &&
+           board_control_supported(BOARD_CONTROL_KEY_8) &&
+           host_action_events_ready();
+}
+
 static void send_capabilities(uint32_t request_id)
 {
     const bool product = board_is_product_target();
@@ -904,6 +1186,8 @@ static void send_capabilities(uint32_t request_id)
     cJSON_AddNumberToObject(limits, "macro_bytes", product ? 256 : 0);
     cJSON_AddNumberToObject(limits, "all_macro_bytes", product ? 4096 : 0);
     cJSON_AddNumberToObject(limits, "config_bytes", product ? 16384 : 0);
+    cJSON_AddNumberToObject(limits, "host_actions",
+                            host_action_supported() ? 255 : 0);
     cJSON_AddNumberToObject(limits, "prompt_slots",
                             product ? PROMPT_STORE_SLOT_COUNT : 0);
     cJSON_AddNumberToObject(limits, "prompt_name_bytes",
@@ -948,7 +1232,18 @@ static void send_capabilities(uint32_t request_id)
         cJSON_AddItemToArray(actions, cJSON_CreateString(action));
     }
 
+    if (product && board_control_supported(BOARD_CONTROL_KEY_8)) {
+        cJSON_AddItemToArray(actions, cJSON_CreateString("key_gesture"));
+        cJSON_AddItemToArray(actions, cJSON_CreateString("host_action"));
+    }
+
     cJSON *features = cJSON_AddObjectToObject(result, "features");
+    const bool codex_voice_supported = product &&
+        codex_micro_active_key_layout() == CODEX_MICRO_KEY_LAYOUT_MATRIX12
+        ;
+    cJSON_AddBoolToObject(features, "codex_voice", codex_voice_supported);
+    cJSON_AddBoolToObject(features, "codex_voice_hold",
+                          codex_voice_supported);
     cJSON_AddBoolToObject(features, "ble_name", ble_name_supported());
     cJSON_AddBoolToObject(features, "display", product);
     cJSON_AddNumberToObject(features, "status_rgb_count",
@@ -978,6 +1273,10 @@ static void send_capabilities(uint32_t request_id)
     cJSON_AddBoolToObject(features, "claude_code_status", claude_status_supported());
     cJSON_AddBoolToObject(features, "codex_agent_focus",
                           product && codex_micro_agent_focus_supported());
+    cJSON_AddBoolToObject(features, "normal_agent_key_behavior",
+                          normal_agent_behavior_supported());
+    cJSON_AddBoolToObject(features, "host_action_usb",
+                          host_action_supported());
     cJSON_AddBoolToObject(features, "prompt_storage",
                           product && prompt_store_ready());
     cJSON_AddBoolToObject(features, "prompt_trigger_usb",
@@ -1123,31 +1422,49 @@ static void add_calibration_snapshot(cJSON *result)
     cJSON_AddNumberToObject(result, "session_id",
                             s_joystick_calibration.session_id);
     cJSON_AddStringToObject(
+        result, "owner_state",
+        atomic_load(&s_calibration_owner_active) &&
+                !s_calibration_start_pending
+            ? "active" : "acquiring");
+    cJSON_AddStringToObject(
         result, "state",
         calibration_state_name(s_joystick_calibration.state));
     cJSON *raw = cJSON_AddObjectToObject(result, "raw");
     cJSON_AddNumberToObject(raw, "x", s_joystick_calibration.raw_x);
     cJSON_AddNumberToObject(raw, "y", s_joystick_calibration.raw_y);
     if (s_joystick_calibration.state == JOYSTICK_CALIBRATION_CAPTURING) {
+        joystick_calibration_candidate_t candidate;
+        const bool candidate_valid = joystick_calibration_model_candidate(
+            &s_joystick_calibration, &candidate);
+        const bool ready = candidate_valid &&
+            s_calibration_board_sample_count != 0 &&
+            (uint32_t)(protocol_uptime_ms() - s_calibration_fresh_at_ms) <= 100 &&
+            abs(s_joystick_calibration.raw_x - candidate.center_x) <=
+                candidate.deadzone_x &&
+            abs(s_joystick_calibration.raw_y - candidate.center_y) <=
+                candidate.deadzone_y;
         cJSON *center = cJSON_AddObjectToObject(result, "center");
-        cJSON_AddNumberToObject(center, "x", s_joystick_calibration.center_x);
-        cJSON_AddNumberToObject(center, "y", s_joystick_calibration.center_y);
+        cJSON_AddNumberToObject(center, "x", candidate_valid ? candidate.center_x
+                                                   : s_joystick_calibration.center_x);
+        cJSON_AddNumberToObject(center, "y", candidate_valid ? candidate.center_y
+                                                   : s_joystick_calibration.center_y);
         cJSON *minimum = cJSON_AddObjectToObject(result, "minimum");
         cJSON_AddNumberToObject(minimum, "x", s_joystick_calibration.minimum_x);
         cJSON_AddNumberToObject(minimum, "y", s_joystick_calibration.minimum_y);
         cJSON *maximum = cJSON_AddObjectToObject(result, "maximum");
         cJSON_AddNumberToObject(maximum, "x", s_joystick_calibration.maximum_x);
         cJSON_AddNumberToObject(maximum, "y", s_joystick_calibration.maximum_y);
-        joystick_calibration_candidate_t candidate;
         cJSON_AddBoolToObject(
             result, "travel_complete",
-            joystick_calibration_model_candidate(&s_joystick_calibration,
-                                                  &candidate));
+            joystick_calibration_model_travel_complete(
+                &s_joystick_calibration));
+        cJSON_AddBoolToObject(result, "ready_to_confirm", ready);
     } else {
         cJSON_AddNullToObject(result, "center");
         cJSON_AddNullToObject(result, "minimum");
         cJSON_AddNullToObject(result, "maximum");
         cJSON_AddBoolToObject(result, "travel_complete", false);
+        cJSON_AddBoolToObject(result, "ready_to_confirm", false);
     }
 }
 
@@ -1215,9 +1532,9 @@ static cJSON *parse_json_object(const uint8_t *payload, size_t length)
     return value;
 }
 
-/* cJSON stores strings as C strings, so reject decoded NUL before it can
- * truncate a BLE name. Escaped backslashes ("\\\\u0000") remain literal. */
-static bool ble_name_payload_has_nul(const uint8_t *payload, size_t length)
+/* cJSON stores strings as C strings. Reject decoded NUL before it can
+ * truncate a named value; escaped backslashes remain literal. */
+static bool json_payload_has_nul(const uint8_t *payload, size_t length)
 {
     for (size_t i = 0; i < length; ++i) {
         if (payload[i] == 0) return true;
@@ -1393,6 +1710,10 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
     case WMP_MSG_BLE_NAME_SET:
         handle_ble_name(message_type, request_id, request);
         break;
+    case WMP_MSG_NORMAL_AGENT_BEHAVIOR_GET:
+    case WMP_MSG_NORMAL_AGENT_BEHAVIOR_SET:
+        handle_normal_agent_behavior(message_type, request_id, request);
+        break;
     case WMP_MSG_HELLO: {
         const cJSON *client = cJSON_GetObjectItemCaseSensitive(request, "client");
         const cJSON *protocol = cJSON_GetObjectItemCaseSensitive(request, "protocol");
@@ -1422,6 +1743,7 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
         /* A fresh HELLO starts a new logical connection. A byte-identical
          * cached HELLO retry is handled before reaching this branch. */
         s_ble_name_write.pending = false;
+        s_normal_agent_write.pending = false;
         screen_icon_protocol_reset_session();
         for (size_t index = 0; index < REPLAY_CACHE_ENTRIES; ++index) {
             replay_entry_clear(&s_replay_cache[index]);
@@ -1616,7 +1938,10 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
         } else {
             cJSON_AddNullToObject(result, "pending");
         }
-        cJSON_AddBoolToObject(result, "inputs_neutral", board_inputs_neutral());
+        cJSON_AddBoolToObject(
+            result, "inputs_neutral",
+            !atomic_load(&s_calibration_output_interlock) &&
+                board_inputs_neutral());
         cJSON_AddStringToObject(result, "platform",
                                 platform_name(config_store_get_platform()));
         cJSON_AddStringToObject(
@@ -1624,8 +1949,22 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
             codex_micro_mode_name(codex_micro_mode()));
         add_codex_agent_press_status(result);
         cJSON *action = cJSON_AddObjectToObject(result, "action_engine");
+        bool capture_active;
+        portENTER_CRITICAL(&s_diagnostic_capture_lock);
+        capture_active = s_diagnostic_capture_active;
+        portEXIT_CRITICAL(&s_diagnostic_capture_lock);
+        const char *host_output_state =
+            atomic_load(&s_calibration_owner_requested) &&
+                    (!atomic_load(&s_calibration_owner_active) ||
+                     s_calibration_start_pending)
+                ? "calibration_acquiring"
+                : atomic_load(&s_calibration_output_interlock) &&
+                          !atomic_load(&s_calibration_owner_requested) &&
+                          !capture_active
+                    ? "wait_neutral"
+                : s_action_host_output_state;
         cJSON_AddStringToObject(action, "host_output_state",
-                                s_action_host_output_state);
+                                host_output_state);
         cJSON_AddStringToObject(action, "local_page", s_action_local_page);
         cJSON_AddStringToObject(action, "round_setting_state",
                                 s_action_round_setting_state);
@@ -1641,7 +1980,30 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
                               s_action_idle_standby_active);
         cJSON_AddBoolToObject(action, "usb_standby_active",
                               s_action_usb_standby_active);
+        cJSON *calibration = cJSON_AddObjectToObject(result, "calibration");
+        const bool calibration_requested =
+            atomic_load(&s_calibration_owner_requested);
+        const bool calibration_confirmed =
+            atomic_load(&s_calibration_candidate_confirmed);
+        cJSON_AddStringToObject(
+            calibration, "state",
+            calibration_confirmed
+                ? status.activation_failed ? "ACTIVATION_FAILED" :
+                  status.pending ? "PENDING_ACTIVATION" :
+                                   "ACTIVATION_UNCONFIRMED"
+                : calibration_requested
+                    ? atomic_load(&s_calibration_owner_active) &&
+                              !s_calibration_start_pending
+                          ? "CAPTURING" : "ACQUIRING"
+                    : atomic_load(&s_calibration_output_interlock)
+                        ? "WAIT_NEUTRAL"
+                    : "INACTIVE");
+        if (calibration_confirmed) {
+            cJSON_AddNumberToObject(calibration, "candidate_generation",
+                                    s_calibration_candidate_generation);
+        }
         add_diagnostic_capture_status(result);
+        add_input_event_losses(result);
         add_protocol_stack_diagnostics(result);
         claude_status_model_t cc_snapshot;
         claude_status_get(&cc_snapshot);
@@ -1677,6 +2039,7 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
             cJSON_AddBoolToObject(joystick, "radial_valid", joystick_diagnostics.radial_valid);
             cJSON_AddNumberToObject(joystick, "radial_angle_turns",
                                     joystick_diagnostics.radial_angle_turns);
+            add_joystick_observation(joystick);
         }
 #if CONFIG_CODEX_MICRO_BLE_ENABLED
         codex_micro_diagnostics_t diagnostics;
@@ -1968,6 +2331,36 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
         cJSON_Delete(root);
         break;
     }
+    case WMP_MSG_GET_HOST_ACTION_EVENT: {
+        if (config_protocol_active_transport() != CONFIG_PROTOCOL_TRANSPORT_USB) {
+            send_nack(request_id, "GET_HOST_ACTION_EVENT", WMP_ERROR_READ_ONLY,
+                      "READ_ONLY", "host tasks require USB");
+            break;
+        }
+        if (!host_action_supported()) {
+            send_nack(request_id, "GET_HOST_ACTION_EVENT", WMP_ERROR_NOT_FOUND,
+                      "NOT_FOUND", "host tasks are unavailable");
+            break;
+        }
+        host_action_event_t event;
+        const bool available = !diagnostic_capture_busy() &&
+                               host_action_events_poll(&event);
+        cJSON *root = cJSON_CreateObject();
+        cJSON_AddStringToObject(root, "command", "GET_HOST_ACTION_EVENT");
+        cJSON *result = cJSON_AddObjectToObject(root, "result");
+        cJSON_AddNumberToObject(result, "poll_after_ms", HOST_ACTION_POLL_AFTER_MS);
+        if (available) {
+            cJSON *event_json = cJSON_AddObjectToObject(result, "event");
+            cJSON_AddNumberToObject(event_json, "event_id", event.event_id);
+            cJSON_AddNumberToObject(event_json, "action_id", event.action_id);
+            cJSON_AddStringToObject(event_json, "task_token", event.task_token);
+        } else {
+            cJSON_AddNullToObject(result, "event");
+        }
+        send_json_value(request_id, root);
+        cJSON_Delete(root);
+        break;
+    }
     case WMP_MSG_DIAGNOSTIC_START: {
         if (!board_is_product_target()) {
             send_nack(request_id, "DIAGNOSTIC_START", WMP_ERROR_READ_ONLY,
@@ -1990,6 +2383,7 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
             CONFIG_PROTOCOL_DIAGNOSTIC_CAPTURE_START);
         if (first_start) {
             prompt_store_listener_reset();
+            host_action_events_reset();
         }
         snprintf(response, sizeof(response),
                  "{\"command\":\"DIAGNOSTIC_START\",\"result\":{\"active\":true,\"timeout_ms\":%u}}",
@@ -2025,15 +2419,24 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
         }
         config_store_status_t status;
         config_store_get_status(&status);
-        if (status.pending || diagnostic_capture_busy() ||
-            s_joystick_calibration.state != JOYSTICK_CALIBRATION_INACTIVE) {
+        const bool output_owner_available =
+            strcmp(s_action_host_output_state, "enabled") == 0 ||
+            strcmp(s_action_host_output_state, "diagnostic_capture") == 0 ||
+            /* A drifting, uncalibrated stick can itself keep output waiting
+             * for neutral; calibration must be able to recover that state. */
+            strcmp(s_action_host_output_state, "wait_neutral") == 0;
+        if (status.pending || atomic_load(&s_calibration_owner_requested) ||
+            s_joystick_calibration.state != JOYSTICK_CALIBRATION_INACTIVE ||
+            !output_owner_available || strcmp(s_action_local_page, "none") != 0 ||
+            s_action_quick_config_active || s_action_idle_standby_active ||
+            s_action_usb_standby_active || firmware_update_is_active()) {
             send_nack(request_id, "CALIBRATION_START", WMP_ERROR_BUSY,
                       "BUSY", "another configuration operation is active");
             break;
         }
         board_joystick_diagnostics_t diagnostics;
         if (!board_get_joystick_diagnostics(&diagnostics) ||
-            !diagnostics.supported) {
+            !diagnostics.supported || diagnostics.sample_count == 0) {
             send_nack(request_id, "CALIBRATION_START", WMP_ERROR_NOT_FOUND,
                       "NOT_FOUND", "joystick diagnostics are unavailable");
             break;
@@ -2046,7 +2449,15 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
         joystick_calibration_model_start(
             &s_joystick_calibration, session_id, now_ms,
             diagnostics.raw_x, diagnostics.raw_y);
+        s_calibration_board_sample_count = diagnostics.sample_count;
+        s_calibration_fresh_at_ms = now_ms;
+        /* The response keeps its existing CENTERING shape. Main-loop ownership
+         * acknowledgement restarts the actual 500 ms sample window. */
+        s_calibration_start_pending = true;
         board_set_joystick_calibration_active(true);
+        atomic_store(&s_calibration_output_interlock, true);
+        codex_micro_set_input_suppressed(true);
+        atomic_store(&s_calibration_owner_requested, true);
         cJSON *root = cJSON_CreateObject();
         cJSON_AddStringToObject(root, "command", "CALIBRATION_START");
         cJSON *result = cJSON_AddObjectToObject(root, "result");
@@ -2064,6 +2475,12 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
         if (!calibration_session_matches(request, &session_id)) {
             send_nack(request_id, "CALIBRATION_SAMPLE", WMP_ERROR_NOT_FOUND,
                       "NOT_FOUND", "calibration session is not active");
+            break;
+        }
+        if (s_calibration_start_pending ||
+            !atomic_load(&s_calibration_owner_active)) {
+            send_nack(request_id, "CALIBRATION_SAMPLE", WMP_ERROR_BUSY,
+                      "BUSY", "calibration is acquiring input ownership");
             break;
         }
         joystick_calibration_model_touch(&s_joystick_calibration,
@@ -2084,10 +2501,23 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
                       "NOT_FOUND", "calibration session is not active");
             break;
         }
+        if (s_calibration_start_pending ||
+            !atomic_load(&s_calibration_owner_active)) {
+            send_nack(request_id, "CALIBRATION_CONFIRM", WMP_ERROR_BUSY,
+                      "BUSY", "calibration is acquiring input ownership");
+            break;
+        }
         if (!read_uint32_field(request, "base_generation", &base_generation)) {
             send_nack(request_id, "CALIBRATION_CONFIRM",
                       WMP_ERROR_VALIDATION_FAILED, "VALIDATION_FAILED",
                       "base_generation is required");
+            break;
+        }
+        if (s_calibration_board_sample_count == 0 ||
+            (uint32_t)(protocol_uptime_ms() - s_calibration_fresh_at_ms) > 100) {
+            send_nack(request_id, "CALIBRATION_CONFIRM",
+                      WMP_ERROR_VALIDATION_FAILED, "VALIDATION_FAILED",
+                      "joystick samples are stale; wait for fresh readings");
             break;
         }
         joystick_calibration_candidate_t candidate;
@@ -2095,7 +2525,7 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
                                                   &candidate)) {
             send_nack(request_id, "CALIBRATION_CONFIRM",
                       WMP_ERROR_VALIDATION_FAILED, "VALIDATION_FAILED",
-                      "move the joystick through its full travel before confirming");
+                      "complete full travel and two stable returns to center before confirming");
             break;
         }
         if (abs(s_joystick_calibration.raw_x - candidate.center_x) >
@@ -2124,9 +2554,12 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
             send_store_error(request_id, "CALIBRATION_CONFIRM", error, reason);
             break;
         }
-        calibration_end();
         config_store_status_t status;
         config_store_get_status(&status);
+        s_calibration_candidate = calibration;
+        s_calibration_candidate_generation = status.pending_generation;
+        joystick_calibration_model_cancel(&s_joystick_calibration);
+        atomic_store(&s_calibration_candidate_confirmed, true);
         cJSON *root = cJSON_CreateObject();
         cJSON_AddStringToObject(root, "command", "CALIBRATION_CONFIRM");
         cJSON *result = cJSON_AddObjectToObject(root, "result");
@@ -2345,6 +2778,21 @@ static void parse_available(void)
             consume(frame_length);
             continue;
         }
+        if (s_normal_agent_write.pending &&
+            request_id == s_normal_agent_write.request_id) {
+            const bool identical =
+                message_type == WMP_MSG_NORMAL_AGENT_BEHAVIOR_SET &&
+                payload_length == s_normal_agent_write.payload_length &&
+                memcmp(digest, s_normal_agent_write.digest, sizeof(digest)) == 0;
+            if (!identical) {
+                send_nack(request_id, "NORMAL_AGENT_BEHAVIOR_SET",
+                          WMP_ERROR_DUPLICATE_REQUEST_MISMATCH,
+                          "DUPLICATE_REQUEST_MISMATCH",
+                          "request ID is awaiting persistence");
+            }
+            consume(frame_length);
+            continue;
+        }
         if (cached != NULL) {
             const bool identical = cached->message_type == message_type &&
                                    cached->payload_length == payload_length &&
@@ -2365,10 +2813,13 @@ static void parse_available(void)
             consume(frame_length);
             continue;
         }
-        if (message_type == WMP_MSG_BLE_NAME_SET &&
-            ble_name_payload_has_nul(payload, payload_length)) {
-            send_nack(request_id, "BLE_NAME_SET", WMP_ERROR_VALIDATION_FAILED,
-                      "VALIDATION_FAILED", "Bluetooth name cannot contain NUL");
+        if ((message_type == WMP_MSG_BLE_NAME_SET ||
+             message_type == WMP_MSG_NORMAL_AGENT_BEHAVIOR_SET) &&
+            json_payload_has_nul(payload, payload_length)) {
+            const bool ble_name = message_type == WMP_MSG_BLE_NAME_SET;
+            send_nack(request_id, ble_name ? "BLE_NAME_SET" :
+                      "NORMAL_AGENT_BEHAVIOR_SET", WMP_ERROR_VALIDATION_FAILED,
+                      "VALIDATION_FAILED", "text value cannot contain NUL");
             consume(frame_length);
             continue;
         }
@@ -2503,35 +2954,66 @@ void config_protocol_poll(void)
     if (s_transport_mutex != NULL &&
         xSemaphoreTake(s_transport_mutex, 0) == pdTRUE) {
         poll_ble_name_write();
+        poll_normal_agent_write();
         screen_icon_protocol_poll(protocol_uptime_ms());
         xSemaphoreGive(s_transport_mutex);
     }
-    if (s_joystick_calibration.state == JOYSTICK_CALIBRATION_INACTIVE) {
+    if (s_joystick_calibration.state == JOYSTICK_CALIBRATION_INACTIVE ||
+        atomic_load(&s_calibration_candidate_confirmed)) {
         return;
     }
     const uint32_t now_ms = protocol_uptime_ms();
+    if (s_calibration_start_pending) {
+        if (!atomic_load(&s_calibration_owner_active)) {
+            if (joystick_calibration_model_timed_out(&s_joystick_calibration,
+                                                      now_ms)) {
+                calibration_end();
+            }
+            return;
+        }
+        board_joystick_diagnostics_t first_sample;
+        if (!board_get_joystick_diagnostics(&first_sample) ||
+            !first_sample.supported) {
+            calibration_end();
+            return;
+        }
+        joystick_calibration_model_start(
+            &s_joystick_calibration, s_joystick_calibration.session_id, now_ms,
+            first_sample.raw_x, first_sample.raw_y);
+        s_calibration_board_sample_count = first_sample.sample_count;
+        s_calibration_fresh_at_ms = now_ms;
+        s_calibration_start_pending = false;
+    }
     if (joystick_calibration_model_timed_out(&s_joystick_calibration,
                                              now_ms)) {
         calibration_end();
         return;
     }
     board_joystick_diagnostics_t diagnostics;
-    if (board_get_joystick_diagnostics(&diagnostics) && diagnostics.supported) {
+    if (board_get_joystick_diagnostics(&diagnostics) && diagnostics.supported &&
+        diagnostics.sample_count != 0 &&
+        diagnostics.sample_count != s_calibration_board_sample_count) {
         joystick_calibration_model_sample(
             &s_joystick_calibration, now_ms,
             diagnostics.raw_x, diagnostics.raw_y);
+        s_calibration_board_sample_count = diagnostics.sample_count;
+        s_calibration_fresh_at_ms = now_ms;
     }
 }
 
 void config_protocol_reset(void)
 {
     s_ble_name_write.pending = false;
+    s_normal_agent_write.pending = false;
     screen_icon_protocol_reset_session();
     claude_status_clear();
-    calibration_end();
+    if (!atomic_load(&s_calibration_candidate_confirmed)) {
+        calibration_end();
+    }
     publish_diagnostic_capture_request(
         CONFIG_PROTOCOL_DIAGNOSTIC_CAPTURE_STOP);
     prompt_store_listener_reset();
+    host_action_events_reset();
     const config_protocol_lighting_preview_request_t clear_preview = {
         .operation = CONFIG_PROTOCOL_LIGHTING_PREVIEW_CLEAR,
     };
@@ -2553,6 +3035,13 @@ bool config_protocol_session_active(void)
 bool config_protocol_screen_icon_upload_active(void)
 {
     return screen_icon_protocol_active();
+}
+
+bool config_protocol_restart_busy(void)
+{
+    return s_ble_name_write.pending || s_normal_agent_write.pending ||
+           preference_maintenance_busy() ||
+           firmware_update_is_active();
 }
 
 esp_err_t config_protocol_screen_icon_factory_default(void)

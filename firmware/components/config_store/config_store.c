@@ -33,6 +33,7 @@
 #define DEFAULT_STANDBY_MINUTES 15
 #define CONFIG_KEY_USER_POWERED_ON "user_on"
 #define CONFIG_KEY_BLE_NAME "ble_name"
+#define CONFIG_KEY_NORMAL_AGENT_BEHAVIOR "agent_mode"
 #define CONFIG_CONTROL_COUNT BOARD_CONTROL_COUNT
 #define CONFIG_MACRO_MAX_BYTES 256u
 #define CONFIG_ALL_MACROS_MAX_BYTES 4096u
@@ -380,6 +381,28 @@ static bool valid_control_id(const char *value)
            board_control_supported(control);
 }
 
+static bool valid_key_modifiers(const cJSON *modifiers)
+{
+    if (modifiers == NULL) return true;
+    if (!cJSON_IsArray(modifiers) ||
+        cJSON_GetArraySize(modifiers) > CONFIG_STORE_MAX_MODIFIERS) return false;
+    cJSON *modifier = NULL;
+    bool seen[8] = {0};
+    cJSON_ArrayForEach(modifier, modifiers) {
+        if (!integer_in(modifier, 224, 231) || seen[modifier->valueint - 224]) {
+            return false;
+        }
+        seen[modifier->valueint - 224] = true;
+    }
+    return true;
+}
+
+static bool valid_key_gesture_control(board_control_t control)
+{
+    return board_is_product_target() && board_control_supported(control) &&
+           control >= BOARD_CONTROL_KEY_8 && control <= BOARD_CONTROL_KEY_12;
+}
+
 static bool valid_action(const cJSON *action)
 {
     const cJSON *type = field(action, "type");
@@ -394,21 +417,15 @@ static bool valid_action(const cJSON *action)
             !integer_in(field(action, "usage"), 4, 231)) {
             return false;
         }
-        const cJSON *modifiers = field(action, "modifiers");
-        if (modifiers != NULL) {
-            if (!cJSON_IsArray(modifiers) || cJSON_GetArraySize(modifiers) > CONFIG_STORE_MAX_MODIFIERS) {
-                return false;
-            }
-            cJSON *modifier = NULL;
-            bool seen[8] = {0};
-            cJSON_ArrayForEach(modifier, modifiers) {
-                if (!integer_in(modifier, 224, 231) || seen[modifier->valueint - 224]) {
-                    return false;
-                }
-                seen[modifier->valueint - 224] = true;
-            }
-        }
-        return true;
+        return valid_key_modifiers(field(action, "modifiers"));
+    }
+    if (strcmp(type->valuestring, "key_gesture") == 0) {
+        return KEYS_ARE(action, "type", "usage", "modifiers", "double_usage",
+                        "double_modifiers") &&
+               integer_in(field(action, "usage"), 4, 231) &&
+               integer_in(field(action, "double_usage"), 4, 231) &&
+               valid_key_modifiers(field(action, "modifiers")) &&
+               valid_key_modifiers(field(action, "double_modifiers"));
     }
     if (strcmp(type->valuestring, "consumer") == 0) {
         return KEYS_ARE(action, "type", "usage") && integer_in(field(action, "usage"), 0, 1023);
@@ -423,6 +440,13 @@ static bool valid_action(const cJSON *action)
     }
     if (strcmp(type->valuestring, "macro") == 0) {
         return KEYS_ARE(action, "type", "macro_id") && integer_in(field(action, "macro_id"), 0, 31);
+    }
+    if (strcmp(type->valuestring, "host_action") == 0) {
+        const cJSON *token = field(action, "task_token");
+        return KEYS_ARE(action, "type", "action_id", "task_token") &&
+               integer_in(field(action, "action_id"), 1, 255) &&
+               cJSON_IsString(token) && strlen(token->valuestring) == 32 &&
+               strspn(token->valuestring, "0123456789abcdef") == 32;
     }
     if (strcmp(type->valuestring, "prompt") == 0) {
         return KEYS_ARE(action, "type", "prompt_id") &&
@@ -566,7 +590,7 @@ static bool validate_schema_for_hardware(const cJSON *root, bool allow_matrix12_
     cJSON_ArrayForEach(profile, profiles) {
         const cJSON *id = field(profile, "id");
         const cJSON *mappings = field(profile, "mappings");
-        if (!KEYS_ARE(profile, "id", "name", "mappings") ||
+        if (!KEYS_ARE(profile, "id", "name", "mappings", "codex_voice") ||
             !integer_in(id, 0, 7) || profile_ids[id->valueint] ||
             !string_length_in(field(profile, "name"), 1, 24) || !cJSON_IsArray(mappings) ||
             cJSON_GetArraySize(mappings) < 1 ||
@@ -574,6 +598,18 @@ static bool validate_schema_for_hardware(const cJSON *root, bool allow_matrix12_
                 (int)board_control_count()) {
             set_reason(reason, reason_size, "profile is invalid or duplicated");
             return false;
+        }
+        const cJSON *voice = field(profile, "codex_voice");
+        if (voice != NULL) {
+            const cJSON *voice_type = field(voice, "type");
+            if (!valid_key_gesture_control(BOARD_CONTROL_KEY_8) ||
+                !valid_action(voice) ||
+                (strcmp(voice_type->valuestring, "key_gesture") != 0 &&
+                 strcmp(voice_type->valuestring, "key") != 0)) {
+                set_reason(reason, reason_size,
+                           "codex_voice requires a Matrix12 key or key_gesture");
+                return false;
+            }
         }
         profile_ids[id->valueint] = true;
         bool controls[CONFIG_CONTROL_COUNT] = {0};
@@ -592,6 +628,19 @@ static bool validate_schema_for_hardware(const cJSON *root, bool allow_matrix12_
             if (!board_control_from_id(control->valuestring, &control_index) ||
                 controls[control_index]) {
                 set_reason(reason, reason_size, "control mapping is duplicated");
+                return false;
+            }
+            const cJSON *action_type = field(field(mapping, "action"), "type");
+            if (strcmp(action_type->valuestring, "key_gesture") == 0 &&
+                !valid_key_gesture_control(control_index)) {
+                set_reason(reason, reason_size,
+                           "key_gesture requires a configurable Matrix12 key (8-12)");
+                return false;
+            }
+            if (strcmp(action_type->valuestring, "host_action") == 0 &&
+                !valid_key_gesture_control(control_index)) {
+                set_reason(reason, reason_size,
+                           "host_action requires a configurable Matrix12 key (8-12)");
                 return false;
             }
             controls[control_index] = true;
@@ -1223,6 +1272,42 @@ static void restore_ble_name_locked(const char *name)
     }
 }
 
+static esp_err_t read_normal_agent_behavior_locked(
+    config_normal_agent_behavior_t *behavior)
+{
+    uint8_t saved = 0;
+    const esp_err_t error =
+        nvs_get_u8(s_nvs, CONFIG_KEY_NORMAL_AGENT_BEHAVIOR, &saved);
+    if (error == ESP_ERR_NVS_NOT_FOUND) {
+        *behavior = CONFIG_NORMAL_AGENT_BEHAVIOR_UNSELECTED;
+        return ESP_OK;
+    }
+    if (error != ESP_OK) {
+        return error;
+    }
+    if (saved != CONFIG_NORMAL_AGENT_BEHAVIOR_OPEN_CONVERSATION &&
+        saved != CONFIG_NORMAL_AGENT_BEHAVIOR_STATUS_ONLY) {
+        return ESP_FAIL;
+    }
+    *behavior = (config_normal_agent_behavior_t)saved;
+    return ESP_OK;
+}
+
+static void restore_normal_agent_behavior_locked(
+    config_normal_agent_behavior_t behavior)
+{
+    esp_err_t error = behavior == CONFIG_NORMAL_AGENT_BEHAVIOR_UNSELECTED
+        ? erase_optional_key(CONFIG_KEY_NORMAL_AGENT_BEHAVIOR)
+        : nvs_set_u8(s_nvs, CONFIG_KEY_NORMAL_AGENT_BEHAVIOR,
+                     (uint8_t)behavior);
+    if (error == ESP_OK) {
+        error = nvs_commit(s_nvs);
+    }
+    if (error != ESP_OK) {
+        ESP_LOGE(TAG, "Agent behavior restore failed: %s", esp_err_to_name(error));
+    }
+}
+
 /* reserved[0] in the existing slot metadata captures context + 1. Zero in old
  * slots means no connection preference intent; the binary layout is unchanged. */
 static esp_err_t persist_context_intent(const slot_meta_t *meta)
@@ -1459,6 +1544,9 @@ esp_err_t config_store_init(void)
                 if (error == ESP_OK && reset) {
                     error = nvs_set_str(s_nvs, CONFIG_KEY_BLE_NAME, WMP_BLE_NAME_DEFAULT);
                 }
+                if (error == ESP_OK && reset) {
+                    error = erase_optional_key(CONFIG_KEY_NORMAL_AGENT_BEHAVIOR);
+                }
             }
             (void)erase_optional_key(CONFIG_KEY_PENDING);
             (void)erase_optional_key(CONFIG_KEY_FACTORY_PENDING);
@@ -1627,6 +1715,17 @@ bool config_store_poll(bool inputs_neutral)
             ble_name_changed = error == ESP_OK;
         }
     }
+    config_normal_agent_behavior_t previous_agent_behavior =
+        CONFIG_NORMAL_AGENT_BEHAVIOR_UNSELECTED;
+    bool agent_behavior_changed = false;
+    if (error == ESP_OK && s_pending_factory_reset) {
+        error = read_normal_agent_behavior_locked(&previous_agent_behavior);
+        if (error == ESP_OK &&
+            previous_agent_behavior != CONFIG_NORMAL_AGENT_BEHAVIOR_UNSELECTED) {
+            error = erase_optional_key(CONFIG_KEY_NORMAL_AGENT_BEHAVIOR);
+            agent_behavior_changed = error == ESP_OK;
+        }
+    }
     if (error == ESP_OK) {
         error = erase_optional_key(CONFIG_KEY_PENDING_PLATFORM);
     }
@@ -1642,6 +1741,9 @@ bool config_store_poll(bool inputs_neutral)
     if (error != ESP_OK) {
         if (ble_name_changed) {
             restore_ble_name_locked(previous_ble_name);
+        }
+        if (agent_behavior_changed) {
+            restore_normal_agent_behavior_locked(previous_agent_behavior);
         }
         ++s_activation_failures;
         if (s_activation_failures >= 5) {
@@ -1907,6 +2009,52 @@ esp_err_t config_store_set_ble_name(const char *name)
     return error;
 }
 
+esp_err_t config_store_get_normal_agent_behavior(
+    config_normal_agent_behavior_t *behavior)
+{
+    if (behavior == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (s_lock == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    const esp_err_t error = read_normal_agent_behavior_locked(behavior);
+    xSemaphoreGive(s_lock);
+    return error;
+}
+
+esp_err_t config_store_set_normal_agent_behavior(
+    config_normal_agent_behavior_t behavior)
+{
+    if (behavior != CONFIG_NORMAL_AGENT_BEHAVIOR_OPEN_CONVERSATION &&
+        behavior != CONFIG_NORMAL_AGENT_BEHAVIOR_STATUS_ONLY) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (s_lock == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    if (atomic_load(&s_has_pending) || atomic_load(&s_activation_failed)) {
+        xSemaphoreGive(s_lock);
+        return ESP_ERR_INVALID_STATE;
+    }
+    config_normal_agent_behavior_t previous;
+    esp_err_t error = read_normal_agent_behavior_locked(&previous);
+    if (error == ESP_OK && previous != behavior) {
+        error = nvs_set_u8(s_nvs, CONFIG_KEY_NORMAL_AGENT_BEHAVIOR,
+                           (uint8_t)behavior);
+        if (error == ESP_OK) {
+            error = nvs_commit(s_nvs);
+            if (error != ESP_OK) {
+                restore_normal_agent_behavior_locked(previous);
+            }
+        }
+    }
+    xSemaphoreGive(s_lock);
+    return error;
+}
+
 uint8_t config_store_get_pomodoro_minutes(void)
 {
     uint8_t minutes = 25;
@@ -2105,19 +2253,25 @@ static const cJSON *active_profile_locked(void)
     return NULL;
 }
 
-static void parse_action(const cJSON *mapping, config_action_t *output)
+static void parse_action_value(const cJSON *action, config_action_t *output)
 {
     memset(output, 0, sizeof(*output));
-    snprintf(output->short_name, sizeof(output->short_name), "%s", field(mapping, "short_name")->valuestring);
-    const cJSON *action = field(mapping, "action");
     const char *type = field(action, "type")->valuestring;
-    if (strcmp(type, "key") == 0) {
-        output->type = CONFIG_ACTION_KEY;
+    if (strcmp(type, "key") == 0 || strcmp(type, "key_gesture") == 0) {
+        output->type = strcmp(type, "key_gesture") == 0
+                           ? CONFIG_ACTION_KEY_GESTURE : CONFIG_ACTION_KEY;
         output->usage = (uint16_t)field(action, "usage")->valueint;
         const cJSON *modifiers = field(action, "modifiers");
         cJSON *modifier = NULL;
         cJSON_ArrayForEach(modifier, modifiers) {
             output->modifiers[output->modifier_count++] = (uint8_t)modifier->valueint;
+        }
+        if (output->type == CONFIG_ACTION_KEY_GESTURE) {
+            output->double_usage = (uint16_t)field(action, "double_usage")->valueint;
+            cJSON_ArrayForEach(modifier, field(action, "double_modifiers")) {
+                output->double_modifiers[output->double_modifier_count++] =
+                    (uint8_t)modifier->valueint;
+            }
         }
     } else if (strcmp(type, "consumer") == 0) {
         output->type = CONFIG_ACTION_CONSUMER;
@@ -2132,6 +2286,11 @@ static void parse_action(const cJSON *mapping, config_action_t *output)
     } else if (strcmp(type, "macro") == 0) {
         output->type = CONFIG_ACTION_MACRO;
         output->object_id = (uint8_t)field(action, "macro_id")->valueint;
+    } else if (strcmp(type, "host_action") == 0) {
+        output->type = CONFIG_ACTION_HOST_ACTION;
+        output->object_id = (uint8_t)field(action, "action_id")->valueint;
+        snprintf(output->task_token, sizeof(output->task_token), "%s",
+                 field(action, "task_token")->valuestring);
     } else if (strcmp(type, "prompt") == 0) {
         output->type = CONFIG_ACTION_PROMPT;
         output->object_id = (uint8_t)field(action, "prompt_id")->valueint;
@@ -2148,6 +2307,22 @@ static void parse_action(const cJSON *mapping, config_action_t *output)
     } else {
         output->type = CONFIG_ACTION_NONE;
     }
+}
+
+static void parse_action(const cJSON *mapping, config_action_t *output)
+{
+    parse_action_value(field(mapping, "action"), output);
+    snprintf(output->short_name, sizeof(output->short_name), "%s", field(mapping, "short_name")->valuestring);
+}
+
+bool config_store_get_codex_voice_action(config_action_t *action)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    const cJSON *voice = field(active_profile_locked(), "codex_voice");
+    const bool found = voice != NULL;
+    if (found) parse_action_value(voice, action);
+    xSemaphoreGive(s_lock);
+    return found;
 }
 
 bool config_store_get_action(const char *control_id, config_action_t *action)

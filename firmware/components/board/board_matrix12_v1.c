@@ -9,11 +9,13 @@
 #include <ctype.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "board_bmr_icons.h"
 #include "board_display_logic.h"
 #include "board_input_logic.h"
+#include "joystick_sample_recovery.h"
 #include "board_mist_icons.h"
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
 #include "board_matrix12_power_v2.h"
@@ -77,6 +79,7 @@
 
 #define DEBOUNCE_MS 20
 #define JOYSTICK_SAMPLE_MS 10
+#define JOYSTICK_STALE_MS 100
 #define JOYSTICK_DEADZONE 650
 #define JOYSTICK_RELEASE_DEADZONE 450
 #define JOYSTICK_X_HARDWARE_INVERTED true
@@ -218,6 +221,8 @@ static const gpio_num_t s_matrix_columns[BOARD_MATRIX12_V1_MATRIX_COLUMN_COUNT] 
 static board_event_t s_events[EVENT_QUEUE_CAPACITY];
 static size_t s_event_read;
 static size_t s_event_write;
+static uint32_t s_board_event_losses;
+static volatile uint32_t s_encoder_isr_losses;
 static adc_oneshot_unit_handle_t s_adc;
 static led_strip_handle_t s_under_key_strip;
 static esp_lcd_panel_handle_t s_panel;
@@ -241,6 +246,25 @@ static bool s_motor_running;
 static board_encoder_decoder_t s_encoder;
 static QueueHandle_t s_encoder_edges;
 static TickType_t s_last_joystick_sample;
+static portMUX_TYPE s_joystick_observation_lock = portMUX_INITIALIZER_UNLOCKED;
+static uint32_t s_joystick_sample_count;
+static joystick_sample_recovery_t s_joystick_recovery;
+static uint32_t s_joystick_adc_failures;
+typedef struct {
+    int minimum;
+    int maximum;
+    int64_t sum;
+} sample_axis_t;
+typedef struct {
+    uint32_t count;
+    TickType_t start;
+    TickType_t end;
+    sample_axis_t raw_x;
+    sample_axis_t raw_y;
+    sample_axis_t filtered_x;
+    sample_axis_t filtered_y;
+} joystick_sample_window_t;
+static joystick_sample_window_t s_joystick_window;
 static int s_joystick_minimum_x = 200;
 static int s_joystick_center_x = 2048;
 static int s_joystick_maximum_x = 3895;
@@ -279,11 +303,22 @@ static uint32_t board_ticks_to_ms(TickType_t ticks)
     return (uint32_t)(((uint64_t)ticks * 1000U) / configTICK_RATE_HZ);
 }
 
+static void note_sample_axis(sample_axis_t *axis, int value, bool first)
+{
+    if (first || value < axis->minimum) {
+        axis->minimum = value;
+    }
+    if (first || value > axis->maximum) {
+        axis->maximum = value;
+    }
+    axis->sum += value;
+}
+
 static void enqueue_event(board_control_t control, bool pressed)
 {
     const size_t next = (s_event_write + 1) % EVENT_QUEUE_CAPACITY;
     if (next == s_event_read) {
-        /* Keep input polling non-blocking; diagnostics will own overflow reporting later. */
+        ++s_board_event_losses;
         return;
     }
     s_events[s_event_write] = (board_event_t){.control = control, .pressed = pressed};
@@ -294,6 +329,7 @@ static void enqueue_feedback_event(board_control_t control)
 {
     const size_t next = (s_event_write + 1) % EVENT_QUEUE_CAPACITY;
     if (next == s_event_read) {
+        ++s_board_event_losses;
         return;
     }
     s_events[s_event_write] = (board_event_t) {
@@ -310,7 +346,9 @@ static void encoder_gpio_isr(void *context)
     const uint8_t state =
         (gpio_get_level(BOARD_MATRIX12_V1_ENCODER_A_GPIO) << 1) |
         gpio_get_level(BOARD_MATRIX12_V1_ENCODER_B_GPIO);
-    (void)xQueueSendFromISR(s_encoder_edges, &state, NULL);
+    if (xQueueSendFromISR(s_encoder_edges, &state, NULL) != pdTRUE) {
+        ++s_encoder_isr_losses;
+    }
 }
 
 static void scan_matrix(bool pressed[BOARD_MATRIX12_V1_KEY_COUNT])
@@ -447,31 +485,6 @@ static esp_err_t init_adc(void)
                                                    &channel_config),
                         "board", "configure joystick Y");
 
-    int total_x = 0;
-    int total_y = 0;
-    int samples = 0;
-    /*
-     * Engineering fallback until NVS calibration exists. The joystick must be
-     * physically centered during boot or this average will become a bad center.
-     */
-    for (int index = 0; index < 16; ++index) {
-        int x = 0;
-        int y = 0;
-        if (adc_oneshot_read(s_adc, BOARD_MATRIX12_V1_JOYSTICK_X_ADC_CHANNEL, &x) == ESP_OK &&
-            adc_oneshot_read(s_adc, BOARD_MATRIX12_V1_JOYSTICK_Y_ADC_CHANNEL, &y) == ESP_OK) {
-            total_x += x;
-            total_y += y;
-            ++samples;
-        }
-    }
-    if (samples > 0) {
-        s_joystick_center_x = total_x / samples;
-        s_joystick_center_y = total_y / samples;
-        s_joystick_raw_x = s_joystick_center_x;
-        s_joystick_raw_y = s_joystick_center_y;
-        s_joystick_filtered_x = s_joystick_center_x;
-        s_joystick_filtered_y = s_joystick_center_y;
-    }
     return ESP_OK;
 }
 
@@ -648,6 +661,12 @@ esp_err_t board_init(void)
     memset(s_events, 0, sizeof(s_events));
     s_event_read = 0;
     s_event_write = 0;
+    s_board_event_losses = 0;
+    s_encoder_isr_losses = 0;
+    s_joystick_sample_count = 0;
+    joystick_sample_recovery_reset(&s_joystick_recovery);
+    s_joystick_adc_failures = 0;
+    memset(&s_joystick_window, 0, sizeof(s_joystick_window));
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
     s_shutdown_request_pending = false;
     ESP_RETURN_ON_ERROR(
@@ -772,14 +791,53 @@ static void poll_joystick(TickType_t now)
     int y = s_joystick_center_y;
     if (adc_oneshot_read(s_adc, BOARD_MATRIX12_V1_JOYSTICK_X_ADC_CHANNEL, &x) != ESP_OK ||
         adc_oneshot_read(s_adc, BOARD_MATRIX12_V1_JOYSTICK_Y_ADC_CHANNEL, &y) != ESP_OK) {
+        portENTER_CRITICAL(&s_joystick_observation_lock);
+        ++s_joystick_adc_failures;
+        portEXIT_CRITICAL(&s_joystick_observation_lock);
+        if (joystick_sample_recovery_failure(
+                &s_joystick_recovery, now,
+                pdMS_TO_TICKS(JOYSTICK_STALE_MS))) {
+            update_direction(false, &s_joystick_left, BOARD_CONTROL_JOYSTICK_LEFT);
+            update_direction(false, &s_joystick_right, BOARD_CONTROL_JOYSTICK_RIGHT);
+            update_direction(false, &s_joystick_up, BOARD_CONTROL_JOYSTICK_UP);
+            update_direction(false, &s_joystick_down, BOARD_CONTROL_JOYSTICK_DOWN);
+            s_joystick_radial_active = false;
+        }
         return;
     }
     s_joystick_raw_x = x;
     s_joystick_raw_y = y;
+    const bool was_waiting_for_center = s_joystick_recovery.waiting_for_center;
+    joystick_sample_recovery_success(
+        &s_joystick_recovery, now,
+        abs(x - s_joystick_center_x) <= s_joystick_deadzone_x * 3 / 4 &&
+        abs(y - s_joystick_center_y) <= s_joystick_deadzone_y * 3 / 4);
+    if (was_waiting_for_center &&
+        !s_joystick_recovery.waiting_for_center) {
+        s_joystick_filtered_x = x;
+        s_joystick_filtered_y = y;
+    }
     /* Higher filter values favor new samples; one percent still tracks slowly. */
     const int weight = s_joystick_filter > 0 ? s_joystick_filter : 1;
     s_joystick_filtered_x += ((x - s_joystick_filtered_x) * weight) / 100;
     s_joystick_filtered_y += ((y - s_joystick_filtered_y) * weight) / 100;
+    portENTER_CRITICAL(&s_joystick_observation_lock);
+    ++s_joystick_sample_count;
+    const bool first = s_joystick_window.count == 0;
+    if (first) {
+        s_joystick_window.start = now;
+    }
+    s_joystick_window.end = now;
+    ++s_joystick_window.count;
+    note_sample_axis(&s_joystick_window.raw_x, x, first);
+    note_sample_axis(&s_joystick_window.raw_y, y, first);
+    note_sample_axis(&s_joystick_window.filtered_x, s_joystick_filtered_x, first);
+    note_sample_axis(&s_joystick_window.filtered_y, s_joystick_filtered_y, first);
+    portEXIT_CRITICAL(&s_joystick_observation_lock);
+    if (s_joystick_recovery.waiting_for_center) {
+        s_joystick_radial_active = false;
+        return;
+    }
     if (!MATRIX12_JOYSTICK_FUNCTION_ENABLED) {
         update_direction(false, &s_joystick_left, BOARD_CONTROL_JOYSTICK_LEFT);
         update_direction(false, &s_joystick_right, BOARD_CONTROL_JOYSTICK_RIGHT);
@@ -807,11 +865,20 @@ static void poll_joystick(TickType_t now)
         (s_joystick_right ? BOARD_JOYSTICK_RIGHT : 0) |
         (s_joystick_up ? BOARD_JOYSTICK_UP : 0) |
         (s_joystick_down ? BOARD_JOYSTICK_DOWN : 0);
-    const uint8_t directions = board_joystick_classify_axes_hysteresis(
+    uint8_t directions = board_joystick_classify_axes_hysteresis(
         x, y, s_joystick_center_x, s_joystick_center_y,
         s_joystick_deadzone_x, s_joystick_deadzone_x * 3 / 4,
         s_joystick_deadzone_y, s_joystick_deadzone_y * 3 / 4,
         previous_directions);
+    const int span_x = s_joystick_filtered_x >= s_joystick_center_x
+                           ? s_joystick_maximum_x - s_joystick_center_x
+                           : s_joystick_center_x - s_joystick_minimum_x;
+    const int span_y = s_joystick_filtered_y >= s_joystick_center_y
+                           ? s_joystick_maximum_y - s_joystick_center_y
+                           : s_joystick_center_y - s_joystick_minimum_y;
+    directions = board_joystick_limit_diagonal(
+        directions, x, y, s_joystick_center_x, s_joystick_center_y,
+        span_x, span_y, previous_directions);
     if (MATRIX12_JOYSTICK_HORIZONTAL_FUNCTION_ENABLED) {
         update_direction((directions & BOARD_JOYSTICK_LEFT) != 0,
                          &s_joystick_left, BOARD_CONTROL_JOYSTICK_LEFT);
@@ -956,6 +1023,7 @@ size_t board_get_active_controls(board_control_t *controls, size_t capacity)
 bool board_get_joystick_radial(float *angle_turns)
 {
     if (s_joystick_calibration_active ||
+        s_joystick_recovery.waiting_for_center ||
         !MATRIX12_JOYSTICK_FUNCTION_ENABLED ||
         !MATRIX12_JOYSTICK_HORIZONTAL_FUNCTION_ENABLED) {
         s_joystick_radial_active = false;
@@ -1048,6 +1116,7 @@ bool board_get_joystick_diagnostics(board_joystick_diagnostics_t *diagnostics)
                                : s_joystick_deadzone_y;
     float angle_turns = 0.0f;
     const bool radial_valid =
+        !s_joystick_recovery.waiting_for_center &&
         MATRIX12_JOYSTICK_HORIZONTAL_FUNCTION_ENABLED &&
         board_joystick_radial_angle(
             x, y, s_joystick_center_x, s_joystick_center_y,
@@ -1056,6 +1125,7 @@ bool board_get_joystick_diagnostics(board_joystick_diagnostics_t *diagnostics)
 
     *diagnostics = (board_joystick_diagnostics_t){
         .supported = true,
+        .sample_count = s_joystick_sample_count,
         .raw_x = s_joystick_raw_x,
         .raw_y = s_joystick_raw_y,
         .filtered_x = s_joystick_filtered_x,
@@ -1078,6 +1148,72 @@ bool board_get_joystick_diagnostics(board_joystick_diagnostics_t *diagnostics)
         .radial_angle_turns = angle_turns,
     };
     return true;
+}
+
+bool board_take_joystick_observation(board_joystick_observation_t *observation)
+{
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    if (observation == NULL) {
+        return false;
+    }
+    joystick_sample_window_t window;
+    uint32_t sample_count;
+    TickType_t success_at;
+    uint32_t adc_failures;
+    portENTER_CRITICAL(&s_joystick_observation_lock);
+    window = s_joystick_window;
+    sample_count = s_joystick_sample_count;
+    success_at = s_joystick_recovery.last_success_at;
+    adc_failures = s_joystick_adc_failures;
+    memset(&s_joystick_window, 0, sizeof(s_joystick_window));
+    portEXIT_CRITICAL(&s_joystick_observation_lock);
+    const uint32_t count = window.count;
+    *observation = (board_joystick_observation_t){
+        .sample_count = sample_count,
+        .sample_timestamp_ms = board_ticks_to_ms(success_at),
+        .recent_sample_age_ms = sample_count > 0
+            ? board_ticks_to_ms(xTaskGetTickCount() - success_at) : 0,
+        .adc_failure_count = adc_failures,
+        .window_start_ms = board_ticks_to_ms(window.start),
+        .window_end_ms = board_ticks_to_ms(window.end),
+        .window_sample_count = count,
+    };
+    if (count > 0) {
+        observation->raw_x_min = window.raw_x.minimum;
+        observation->raw_x_max = window.raw_x.maximum;
+        observation->raw_x_mean = (int)(window.raw_x.sum / count);
+        observation->raw_y_min = window.raw_y.minimum;
+        observation->raw_y_max = window.raw_y.maximum;
+        observation->raw_y_mean = (int)(window.raw_y.sum / count);
+        observation->filtered_x_min = window.filtered_x.minimum;
+        observation->filtered_x_max = window.filtered_x.maximum;
+        observation->filtered_x_mean = (int)(window.filtered_x.sum / count);
+        observation->filtered_y_min = window.filtered_y.minimum;
+        observation->filtered_y_max = window.filtered_y.maximum;
+        observation->filtered_y_mean = (int)(window.filtered_y.sum / count);
+    }
+    return true;
+#else
+    (void)observation;
+    return false;
+#endif
+}
+
+bool board_get_input_loss_counts(board_input_loss_counts_t *counts)
+{
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    if (counts == NULL) {
+        return false;
+    }
+    *counts = (board_input_loss_counts_t){
+        .board = s_board_event_losses,
+        .encoder_isr = s_encoder_isr_losses,
+    };
+    return true;
+#else
+    (void)counts;
+    return false;
+#endif
 }
 
 bool board_joystick_calibration_active(void)
@@ -1194,14 +1330,14 @@ esp_err_t board_set_joystick_config(const board_joystick_config_t *config)
     if (config == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    const bool preserve_boot_center = config->center_x == -1 && config->center_y == -1;
+    const bool preserve_nominal_center = config->center_x == -1 && config->center_y == -1;
     const bool bounds_valid =
         config->minimum_x >= 0 && config->minimum_x < config->maximum_x &&
         config->maximum_x <= 4095 &&
         config->minimum_y >= 0 && config->minimum_y < config->maximum_y &&
         config->maximum_y <= 4095;
     if (!bounds_valid ||
-        (!preserve_boot_center &&
+        (!preserve_nominal_center &&
          (config->center_x <= config->minimum_x ||
           config->center_x >= config->maximum_x ||
           config->center_y <= config->minimum_y ||
@@ -1211,15 +1347,15 @@ esp_err_t board_set_joystick_config(const board_joystick_config_t *config)
         config->filter_percent > 100) {
         return ESP_ERR_INVALID_ARG;
     }
-    if (!preserve_boot_center) {
+    if (!preserve_nominal_center) {
         s_joystick_center_x = config->center_x;
         s_joystick_center_y = config->center_y;
         s_joystick_filtered_x = config->center_x;
         s_joystick_filtered_y = config->center_y;
     }
     /*
-     * An uncalibrated profile deliberately keeps the center measured at boot.
-     * If nominal endpoints do not bracket that measured center, use the ADC
+     * An uncalibrated profile keeps the nominal center until it is calibrated.
+     * If nominal endpoints do not bracket that center, use the ADC
      * limits for radial normalization instead of rejecting all feedback.
      */
     s_joystick_minimum_x =
@@ -1294,6 +1430,7 @@ esp_err_t board_display_fill(uint16_t rgb565)
     }
     return ESP_OK;
 }
+
 
 static bool boot_dot_pixel_visible(uint8_t x, uint8_t y, uint8_t size)
 {
@@ -2002,6 +2139,7 @@ void board_display_finish_mist_motion(void)
 {
     board_mist_ui_finish_motion();
 }
+
 
 esp_err_t board_display_show_round_home(board_round_mode_t mode,
                                         board_round_link_t link,

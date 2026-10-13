@@ -10,10 +10,12 @@
  */
 
 #include <ctype.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "board_display_logic.h"
 #include "board_input_logic.h"
+#include "joystick_sample_recovery.h"
 #include "board_rev_a.h"
 #include "driver/gpio.h"
 #include "driver/ledc.h"
@@ -33,6 +35,7 @@
 
 #define DEBOUNCE_MS 20
 #define JOYSTICK_SAMPLE_MS 10
+#define JOYSTICK_STALE_MS 100
 #define JOYSTICK_DEADZONE 650
 #define JOYSTICK_RELEASE_DEADZONE 450
 #define JOYSTICK_X_HARDWARE_INVERTED true
@@ -102,6 +105,8 @@ static bool s_motor_running;
 static board_encoder_decoder_t s_encoder;
 static QueueHandle_t s_encoder_edges;
 static TickType_t s_last_joystick_sample;
+static uint32_t s_joystick_sample_count;
+static joystick_sample_recovery_t s_joystick_recovery;
 static int s_joystick_minimum_x = 200;
 static int s_joystick_center_x = 2048;
 static int s_joystick_maximum_x = 3895;
@@ -238,31 +243,6 @@ static esp_err_t init_adc(void)
                                                    &channel_config),
                         "board", "configure joystick Y");
 
-    int total_x = 0;
-    int total_y = 0;
-    int samples = 0;
-    /*
-     * Engineering fallback until NVS calibration exists. The joystick must be
-     * physically centered during boot or this average will become a bad center.
-     */
-    for (int index = 0; index < 16; ++index) {
-        int x = 0;
-        int y = 0;
-        if (adc_oneshot_read(s_adc, BOARD_REV_A_JOYSTICK_X_ADC_CHANNEL, &x) == ESP_OK &&
-            adc_oneshot_read(s_adc, BOARD_REV_A_JOYSTICK_Y_ADC_CHANNEL, &y) == ESP_OK) {
-            total_x += x;
-            total_y += y;
-            ++samples;
-        }
-    }
-    if (samples > 0) {
-        s_joystick_center_x = total_x / samples;
-        s_joystick_center_y = total_y / samples;
-        s_joystick_raw_x = s_joystick_center_x;
-        s_joystick_raw_y = s_joystick_center_y;
-        s_joystick_filtered_x = s_joystick_center_x;
-        s_joystick_filtered_y = s_joystick_center_y;
-    }
     return ESP_OK;
 }
 
@@ -399,6 +379,8 @@ esp_err_t board_init(void)
     memset(s_events, 0, sizeof(s_events));
     s_event_read = 0;
     s_event_write = 0;
+    s_joystick_sample_count = 0;
+    joystick_sample_recovery_reset(&s_joystick_recovery);
     ESP_RETURN_ON_ERROR(init_inputs(), "board", "initialize product inputs");
     ESP_RETURN_ON_ERROR(init_adc(), "board", "initialize joystick ADC");
     ESP_RETURN_ON_ERROR(init_motor(), "board", "initialize motor");
@@ -460,14 +442,38 @@ static void poll_joystick(TickType_t now)
     int y = s_joystick_center_y;
     if (adc_oneshot_read(s_adc, BOARD_REV_A_JOYSTICK_X_ADC_CHANNEL, &x) != ESP_OK ||
         adc_oneshot_read(s_adc, BOARD_REV_A_JOYSTICK_Y_ADC_CHANNEL, &y) != ESP_OK) {
+        if (joystick_sample_recovery_failure(
+                &s_joystick_recovery, now,
+                pdMS_TO_TICKS(JOYSTICK_STALE_MS))) {
+            update_direction(false, &s_joystick_left, BOARD_CONTROL_JOYSTICK_LEFT);
+            update_direction(false, &s_joystick_right, BOARD_CONTROL_JOYSTICK_RIGHT);
+            update_direction(false, &s_joystick_up, BOARD_CONTROL_JOYSTICK_UP);
+            update_direction(false, &s_joystick_down, BOARD_CONTROL_JOYSTICK_DOWN);
+            s_joystick_radial_active = false;
+        }
         return;
     }
     s_joystick_raw_x = x;
     s_joystick_raw_y = y;
+    ++s_joystick_sample_count;
+    const bool was_waiting_for_center = s_joystick_recovery.waiting_for_center;
+    joystick_sample_recovery_success(
+        &s_joystick_recovery, now,
+        abs(x - s_joystick_center_x) <= s_joystick_deadzone_x * 3 / 4 &&
+        abs(y - s_joystick_center_y) <= s_joystick_deadzone_y * 3 / 4);
+    if (was_waiting_for_center &&
+        !s_joystick_recovery.waiting_for_center) {
+        s_joystick_filtered_x = x;
+        s_joystick_filtered_y = y;
+    }
     /* Higher filter values favor new samples; one percent still tracks slowly. */
     const int weight = s_joystick_filter > 0 ? s_joystick_filter : 1;
     s_joystick_filtered_x += ((x - s_joystick_filtered_x) * weight) / 100;
     s_joystick_filtered_y += ((y - s_joystick_filtered_y) * weight) / 100;
+    if (s_joystick_recovery.waiting_for_center) {
+        s_joystick_radial_active = false;
+        return;
+    }
     if (s_joystick_calibration_active) {
         update_direction(false, &s_joystick_left, BOARD_CONTROL_JOYSTICK_LEFT);
         update_direction(false, &s_joystick_right, BOARD_CONTROL_JOYSTICK_RIGHT);
@@ -487,11 +493,20 @@ static void poll_joystick(TickType_t now)
         (s_joystick_right ? BOARD_JOYSTICK_RIGHT : 0) |
         (s_joystick_up ? BOARD_JOYSTICK_UP : 0) |
         (s_joystick_down ? BOARD_JOYSTICK_DOWN : 0);
-    const uint8_t directions = board_joystick_classify_axes_hysteresis(
+    uint8_t directions = board_joystick_classify_axes_hysteresis(
         x, y, s_joystick_center_x, s_joystick_center_y,
         s_joystick_deadzone_x, s_joystick_deadzone_x * 3 / 4,
         s_joystick_deadzone_y, s_joystick_deadzone_y * 3 / 4,
         previous_directions);
+    const int span_x = s_joystick_filtered_x >= s_joystick_center_x
+                           ? s_joystick_maximum_x - s_joystick_center_x
+                           : s_joystick_center_x - s_joystick_minimum_x;
+    const int span_y = s_joystick_filtered_y >= s_joystick_center_y
+                           ? s_joystick_maximum_y - s_joystick_center_y
+                           : s_joystick_center_y - s_joystick_minimum_y;
+    directions = board_joystick_limit_diagonal(
+        directions, x, y, s_joystick_center_x, s_joystick_center_y,
+        span_x, span_y, previous_directions);
     update_direction((directions & BOARD_JOYSTICK_LEFT) != 0,
                      &s_joystick_left, BOARD_CONTROL_JOYSTICK_LEFT);
     update_direction((directions & BOARD_JOYSTICK_RIGHT) != 0,
@@ -595,7 +610,8 @@ size_t board_get_active_controls(board_control_t *controls, size_t capacity)
 
 bool board_get_joystick_radial(float *angle_turns)
 {
-    if (s_joystick_calibration_active) {
+    if (s_joystick_calibration_active ||
+        s_joystick_recovery.waiting_for_center) {
         s_joystick_radial_active = false;
         return false;
     }
@@ -685,13 +701,15 @@ bool board_get_joystick_diagnostics(board_joystick_diagnostics_t *diagnostics)
                                ? s_joystick_deadzone_y * 3 / 4
                                : s_joystick_deadzone_y;
     float angle_turns = 0.0f;
-    const bool radial_valid = board_joystick_radial_angle(
+    const bool radial_valid = !s_joystick_recovery.waiting_for_center &&
+        board_joystick_radial_angle(
         x, y, s_joystick_center_x, s_joystick_center_y,
         minimum_x, maximum_x, minimum_y, maximum_y,
         deadzone_x, deadzone_y, &angle_turns);
 
     *diagnostics = (board_joystick_diagnostics_t){
         .supported = true,
+        .sample_count = s_joystick_sample_count,
         .raw_x = s_joystick_raw_x,
         .raw_y = s_joystick_raw_y,
         .filtered_x = s_joystick_filtered_x,
@@ -714,6 +732,11 @@ bool board_get_joystick_diagnostics(board_joystick_diagnostics_t *diagnostics)
         .radial_angle_turns = angle_turns,
     };
     return true;
+}
+
+bool board_joystick_calibration_active(void)
+{
+    return s_joystick_calibration_active;
 }
 
 void board_set_joystick_calibration_active(bool active)
@@ -799,14 +822,14 @@ esp_err_t board_set_joystick_config(const board_joystick_config_t *config)
     if (config == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    const bool preserve_boot_center = config->center_x == -1 && config->center_y == -1;
+    const bool preserve_nominal_center = config->center_x == -1 && config->center_y == -1;
     const bool bounds_valid =
         config->minimum_x >= 0 && config->minimum_x < config->maximum_x &&
         config->maximum_x <= 4095 &&
         config->minimum_y >= 0 && config->minimum_y < config->maximum_y &&
         config->maximum_y <= 4095;
     if (!bounds_valid ||
-        (!preserve_boot_center &&
+        (!preserve_nominal_center &&
          (config->center_x <= config->minimum_x ||
           config->center_x >= config->maximum_x ||
           config->center_y <= config->minimum_y ||
@@ -816,15 +839,15 @@ esp_err_t board_set_joystick_config(const board_joystick_config_t *config)
         config->filter_percent > 100) {
         return ESP_ERR_INVALID_ARG;
     }
-    if (!preserve_boot_center) {
+    if (!preserve_nominal_center) {
         s_joystick_center_x = config->center_x;
         s_joystick_center_y = config->center_y;
         s_joystick_filtered_x = config->center_x;
         s_joystick_filtered_y = config->center_y;
     }
     /*
-     * An uncalibrated profile deliberately keeps the center measured at boot.
-     * If nominal endpoints do not bracket that measured center, use the ADC
+     * An uncalibrated profile keeps the nominal center until it is calibrated.
+     * If nominal endpoints do not bracket that center, use the ADC
      * limits for radial normalization instead of rejecting all feedback.
      */
     s_joystick_minimum_x =

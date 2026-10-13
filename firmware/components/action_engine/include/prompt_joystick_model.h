@@ -30,6 +30,10 @@ typedef struct {
 
 void prompt_joystick_model_init(prompt_joystick_model_t *model);
 
+/** Shared clockwise-angle cardinal sectors for single-action routing. */
+uint8_t prompt_joystick_direction_from_angle(float angle_turns,
+                                              uint8_t fallback_direction);
+
 /**
  * Track one board direction transition. The first press selects one direction
  * for the entire physical excursion; no new selection is allowed until every

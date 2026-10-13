@@ -7,6 +7,7 @@
 #include "codex_micro.h"
 #include "codex_attention_haptic_model.h"
 #include "codex_micro_controls.h"
+#include "codex_micro_protocol.h"
 #include "claude_code_shortcuts.h"
 #include "claude_status.h"
 #include "config_protocol.h"
@@ -14,8 +15,10 @@
 #include "board_display_logic.h"
 #include "diagnostic_capture_model.h"
 #include "double_click_model.h"
+#include "key_gesture_model.h"
 #include "eda_shortcuts.h"
 #include "encoder_haptic_model.h"
+#include "esp_log.h"
 #include "esp_system.h"
 #include "cw2015.h"
 #include "freertos/FreeRTOS.h"
@@ -25,12 +28,14 @@
 #include "light_idle_model.h"
 #include "firmware_update.h"
 #include "joystick_radial_haptic_model.h"
+#include "joystick_single_action_model.h"
 #include "lighting_output_model.h"
 #include "board_mist_ui.h"
 #include "pomodoro_display_model.h"
 #include "pomodoro_model.h"
 #include "prompt_joystick_model.h"
 #include "prompt_store.h"
+#include "host_action_events.h"
 #include "quick_config_model.h"
 #include "status_indicator.h"
 #include "under_key_self_test.h"
@@ -66,6 +71,8 @@
 #define MACRO_SOURCE ((usb_service_source_t)BOARD_CONTROL_COUNT)
 #define MACRO_TRANSIENT_SOURCE ((usb_service_source_t)(BOARD_CONTROL_COUNT + 1))
 
+static const char *TAG = "action_engine";
+
 _Static_assert(BOARD_CONTROL_COUNT + 2 <= USB_SERVICE_SOURCE_COUNT,
                "USB service needs one source per control plus two macro sources");
 
@@ -85,6 +92,7 @@ typedef enum {
     HOST_OUTPUT_LOCAL_UI,
     HOST_OUTPUT_DIAGNOSTIC,
     HOST_OUTPUT_DIAGNOSTIC_WAIT_NEUTRAL,
+    HOST_OUTPUT_CALIBRATION,
     HOST_OUTPUT_WAIT_NEUTRAL,
 } host_output_state_t;
 
@@ -136,6 +144,7 @@ static int64_t s_battery_sample_time_ms;
 static lighting_preview_model_t s_lighting_preview;
 static lighting_host_preview_model_t s_host_lighting_preview;
 static bool s_boot_animation_active;
+static bool s_boot_animation_complete;
 static TickType_t s_boot_animation_started_at;
 static TickType_t s_boot_animation_last_frame_at;
 static uint8_t s_boot_animation_last_density;
@@ -172,10 +181,16 @@ static bool s_tap_release_pending[BOARD_CONTROL_COUNT];
 static bool s_tap_release_wait_poll[BOARD_CONTROL_COUNT];
 static double_click_model_t s_encoder_gesture;
 static double_click_model_t s_joystick_gesture;
+#define CONFIGURABLE_KEY_GESTURE_COUNT 5
+static key_gesture_model_t s_key_gestures[CONFIGURABLE_KEY_GESTURE_COUNT];
+static config_action_t s_key_gesture_actions[CONFIGURABLE_KEY_GESTURE_COUNT];
 static encoder_haptic_model_t s_encoder_haptic;
 static joystick_radial_haptic_model_t s_joystick_radial_haptic;
 static prompt_joystick_model_t s_prompt_joystick;
+static joystick_single_action_model_t s_single_action_joystick;
+static bool s_dispatching_single_action_joystick;
 static uint8_t s_prompt_joystick_direction_mask;
+static bool s_normal_joystick_single_action;
 static codex_micro_mode_t s_encoder_gesture_mode;
 static unsigned s_encoder_motion_count;
 static unsigned s_joystick_excursions;
@@ -282,6 +297,10 @@ static void enter_usb_standby(void);
 static void poll_usb_standby(void);
 static void wake_from_usb_standby(void);
 static void poll_round_feedback(void);
+static void dispatch_latched_standard_action(board_control_t control,
+                                             config_action_t action,
+                                             const char *short_name,
+                                             bool pressed);
 static void poll_battery_status(void);
 static void sync_connection_and_mode_state(void);
 static void reset_mode_sensitive_input_state(void);
@@ -292,6 +311,7 @@ static void enter_idle_standby(void);
 static void wake_from_idle_standby(void);
 static void poll_idle_standby(void);
 static void process_diagnostic_capture_request(void);
+static void poll_calibration_ownership(void);
 static void poll_diagnostic_capture(void);
 static void publish_diagnostic_capture_status(void);
 static board_round_ble_slot_state_t ble_slot_display_state(uint8_t slot);
@@ -354,14 +374,20 @@ static bool should_start_usb_charge_session(void)
         return false;
     }
     /* A battery-backed ON session may restart during USB power handover.
-     * Do not turn that restart into a new OFF session. Gauge presence or
-     * successful I2C alone is insufficient: require a usable single-cell
-     * voltage as well. Explicit user OFF always remains OFF. */
+     * Do not turn a missing first sample into a new OFF session. When a
+     * sample is available, retain the existing usable-cell check. Explicit
+     * user OFF always remains OFF. */
     fuel_gauge_sample_t battery;
-    if (config_store_get_user_powered_on() &&
-        fuel_gauge_latest(&battery) && battery.present &&
-        battery.voltage_v >= 2.5f && battery.voltage_v <= 4.5f) {
-        return false;
+    if (config_store_get_user_powered_on()) {
+        /* An unavailable first sample is not a user OFF request. Resume the
+         * saved ON session; the normal gauge poll will retry independently. */
+        if (!fuel_gauge_latest(&battery)) {
+            return false;
+        }
+        if (battery.present && battery.voltage_v >= 2.5f &&
+            battery.voltage_v <= 4.5f) {
+            return false;
+        }
     }
     /* Persist this new off session as well, so an OTA from USB standby
      * restores standby instead of the old pre-power-loss state. */
@@ -929,6 +955,15 @@ static void show_status(const char *hint)
                                     mode == CODEX_MICRO_MODE_CODEX);
 }
 
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+static void start_round_feedback(void)
+{
+    s_round_feedback_active = true;
+    s_round_feedback_expires_at =
+        xTaskGetTickCount() + pdMS_TO_TICKS(ROUND_FEEDBACK_DURATION_MS);
+}
+#endif
+
 static void show_feedback(status_feedback_t feedback,
                           const char *legacy_hint)
 {
@@ -944,9 +979,7 @@ static void show_feedback(status_feedback_t feedback,
     const board_round_page_icon_t icon = icons[feedback];
     (void)legacy_hint;
     s_mist_connection_visible = false;
-    s_round_feedback_active = true;
-    s_round_feedback_expires_at =
-        xTaskGetTickCount() + pdMS_TO_TICKS(ROUND_FEEDBACK_DURATION_MS);
+    start_round_feedback();
     (void)board_display_show_round_notice(icon);
 #else
     (void)feedback;
@@ -1021,9 +1054,20 @@ static void start_usb_battery_splash(void)
 #endif
 }
 
+static void sync_ble_to_usb_data_link(void)
+{
+    if (s_shutdown_active || s_usb_standby_active ||
+        s_idle_standby.active) {
+        return;
+    }
+    /* A charger is not a USB host: keep BLE available without a live link. */
+    codex_micro_set_ble_suspended(usb_service_is_mounted());
+}
+
 static void enter_usb_standby(void)
 {
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    codex_micro_set_ble_suspended(true);
     board_set_power_button_wake_mode(true);
     s_battery_splash_active = false;
     s_usb_standby_active = true;
@@ -1059,12 +1103,34 @@ static void poll_usb_standby(void)
 static void wake_from_usb_standby(void)
 {
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    bool restart_for_name = false;
+#if CONFIG_CODEX_MICRO_BLE_ENABLED
+    char saved_name[CODEX_MICRO_BLE_DEVICE_NAME_BYTES];
+    const esp_err_t name_result =
+        config_store_get_ble_name(saved_name, sizeof(saved_name));
+    if (name_result != ESP_OK) {
+        ESP_LOGW(TAG, "BLE name unavailable on USB wake: %s",
+                 esp_err_to_name(name_result));
+    }
+    restart_for_name = name_result == ESP_OK &&
+        strcmp(saved_name, codex_micro_ble_device_name()) != 0 &&
+        !config_protocol_restart_busy();
+#endif
+    const esp_err_t power_result = config_store_set_user_powered_on(true);
+    if (power_result != ESP_OK) {
+        ESP_LOGW(TAG, "cannot save ON intent on USB wake: %s",
+                 esp_err_to_name(power_result));
+    }
+    if (restart_for_name && power_result == ESP_OK) {
+        action_engine_request_restart();
+        return;
+    }
     board_set_power_button_wake_mode(false);
-    (void)config_store_set_user_powered_on(true);
     s_usb_standby_active = false;
     s_battery_splash_active = false;
     usb_service_set_standard_enabled(true);
     codex_micro_set_input_suppressed(false);
+    sync_ble_to_usb_data_link();
     apply_feedback_config();
     s_status_frame_valid = false;
     update_status_indicator(true);
@@ -1096,7 +1162,7 @@ static void wake_from_idle_standby(void)
     idle_standby_model_wake(&s_idle_standby,
                             ticks_to_ms(xTaskGetTickCount()));
     s_idle_standby_wake_wait = true;
-    codex_micro_set_ble_suspended(false);
+    sync_ble_to_usb_data_link();
     leave_local_input_ownership();
     apply_feedback_config();
     s_status_frame_valid = false;
@@ -1384,6 +1450,7 @@ static void start_boot_animation(void)
     s_boot_animation_started_at = xTaskGetTickCount();
     s_boot_animation_last_frame_at = s_boot_animation_started_at;
     s_boot_animation_last_density = 0;
+    s_boot_animation_complete = false;
     s_boot_animation_active = true;
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
     mist_cancel_motion();
@@ -1399,12 +1466,16 @@ static void cancel_boot_animation(void)
         return;
     }
     s_boot_animation_active = false;
+    s_boot_animation_complete = false;
     show_status(NULL);
 }
 
 static void poll_boot_animation(void)
 {
     if (!s_boot_animation_active) {
+        return;
+    }
+    if (s_boot_animation_complete) {
         return;
     }
     const TickType_t now = xTaskGetTickCount();
@@ -1420,8 +1491,13 @@ static void poll_boot_animation(void)
         pdMS_TO_TICKS(MIST_GLYPH_BOOT_FRAME_MS)) return;
     const uint32_t elapsed = ticks_to_ms(now - s_boot_animation_started_at);
     if (elapsed >= MIST_GLYPH_BOOT_TOTAL_MS) {
-        s_boot_animation_active = false;
-        show_status(NULL);
+        s_boot_animation_complete = true;
+        const board_mist_view_t view = {
+            .page = BOARD_MIST_BOOT,
+            .phase = (float)MIST_GLYPH_BOOT_LOGO_MS /
+                     MIST_GLYPH_BOOT_TOTAL_MS,
+        };
+        (void)board_display_show_mist(&view);
         return;
     }
     const board_mist_view_t view = {
@@ -1583,6 +1659,11 @@ static void update_under_key_self_test(void)
 {
     if (!s_under_key_self_test_active) {
         return;
+    }
+    /* Start the clock on the first main-loop frame, after boot services have
+     * initialized, so their startup time cannot consume the LED sequence. */
+    if (s_under_key_self_test_last_step == SIZE_MAX) {
+        s_under_key_self_test_started_at = xTaskGetTickCount();
     }
     under_key_self_test_rgb_t rendered[UNDER_KEY_SELF_TEST_LED_COUNT];
     const size_t led_count = board_under_key_rgb_count();
@@ -2068,8 +2149,12 @@ static void poll_local_input_ownership(void)
 {
     if (s_host_output_state != HOST_OUTPUT_WAIT_NEUTRAL ||
         s_platform_restore_applying || s_system_save_pending ||
+        config_protocol_calibration_ownership_requested() ||
         !board_inputs_neutral()) {
         return;
+    }
+    if (config_protocol_calibration_output_interlock_active()) {
+        config_protocol_release_calibration_output_interlock();
     }
     s_host_output_state = HOST_OUTPUT_ENABLED;
     codex_micro_set_input_suppressed(false);
@@ -2111,6 +2196,12 @@ static void execute_action(const config_action_t *action, bool pressed,
         macro_cancel();
         s_macro.active = true;
         s_macro.id = action->object_id;
+    } else if (pressed && action->type == CONFIG_ACTION_HOST_ACTION &&
+               codex_micro_mode() == CODEX_MICRO_MODE_NORMAL) {
+        const esp_err_t error = host_action_events_queue(action->object_id, action->task_token);
+        show_feedback(error == ESP_OK ? STATUS_FEEDBACK_SUCCESS
+                                      : STATUS_FEEDBACK_ERROR,
+                      error == ESP_OK ? "TASK QUEUED" : "TASK HELPER OFFLINE");
     } else if (pressed && action->type == CONFIG_ACTION_PROMPT) {
         const esp_err_t error = prompt_store_queue_trigger(action->object_id);
         show_feedback(error == ESP_OK ? STATUS_FEEDBACK_SUCCESS
@@ -2224,6 +2315,109 @@ static void dispatch_control(board_control_t control, bool pressed)
     dispatch_action_for_control(&action, control, pressed, action.short_name);
 }
 
+/* Gesture output is a complete pulse. Both reports enter the existing USB/BLE
+ * keyboard queue, so a double click cannot briefly start dictation first. */
+static void dispatch_key_gesture(board_control_t control,
+                                 key_gesture_result_t result)
+{
+    if (result == KEY_GESTURE_NONE) return;
+    config_action_t action = s_key_gesture_actions[control - BOARD_CONTROL_KEY_8];
+    action.type = CONFIG_ACTION_KEY;
+    if (result == KEY_GESTURE_DOUBLE) {
+        action.usage = action.double_usage;
+        action.modifier_count = action.double_modifier_count;
+        memcpy(action.modifiers, action.double_modifiers, sizeof(action.modifiers));
+    }
+    dispatch_action_for_control(&action, control, true, action.short_name);
+    dispatch_action_for_control(&action, control, false, action.short_name);
+}
+
+static bool route_key_gesture_action(const board_event_t *event,
+                                     const config_action_t *action)
+{
+    if (action->type != CONFIG_ACTION_KEY_GESTURE) return false;
+    if (config_store_has_pending() ||
+        (!usb_service_is_mounted() && !codex_micro_ble_connected())) {
+        memset(s_key_gestures, 0, sizeof(s_key_gestures));
+        return true;
+    }
+    const size_t index = event->control - BOARD_CONTROL_KEY_8;
+    if (!s_key_gestures[index].down && !s_key_gestures[index].waiting_second) {
+        s_key_gesture_actions[index] = *action;
+    }
+    dispatch_key_gesture(event->control, key_gesture_model_event(
+        &s_key_gestures[index], event->pressed, ticks_to_ms(xTaskGetTickCount())));
+    return true;
+}
+
+static bool route_key_gesture_event(const board_event_t *event)
+{
+    if (codex_micro_mode() != CODEX_MICRO_MODE_NORMAL ||
+        event->control < BOARD_CONTROL_KEY_8 ||
+        event->control > BOARD_CONTROL_KEY_12) return false;
+    config_action_t action;
+    if (!config_store_get_action(board_control_id(event->control), &action)) {
+        return false;
+    }
+    return route_key_gesture_action(event, &action);
+}
+
+/* CODEX key 8 may preserve the existing click/double-click gesture or use a
+ * normal key action for hold-to-talk. The normal key path snapshots the action
+ * on the first down edge so a staged configuration cannot change its release. */
+static bool route_codex_voice_override_event(const board_event_t *event)
+{
+    if (codex_micro_mode() != CODEX_MICRO_MODE_CODEX ||
+        codex_micro_active_key_layout() != CODEX_MICRO_KEY_LAYOUT_MATRIX12 ||
+        event->control != BOARD_CONTROL_KEY_8) {
+        return false;
+    }
+
+    config_action_t action;
+    if (!config_store_get_codex_voice_action(&action)) {
+        return false;
+    }
+    if (action.type == CONFIG_ACTION_KEY_GESTURE) {
+        return route_key_gesture_action(event, &action);
+    }
+    if (action.type != CONFIG_ACTION_KEY) {
+        return true;
+    }
+
+    if (event->pressed) {
+        if (s_active_action_valid[event->control] ||
+            config_store_has_pending() ||
+            (!usb_service_is_mounted() && !codex_micro_ble_connected())) {
+            return true;
+        }
+    } else if (!s_active_action_valid[event->control]) {
+        return true;
+    }
+
+    dispatch_latched_standard_action(event->control, action,
+                                     action.short_name, event->pressed);
+    return true;
+}
+
+static void poll_key_gestures(void)
+{
+    if ((codex_micro_mode() != CODEX_MICRO_MODE_NORMAL &&
+         codex_micro_mode() != CODEX_MICRO_MODE_CODEX) ||
+        config_store_has_pending() ||
+        s_host_output_state != HOST_OUTPUT_ENABLED ||
+        s_system_select_active || s_quick_config_active ||
+        s_local_page != LOCAL_PAGE_NONE || s_pomodoro.state == POMODORO_ALERT ||
+        (!usb_service_is_mounted() && !codex_micro_ble_connected())) {
+        memset(s_key_gestures, 0, sizeof(s_key_gestures));
+        return;
+    }
+    for (size_t index = 0; index < CONFIGURABLE_KEY_GESTURE_COUNT; ++index) {
+        dispatch_key_gesture((board_control_t)(BOARD_CONTROL_KEY_8 + index),
+            key_gesture_model_poll(&s_key_gestures[index],
+                                    ticks_to_ms(xTaskGetTickCount())));
+    }
+}
+
 static uint8_t joystick_prompt_direction_mask(void)
 {
     uint8_t mask = 0u;
@@ -2239,6 +2433,21 @@ static uint8_t joystick_prompt_direction_mask(void)
         }
     }
     return mask;
+}
+
+static bool normal_joystick_single_action_mapping(void)
+{
+    for (board_control_t direction = BOARD_CONTROL_JOYSTICK_UP;
+         direction <= BOARD_CONTROL_JOYSTICK_RIGHT; ++direction) {
+        config_action_t action;
+        const char *control_id = board_control_id(direction);
+        if (control_id != NULL &&
+            config_store_get_action(control_id, &action) &&
+            action.type == CONFIG_ACTION_MOUSE) {
+            return false;
+        }
+    }
+    return true;
 }
 
 static board_control_t prompt_joystick_control(uint8_t direction)
@@ -2297,6 +2506,62 @@ static void poll_prompt_joystick(void)
     const bool radial_active = board_get_joystick_radial(&angle);
     dispatch_prompt_joystick_result(
         prompt_joystick_model_poll(&s_prompt_joystick, radial_active));
+}
+
+static bool single_action_joystick_context(void)
+{
+    if (s_host_output_state == HOST_OUTPUT_LOCAL_UI) {
+        return s_local_page != LOCAL_PAGE_NONE || s_quick_config_active ||
+               s_system_select_active;
+    }
+    if (s_host_output_state != HOST_OUTPUT_ENABLED ||
+        codex_micro_active_key_layout() != CODEX_MICRO_KEY_LAYOUT_MATRIX12) {
+        return false;
+    }
+    const codex_micro_mode_t mode = codex_micro_mode();
+    return (mode == CODEX_MICRO_MODE_NORMAL &&
+            s_normal_joystick_single_action) ||
+           mode == CODEX_MICRO_MODE_CLAUDE_CODE;
+}
+
+static void poll_single_action_joystick(void)
+{
+    if (!single_action_joystick_context() || s_shutdown_active ||
+        s_usb_standby_active || s_battery_splash_active || s_idle_standby.active ||
+        s_pomodoro.state == POMODORO_ALERT ||
+        diagnostic_capture_model_owns_input(&s_diagnostic_capture)) {
+        joystick_single_action_model_reset(&s_single_action_joystick);
+        return;
+    }
+    float angle = 0.0f;
+    const bool radial_active = board_get_joystick_radial(&angle);
+    board_joystick_diagnostics_t diagnostics;
+    if (!board_get_joystick_diagnostics(&diagnostics) ||
+        !diagnostics.supported) {
+        joystick_single_action_model_reset(&s_single_action_joystick);
+        return;
+    }
+    const joystick_single_action_result_t result =
+        joystick_single_action_model_update(&s_single_action_joystick,
+                                            radial_active, angle,
+                                            diagnostics.sample_count);
+    if (!result.press && !result.release) {
+        return;
+    }
+    board_event_t event = {
+        .control = prompt_joystick_control(result.direction),
+        .pressed = result.press,
+    };
+    s_dispatching_single_action_joystick = true;
+    if (result.press || codex_micro_mode() != CODEX_MICRO_MODE_NORMAL) {
+        action_engine_handle_event(&event);
+    }
+    if (result.press && codex_micro_mode() == CODEX_MICRO_MODE_NORMAL) {
+        /* Command mappings are one action per excursion, even when held. */
+        event.pressed = false;
+        action_engine_handle_event(&event);
+    }
+    s_dispatching_single_action_joystick = false;
 }
 
 static void dispatch_latched_standard_action(board_control_t control,
@@ -2490,6 +2755,9 @@ static void route_main_event(const board_event_t *event)
     }
     size_t key_index = 0;
     const codex_micro_mode_t mode = codex_micro_mode();
+    /* External dictation does not depend on the official Codex agent link. */
+    if (mode == CODEX_MICRO_MODE_CODEX &&
+        route_codex_voice_override_event(event)) return;
     if (mode == CODEX_MICRO_MODE_CODEX && !codex_micro_input_ready()) {
         if (event->pressed && !joystick_direction_control(event->control)) {
             pulse_control_press_feedback(event->control);
@@ -2542,6 +2810,7 @@ static void route_main_event(const board_event_t *event)
         }
         return;
     }
+    if (route_key_gesture_event(event)) return;
     if ((event->control == BOARD_CONTROL_ENCODER_CCW ||
          event->control == BOARD_CONTROL_ENCODER_CW) && event->pressed) {
         dispatch_control(event->control, true);
@@ -3587,9 +3856,7 @@ static void show_ble_slot(uint8_t slot)
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
     (void)board_display_show_round_ble_slot(slot,
                                             ble_slot_display_state(slot));
-    s_round_feedback_active = true;
-    s_round_feedback_expires_at =
-        xTaskGetTickCount() + pdMS_TO_TICKS(ROUND_FEEDBACK_DURATION_MS);
+    start_round_feedback();
 #else
     (void)slot;
 #endif
@@ -3600,12 +3867,30 @@ static void show_ble_slot_progress(uint8_t slot, uint8_t progress_percent)
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
     (void)board_display_show_round_ble_slot_progress(
         slot, ble_slot_display_state(slot), progress_percent);
-    s_round_feedback_active = true;
-    s_round_feedback_expires_at =
-        xTaskGetTickCount() + pdMS_TO_TICKS(ROUND_FEEDBACK_DURATION_MS);
+    start_round_feedback();
 #else
     (void)slot;
     (void)progress_percent;
+#endif
+}
+
+static void poll_ble_slot_redirect(void)
+{
+    if (s_boot_animation_active || s_battery_splash_active) {
+        return;
+    }
+    uint8_t slot = 0u;
+    if (!codex_micro_take_ble_slot_redirect(&slot)) {
+        return;
+    }
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    char target[14];
+    snprintf(target, sizeof(target), "USE HOST %u", (unsigned)slot);
+    s_mist_connection_visible = false;
+    start_round_feedback();
+    (void)board_display_show_local("BLUETOOTH", target, "", "PAIRED", 0);
+#else
+    (void)slot;
 #endif
 }
 
@@ -3881,6 +4166,8 @@ static void poll_function_key_gesture(void)
 
 static void reset_mode_sensitive_input_state(void)
 {
+    host_action_events_reset();
+    memset(s_key_gestures, 0, sizeof(s_key_gestures));
     macro_cancel();
     usb_service_release_all();
     memset(s_active_action_valid, 0, sizeof(s_active_action_valid));
@@ -3897,6 +4184,7 @@ static void reset_mode_sensitive_input_state(void)
     encoder_haptic_model_init(&s_encoder_haptic);
     joystick_radial_haptic_model_init(&s_joystick_radial_haptic);
     prompt_joystick_model_init(&s_prompt_joystick);
+    joystick_single_action_model_reset(&s_single_action_joystick);
     s_encoder_direct_press = false;
     s_joystick_direct_press = false;
     s_joystick_direction_active = false;
@@ -3934,11 +4222,53 @@ static bool diagnostic_control_active(board_control_t control)
 
 static bool diagnostic_capture_can_start_now(void)
 {
-    return s_host_output_state == HOST_OUTPUT_ENABLED &&
+    return (s_host_output_state == HOST_OUTPUT_ENABLED ||
+            s_host_output_state == HOST_OUTPUT_DIAGNOSTIC_WAIT_NEUTRAL ||
+            s_host_output_state == HOST_OUTPUT_WAIT_NEUTRAL) &&
            s_local_page == LOCAL_PAGE_NONE && !s_quick_config_active &&
            !s_shutdown_active && !s_usb_standby_active &&
            !s_battery_splash_active && !s_idle_standby.active &&
-           board_inputs_neutral();
+           !firmware_update_is_active() &&
+           !config_protocol_calibration_ownership_requested();
+}
+
+static void poll_calibration_ownership(void)
+{
+    const bool requested = config_protocol_calibration_ownership_requested();
+    if (requested && s_host_output_state != HOST_OUTPUT_CALIBRATION) {
+        if ((s_host_output_state != HOST_OUTPUT_ENABLED &&
+             s_host_output_state != HOST_OUTPUT_DIAGNOSTIC &&
+             s_host_output_state != HOST_OUTPUT_DIAGNOSTIC_WAIT_NEUTRAL &&
+             s_host_output_state != HOST_OUTPUT_WAIT_NEUTRAL) ||
+            s_local_page != LOCAL_PAGE_NONE || s_quick_config_active ||
+            s_shutdown_active || s_usb_standby_active ||
+            s_battery_splash_active || s_idle_standby.active ||
+            firmware_update_is_active()) {
+            return;
+        }
+        reset_mode_sensitive_input_state();
+        codex_micro_set_input_suppressed(true);
+        if (diagnostic_capture_model_owns_input(&s_diagnostic_capture)) {
+            diagnostic_capture_model_yield_to_local(&s_diagnostic_capture);
+            s_diagnostic_encoder_press_active = false;
+            publish_diagnostic_capture_status();
+        }
+        s_host_output_state = HOST_OUTPUT_CALIBRATION;
+        config_protocol_set_calibration_ownership(true);
+    } else if (!requested &&
+               config_protocol_calibration_output_interlock_active() &&
+               s_host_output_state != HOST_OUTPUT_WAIT_NEUTRAL &&
+               s_host_output_state != HOST_OUTPUT_DIAGNOSTIC &&
+               s_host_output_state != HOST_OUTPUT_DIAGNOSTIC_WAIT_NEUTRAL) {
+        config_protocol_set_calibration_ownership(false);
+        if (diagnostic_capture_model_owns_input(&s_diagnostic_capture)) {
+            diagnostic_capture_model_yield_to_local(&s_diagnostic_capture);
+            s_diagnostic_encoder_press_active = false;
+            publish_diagnostic_capture_status();
+        }
+        s_host_output_state = HOST_OUTPUT_WAIT_NEUTRAL;
+        reset_mode_sensitive_input_state();
+    }
 }
 
 static void process_diagnostic_capture_request(void)
@@ -3951,13 +4281,17 @@ static void process_diagnostic_capture_request(void)
     if (request.operation == CONFIG_PROTOCOL_DIAGNOSTIC_CAPTURE_START) {
         const bool first_start =
             s_diagnostic_capture.state == DIAGNOSTIC_CAPTURE_INACTIVE;
-        if (first_start && !diagnostic_capture_can_start_now()) {
+        if ((first_start || s_diagnostic_capture.state ==
+                 DIAGNOSTIC_CAPTURE_WAIT_NEUTRAL) &&
+            !diagnostic_capture_can_start_now()) {
             status_changed = true;
         } else if (diagnostic_capture_model_start(
                 &s_diagnostic_capture,
                 ticks_to_ms(xTaskGetTickCount()),
                 CONFIG_PROTOCOL_DIAGNOSTIC_CAPTURE_TIMEOUT_MS)) {
-            if (first_start) {
+            if (first_start ||
+                s_host_output_state == HOST_OUTPUT_DIAGNOSTIC_WAIT_NEUTRAL ||
+                s_host_output_state == HOST_OUTPUT_WAIT_NEUTRAL) {
                 reset_mode_sensitive_input_state();
                 codex_micro_set_input_suppressed(true);
                 s_host_output_state = HOST_OUTPUT_DIAGNOSTIC;
@@ -4011,8 +4345,12 @@ static void poll_diagnostic_capture(void)
     if (before != DIAGNOSTIC_CAPTURE_INACTIVE &&
         s_diagnostic_capture.state == DIAGNOSTIC_CAPTURE_INACTIVE &&
         s_host_output_state == HOST_OUTPUT_DIAGNOSTIC_WAIT_NEUTRAL) {
-        s_host_output_state = HOST_OUTPUT_ENABLED;
-        codex_micro_set_input_suppressed(false);
+        if (config_protocol_calibration_output_interlock_active()) {
+            s_host_output_state = HOST_OUTPUT_WAIT_NEUTRAL;
+        } else {
+            s_host_output_state = HOST_OUTPUT_ENABLED;
+            codex_micro_set_input_suppressed(false);
+        }
         s_diagnostic_encoder_press_active = false;
         show_status(NULL);
     }
@@ -4093,6 +4431,7 @@ static void poll_platform_context(void)
 
 static void sync_connection_and_mode_state(void)
 {
+    sync_ble_to_usb_data_link();
     poll_platform_context();
     const bool mounted = usb_service_is_mounted();
     const bool ble_connected = codex_micro_ble_connected();
@@ -4103,6 +4442,9 @@ static void sync_connection_and_mode_state(void)
     }
     const bool connection_changed =
         mounted != s_usb_mounted || ble_connected != s_ble_connected;
+    if (connection_changed) {
+        memset(s_key_gestures, 0, sizeof(s_key_gestures));
+    }
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
     const bool usb_connected_now = mounted && !s_usb_mounted;
     const bool ble_connected_now = ble_connected && !s_ble_connected;
@@ -4193,6 +4535,7 @@ esp_err_t action_engine_init(void)
     joystick_radial_haptic_model_init(&s_joystick_radial_haptic);
     prompt_joystick_model_init(&s_prompt_joystick);
     s_prompt_joystick_direction_mask = joystick_prompt_direction_mask();
+    s_normal_joystick_single_action = normal_joystick_single_action_mapping();
     pomodoro_model_init(&s_pomodoro,
                         config_store_get_pomodoro_minutes());
     idle_standby_model_init(&s_idle_standby,
@@ -4209,9 +4552,13 @@ esp_err_t action_engine_init(void)
     reset_function_key_gesture();
     reset_prompt_palette_key_gesture();
     usb_service_set_standard_enabled(true);
-    update_under_key_self_test();
     enter_initial_page();
     return ESP_OK;
+}
+
+bool action_engine_ble_start_suspended(void)
+{
+    return s_usb_charge_session_at_boot;
 }
 
 void action_engine_handle_event(const board_event_t *event)
@@ -4221,6 +4568,10 @@ void action_engine_handle_event(const board_event_t *event)
     }
     light_idle_note_activity();
     process_diagnostic_capture_request();
+    poll_calibration_ownership();
+    if (s_host_output_state == HOST_OUTPUT_CALIBRATION) {
+        return;
+    }
     if (diagnostic_capture_model_owns_input(&s_diagnostic_capture)) {
         bool record_event = !event->feedback_only;
         if (event->control == BOARD_CONTROL_ENCODER_PRESS) {
@@ -4264,6 +4615,11 @@ void action_engine_handle_event(const board_event_t *event)
     /* Transport callbacks can reset the mode before this queued event runs. */
     sync_connection_and_mode_state();
     if (s_platform_restore_applying) {
+        return;
+    }
+    if (!s_dispatching_single_action_joystick &&
+        joystick_direction_control(event->control) &&
+        single_action_joystick_context()) {
         return;
     }
     cancel_boot_animation();
@@ -4529,6 +4885,10 @@ void action_engine_request_restart(void)
 void action_engine_request_shutdown(void)
 {
     process_diagnostic_capture_request();
+    poll_calibration_ownership();
+    if (s_host_output_state == HOST_OUTPUT_CALIBRATION) {
+        return;
+    }
     if (diagnostic_capture_model_owns_input(&s_diagnostic_capture)) {
         if (s_diagnostic_capture.state == DIAGNOSTIC_CAPTURE_ACTIVE &&
             !s_diagnostic_encoder_press_active) {
@@ -4564,6 +4924,9 @@ void action_engine_request_shutdown(void)
     s_shutdown_pulsed = false;
     macro_cancel();
     usb_service_release_all();
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    codex_micro_set_ble_suspended(true);
+#endif
     memset(s_active_action_valid, 0, sizeof(s_active_action_valid));
     reset_mode_sensitive_input_state();
     s_under_key_self_test_active = false;
@@ -4588,6 +4951,7 @@ void action_engine_request_shutdown(void)
 void action_engine_poll(void)
 {
     process_diagnostic_capture_request();
+    poll_calibration_ownership();
     poll_diagnostic_capture();
     poll_codex_attention_notification();
     poll_light_idle();
@@ -4692,6 +5056,9 @@ void action_engine_poll(void)
     }
 #endif
     sync_connection_and_mode_state();
+    poll_single_action_joystick();
+    poll_key_gestures();
+    poll_ble_slot_redirect();
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
     poll_mist_display();
 #endif
@@ -4785,6 +5152,7 @@ void action_engine_get_diagnostics(action_engine_diagnostics_t *diagnostics)
         [HOST_OUTPUT_LOCAL_UI] = "local_ui",
         [HOST_OUTPUT_DIAGNOSTIC] = "diagnostic_capture",
         [HOST_OUTPUT_DIAGNOSTIC_WAIT_NEUTRAL] = "wait_neutral",
+        [HOST_OUTPUT_CALIBRATION] = "calibration",
         [HOST_OUTPUT_WAIT_NEUTRAL] = "wait_neutral",
     };
     static const char *const local_page_names[] = {
@@ -4822,9 +5190,16 @@ void action_engine_get_diagnostics(action_engine_diagnostics_t *diagnostics)
 
 void action_engine_config_activated(void)
 {
+    host_action_events_reset();
+    const bool boot_logo_waiting =
+        s_boot_animation_active && s_boot_animation_complete;
+    memset(s_key_gestures, 0, sizeof(s_key_gestures));
     macro_cancel();
     s_prompt_joystick_direction_mask = joystick_prompt_direction_mask();
-    s_boot_animation_active = false;
+    s_normal_joystick_single_action = normal_joystick_single_action_mapping();
+    if (!boot_logo_waiting) {
+        s_boot_animation_active = false;
+    }
     (void)lighting_preview_clear(&s_lighting_preview);
     (void)lighting_host_preview_clear(&s_host_lighting_preview);
     if (config_store_take_factory_reset_activated()) {
@@ -4878,7 +5253,7 @@ void action_engine_config_activated(void)
     if (s_platform_restore_applying) {
         s_platform_restore_applying = false;
         leave_local_input_ownership();
-        show_status(NULL);
+        if (!boot_logo_waiting) show_status(NULL);
         return;
     }
     if (!local_save && s_pomodoro.state != POMODORO_ALERT &&
@@ -4931,7 +5306,7 @@ void action_engine_config_activated(void)
         render_quick_config(footer);
     } else if (s_local_page != LOCAL_PAGE_NONE) {
         render_local_page();
-    } else {
+    } else if (!boot_logo_waiting) {
         show_status(NULL);
     }
 }

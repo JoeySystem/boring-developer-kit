@@ -10,7 +10,7 @@
 
 - **下载源码开发包：**[v0.1.0-preview.10](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.10)，含控制台、SDK、四个扩展示例和协议资料。
 - **从 GitHub 下载安装包：**[macOS Apple Silicon 0.2.1](https://github.com/JoeySystem/boring-developer-kit/releases/download/v0.1.0-preview.10/BORING-Console-0.2.1-macOS-arm64.dmg) · [Windows x86_64 0.2.1](https://github.com/JoeySystem/boring-developer-kit/releases/download/v0.1.0-preview.10/BORING-Console-0.2.1-Windows-x86_64-Setup.exe) · [安装说明](docs/install-console.md)。
-- **固件：**保留 preview.9 的源码参考与[20260916.01 维护包说明](docs/official-firmware-20260916.01.md)，另有上方独立发布的售后恢复固件。
+- **固件：**Power V2 当前公开源码参考及[官方签名固件 20261012.01](docs/official-firmware-20261012.01.md)；[20260916.01 历史维护包](docs/official-firmware-20260916.01.md)与上方的售后恢复固件分别保留。
 
 社区构建使用独立设置、系统字体和简化设备示意，不附内部品牌模型或演示动画，也不订阅官方自动更新。原创内容采用 **PolyForm Noncommercial 1.0.0**，商业复用需另行授权。
 
@@ -47,7 +47,7 @@ SDK/API 1.1 增加电脑端任务事件，兼容 1.0 提示词槽位、绑定动
 
 ## 下载与维护
 
-本次 GitHub Release 提供 Windows、macOS 0.2.1 安装包、源码开发包、四个扩展 ZIP 和 SDK wheel。安装软件请使用上方对应系统的下载链接；历史固件维护包保留在此前 Release。GitHub 的 **Code → Download ZIP** 是仓库源码快照，不可直接当固件维护包导入。
+Console 0.2.1 安装包、SDK 和扩展保留在原有 Release；Power V2 官方固件 20261012.01 使用独立的[固件 Release](https://github.com/JoeySystem/boring-developer-kit/releases/tag/firmware-20261012.01)。GitHub 的 **Code → Download ZIP** 是仓库源码快照，不可直接当固件维护包导入。
 
 包括本轮控制台代码在内的原创内容采用 **PolyForm Noncommercial 1.0.0**，商业复用另行书面授权。保留 NOTICE 与第三方许可，具体范围见 [LICENSING](LICENSING.md)。
 

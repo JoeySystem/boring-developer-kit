@@ -29,7 +29,8 @@ void diagnostic_capture_model_init(diagnostic_capture_model_t *model);
  * Start a new session or renew the active session lease.
  *
  * A new session clears the previous event snapshot. Renewing an active session
- * preserves it. A session waiting for neutral cannot be restarted yet.
+ * preserves it. A session waiting for neutral may restart while output stays
+ * suppressed.
  */
 bool diagnostic_capture_model_start(diagnostic_capture_model_t *model,
                                     uint32_t now_ms,

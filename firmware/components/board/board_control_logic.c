@@ -18,6 +18,24 @@ __attribute__((weak)) bool board_get_joystick_diagnostics(
     return false;
 }
 
+__attribute__((weak)) bool board_take_joystick_observation(
+    board_joystick_observation_t *observation)
+{
+    if (observation != NULL) {
+        memset(observation, 0, sizeof(*observation));
+    }
+    return false;
+}
+
+__attribute__((weak)) bool board_get_input_loss_counts(
+    board_input_loss_counts_t *counts)
+{
+    if (counts != NULL) {
+        memset(counts, 0, sizeof(*counts));
+    }
+    return false;
+}
+
 __attribute__((weak)) void board_set_joystick_calibration_active(bool active)
 {
     (void)active;

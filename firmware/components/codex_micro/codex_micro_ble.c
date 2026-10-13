@@ -179,6 +179,7 @@ static atomic_uint_least32_t s_fast_advertising_until_ms;
 static atomic_bool s_peer_filter_ready;
 static atomic_int s_peer_filter_state;
 static atomic_uchar s_active_peer_slot;
+static atomic_uchar s_ble_slot_redirect_pending;
 static atomic_uint_least32_t s_notify_subscribe_events;
 static atomic_uint_least32_t s_notify_unsubscribe_events;
 static atomic_uint_least16_t s_last_subscribe_attr;
@@ -331,16 +332,16 @@ static bool peer_address_matches(const codex_micro_ble_peer_t *peer,
            memcmp(peer->address, address, ESP_BD_ADDR_LEN) == 0;
 }
 
-static bool peer_address_used_by_other_slot(
+static uint8_t peer_slot_for_address(
     uint8_t selected_slot, const uint8_t address[ESP_BD_ADDR_LEN])
 {
     for (uint8_t slot = 1u; slot <= CODEX_MICRO_BLE_SLOT_COUNT; ++slot) {
         const codex_micro_ble_peer_t peer = peer_for_slot(slot);
         if (slot != selected_slot && peer_address_matches(&peer, address)) {
-            return true;
+            return slot;
         }
     }
-    return false;
+    return 0u;
 }
 
 static esp_err_t clear_peer_whitelist(void)
@@ -928,6 +929,15 @@ static void combined_gatts_event_handler(
     esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
     esp_ble_gatts_cb_param_t *parameter)
 {
+    if (event == ESP_GATTS_CONNECT_EVT && parameter != NULL &&
+        atomic_load(&s_ble_suspended)) {
+        const esp_err_t error =
+            esp_ble_gap_disconnect(parameter->connect.remote_bda);
+        if (error != ESP_OK) {
+            ESP_LOGW(TAG, "BLE suspend rejected-connect disconnect failed: %s",
+                     esp_err_to_name(error));
+        }
+    }
     if (s_gatts_observer != NULL &&
         s_gatts_observer((int)event, (uint16_t)gatts_if, parameter,
                          s_gatts_observer_context)) {
@@ -1031,17 +1041,23 @@ static void gap_event(esp_gap_ble_cb_event_t event,
         }
         break;
     case ESP_GAP_BLE_ADV_STOP_COMPLETE_EVT:
+        if (parameter->adv_stop_cmpl.status != ESP_BT_STATUS_SUCCESS) {
+            ESP_LOGW(TAG, "BLE advertising stop completion failed: %d",
+                     parameter->adv_stop_cmpl.status);
+        }
         atomic_store(&s_advertising_active, false);
         atomic_store(&s_advertising_starting, false);
         if (atomic_load(&s_peer_filter_state) ==
             BLE_PEER_FILTER_STOPPING) {
             atomic_store(&s_advertising_interval_restart_pending, false);
             (void)clear_peer_whitelist();
-        } else if (atomic_exchange(
-                       &s_advertising_interval_restart_pending, false) &&
-                   !atomic_load(&s_ble_suspended) &&
-                   !atomic_load(&s_connected)) {
-            ensure_advertising();
+        } else {
+            atomic_store(&s_advertising_interval_restart_pending, false);
+            /* USB may disconnect before the earlier BLE stop completes. */
+            if (!atomic_load(&s_ble_suspended) &&
+                !atomic_load(&s_connected)) {
+                ensure_advertising();
+            }
         }
         break;
     case ESP_GAP_BLE_UPDATE_WHITELIST_COMPLETE_EVT: {
@@ -1090,6 +1106,15 @@ static void gap_event(esp_gap_ble_cb_event_t event,
         break;
     case ESP_GAP_BLE_AUTH_CMPL_EVT:
         if (parameter->ble_security.auth_cmpl.success) {
+            if (atomic_load(&s_ble_suspended)) {
+                const esp_err_t error = esp_ble_gap_disconnect(
+                    parameter->ble_security.auth_cmpl.bd_addr);
+                if (error != ESP_OK) {
+                    ESP_LOGW(TAG, "BLE suspend disconnect failed: %s",
+                             esp_err_to_name(error));
+                }
+                break;
+            }
             const uint8_t slot = atomic_load(&s_active_peer_slot);
             codex_micro_ble_peer_t peer = peer_for_slot(slot);
             if (peer.valid == 1u &&
@@ -1101,12 +1126,16 @@ static void gap_event(esp_gap_ble_cb_event_t event,
                     parameter->ble_security.auth_cmpl.bd_addr);
                 break;
             }
-            if (peer.valid != 1u && peer_address_used_by_other_slot(
-                                             slot,
-                                             parameter->ble_security.auth_cmpl
-                                                 .bd_addr)) {
+            const uint8_t paired_slot =
+                peer.valid != 1u
+                    ? peer_slot_for_address(
+                          slot, parameter->ble_security.auth_cmpl.bd_addr)
+                    : 0u;
+            if (paired_slot != 0u) {
                 ESP_LOGW(TAG,
-                         "rejecting BLE peer already assigned to another slot");
+                         "rejecting BLE peer already assigned to slot %u",
+                         paired_slot);
+                atomic_store(&s_ble_slot_redirect_pending, paired_slot);
                 (void)esp_ble_gap_disconnect(
                     parameter->ble_security.auth_cmpl.bd_addr);
                 break;
@@ -1479,7 +1508,7 @@ const char *codex_micro_ble_device_name(void)
     return s_ble_device_name;
 }
 
-esp_err_t codex_micro_init(const char *serial)
+esp_err_t codex_micro_init(const char *serial, bool initially_suspended)
 {
     if (serial == NULL || serial[0] == '\0') {
         return s_init_error = ESP_ERR_INVALID_ARG;
@@ -1488,7 +1517,7 @@ esp_err_t codex_micro_init(const char *serial)
     s_hid_config.serial_number = serial;
     atomic_store(&s_connected, false);
     atomic_store(&s_usb_connected, false);
-    atomic_store(&s_ble_suspended, false);
+    atomic_store(&s_ble_suspended, initially_suspended);
     atomic_store(&s_mode, CODEX_MICRO_MODE_NORMAL);
     atomic_store(&s_advertising_configured, false);
     atomic_store(&s_scan_response_configured, false);
@@ -1498,6 +1527,7 @@ esp_err_t codex_micro_init(const char *serial)
     atomic_store(&s_peer_filter_ready, false);
     atomic_store(&s_peer_filter_state, BLE_PEER_FILTER_IDLE);
     atomic_store(&s_active_peer_slot, 1u);
+    atomic_store(&s_ble_slot_redirect_pending, 0u);
     atomic_store(&s_connected_peer_valid, false);
     atomic_store(&s_notify_subscribe_events, 0);
     atomic_store(&s_notify_unsubscribe_events, 0);
@@ -1766,12 +1796,21 @@ void codex_micro_set_ble_suspended(bool suspended)
         release_active_controls();
         atomic_store(&s_connected, false);
         if (atomic_load(&s_connected_peer_valid)) {
-            (void)esp_ble_gap_disconnect(s_connected_peer_address);
+            const esp_err_t error =
+                esp_ble_gap_disconnect(s_connected_peer_address);
+            if (error != ESP_OK) {
+                ESP_LOGW(TAG, "BLE suspend disconnect failed: %s",
+                         esp_err_to_name(error));
+            }
             atomic_store(&s_connected_peer_valid, false);
         }
         if (atomic_load(&s_advertising_active) ||
             atomic_load(&s_advertising_starting)) {
-            (void)esp_ble_gap_stop_advertising();
+            const esp_err_t error = esp_ble_gap_stop_advertising();
+            if (error != ESP_OK) {
+                ESP_LOGW(TAG, "BLE suspend advertising stop failed: %s",
+                         esp_err_to_name(error));
+            }
         }
         return;
     }
@@ -1818,6 +1857,7 @@ esp_err_t codex_micro_select_ble_slot(uint8_t slot)
     }
 
     release_active_controls();
+    atomic_store(&s_ble_slot_redirect_pending, 0u);
     atomic_store(&s_active_peer_slot, slot);
     atomic_store(&s_connected, false);
     if (atomic_load(&s_connected_peer_valid)) {
@@ -1866,6 +1906,7 @@ esp_err_t codex_micro_clear_ble_slot(uint8_t slot)
     }
 
     release_active_controls();
+    atomic_store(&s_ble_slot_redirect_pending, 0u);
     if (atomic_load(&s_connected_peer_valid) &&
         peer_address_matches(&peer, s_connected_peer_address)) {
         (void)esp_ble_gap_disconnect(s_connected_peer_address);
@@ -1921,6 +1962,7 @@ esp_err_t codex_micro_factory_reset(void)
     memset(s_connected_peer_address, 0, sizeof(s_connected_peer_address));
     portEXIT_CRITICAL(&s_state_lock);
     atomic_store(&s_active_peer_slot, 1u);
+    atomic_store(&s_ble_slot_redirect_pending, 0u);
     s_soft_restart_mode_pending = false;
     s_soft_restart_mode_magic = 0;
     s_soft_restart_mode_value = CODEX_MICRO_MODE_NORMAL;
@@ -1971,6 +2013,22 @@ bool codex_micro_ble_slot_connected(uint8_t slot)
     }
     const codex_micro_ble_peer_t peer = peer_for_slot(slot);
     return peer_address_matches(&peer, s_connected_peer_address);
+}
+
+bool codex_micro_take_ble_slot_redirect(uint8_t *slot)
+{
+    if (atomic_load(&s_ble_slot_redirect_pending) == 0u) {
+        return false;
+    }
+    const uint8_t pending =
+        atomic_exchange(&s_ble_slot_redirect_pending, 0u);
+    if (!valid_ble_slot(pending)) {
+        return false;
+    }
+    if (slot != NULL) {
+        *slot = pending;
+    }
+    return true;
 }
 
 codex_micro_mode_t codex_micro_mode(void)
@@ -2024,6 +2082,20 @@ static bool codex_agent_keys_enabled(codex_micro_mode_t mode)
            mode == CODEX_MICRO_MODE_CODEX;
 }
 
+void codex_micro_clear_agent_press(void)
+{
+    portENTER_CRITICAL(&s_state_lock);
+    codex_agent_press_model_clear(&s_agent_press);
+    portEXIT_CRITICAL(&s_state_lock);
+}
+
+static bool normal_agent_focus_selected(void)
+{
+    config_normal_agent_behavior_t behavior;
+    return config_store_get_normal_agent_behavior(&behavior) == ESP_OK &&
+           behavior == CONFIG_NORMAL_AGENT_BEHAVIOR_OPEN_CONVERSATION;
+}
+
 codex_agent_press_snapshot_t codex_micro_get_agent_press(void)
 {
     const uint64_t now_ms = (uint64_t)esp_timer_get_time() / 1000u;
@@ -2031,10 +2103,15 @@ codex_agent_press_snapshot_t codex_micro_get_agent_press(void)
     codex_agent_press_snapshot_t snapshot =
         codex_agent_press_model_read(&s_agent_press, now_ms);
     portEXIT_CRITICAL(&s_state_lock);
+    if (snapshot.agent < 0) {
+        return snapshot;
+    }
     const codex_transport_t transport =
         snapshot.transport == CODEX_AGENT_PRESS_TRANSPORT_USB
             ? CODEX_TRANSPORT_USB : CODEX_TRANSPORT_BLE;
-    if (codex_micro_mode() != CODEX_MICRO_MODE_CODEX ||
+    const codex_micro_mode_t mode = codex_micro_mode();
+    if ((mode != CODEX_MICRO_MODE_CODEX &&
+         !(mode == CODEX_MICRO_MODE_NORMAL && normal_agent_focus_selected())) ||
         atomic_load(&s_input_suppressed) || !codex_micro_input_ready() ||
         !transport_connected(transport)) {
         snapshot.agent = -1;
@@ -2066,6 +2143,22 @@ bool codex_micro_handle_event(const board_event_t *event)
          mapping.agent == CODEX_MICRO_AGENT_NONE)) {
         return false;
     }
+    config_normal_agent_behavior_t normal_behavior =
+        CONFIG_NORMAL_AGENT_BEHAVIOR_UNSELECTED;
+    if (mode == CODEX_MICRO_MODE_NORMAL) {
+        portENTER_CRITICAL(&s_state_lock);
+        const bool held = s_ble_press_active[event->control];
+        portEXIT_CRITICAL(&s_state_lock);
+        if (!event->pressed && !held) {
+            return true;
+        }
+        if (event->pressed &&
+            (config_store_get_normal_agent_behavior(&normal_behavior) != ESP_OK ||
+             normal_behavior == CONFIG_NORMAL_AGENT_BEHAVIOR_STATUS_ONLY)) {
+            /* Unknown persistence state cannot enable the legacy output. */
+            return true;
+        }
+    }
     if (!codex_micro_input_ready()) {
         return true;
     }
@@ -2079,6 +2172,20 @@ bool codex_micro_handle_event(const board_event_t *event)
             return true;
         }
         codex_transport_t transport = preferred_transport();
+        if (mode == CODEX_MICRO_MODE_NORMAL && event->pressed &&
+            normal_behavior == CONFIG_NORMAL_AGENT_BEHAVIOR_OPEN_CONVERSATION) {
+            portENTER_CRITICAL(&s_state_lock);
+            const bool already_pressed = s_ble_press_active[event->control];
+            transport = s_codex_task_lights[mapping.agent].source;
+            portEXIT_CRITICAL(&s_state_lock);
+            if (already_pressed) {
+                return true;
+            }
+            if (transport == CODEX_TRANSPORT_AUTO ||
+                !transport_connected(transport)) {
+                return true;
+            }
+        }
         portENTER_CRITICAL(&s_state_lock);
         const bool new_press =
             event->pressed && !s_ble_press_active[event->control];
@@ -2092,14 +2199,16 @@ bool codex_micro_handle_event(const board_event_t *event)
             event->pressed ? transport : CODEX_TRANSPORT_AUTO;
         portEXIT_CRITICAL(&s_state_lock);
         if (!send_event) {
-            return false;
+            return mode == CODEX_MICRO_MODE_NORMAL;
         }
         const esp_err_t result = send_key(
             mapping.vendor_key, event->pressed ? 1 : 0,
             mapping.agent, transport);
         if (result == ESP_OK && new_press &&
             mapping.agent != CODEX_MICRO_AGENT_NONE &&
-            codex_micro_mode() == CODEX_MICRO_MODE_CODEX &&
+            (codex_micro_mode() == CODEX_MICRO_MODE_CODEX ||
+             (codex_micro_mode() == CODEX_MICRO_MODE_NORMAL &&
+              normal_behavior == CONFIG_NORMAL_AGENT_BEHAVIOR_OPEN_CONVERSATION)) &&
             !atomic_load(&s_input_suppressed) && codex_micro_input_ready() &&
             transport_connected(transport)) {
             const uint64_t now_ms = (uint64_t)esp_timer_get_time() / 1000u;

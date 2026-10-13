@@ -28,6 +28,8 @@ typedef enum {
     CONFIG_ACTION_PROMPT,
     CONFIG_ACTION_PROFILE,
     CONFIG_ACTION_DEVICE,
+    CONFIG_ACTION_KEY_GESTURE,
+    CONFIG_ACTION_HOST_ACTION,
 } config_action_type_t;
 
 typedef enum {
@@ -64,17 +66,27 @@ typedef enum {
     CONFIG_PLATFORM_CUSTOM,
 } config_platform_t;
 
+typedef enum {
+    CONFIG_NORMAL_AGENT_BEHAVIOR_UNSELECTED = 0,
+    CONFIG_NORMAL_AGENT_BEHAVIOR_OPEN_CONVERSATION = 1,
+    CONFIG_NORMAL_AGENT_BEHAVIOR_STATUS_ONLY = 2,
+} config_normal_agent_behavior_t;
+
 typedef struct {
     config_action_type_t type;
     uint16_t usage;
     uint8_t modifiers[CONFIG_STORE_MAX_MODIFIERS];
     size_t modifier_count;
+    uint16_t double_usage;
+    uint8_t double_modifiers[CONFIG_STORE_MAX_MODIFIERS];
+    size_t double_modifier_count;
     uint8_t mouse_buttons;
     int8_t mouse_x;
     int8_t mouse_y;
     int8_t mouse_wheel;
     int8_t mouse_pan;
     uint8_t object_id;
+    char task_token[33];
     config_device_action_t device_action;
     char short_name[CONFIG_STORE_SHORT_NAME_BYTES + 1];
 } config_action_t;
@@ -205,9 +217,16 @@ esp_err_t config_store_get_ble_name(char *out, size_t capacity);
 /** Save for the next normal boot; pending configuration activation returns INVALID_STATE. */
 esp_err_t config_store_set_ble_name(const char *name);
 
+/** Device-wide Normal-mode Agent key choice; absent NVS key means unselected. */
+esp_err_t config_store_get_normal_agent_behavior(
+    config_normal_agent_behavior_t *behavior);
+/** Only the two explicit user choices may be persisted. */
+esp_err_t config_store_set_normal_agent_behavior(
+    config_normal_agent_behavior_t behavior);
+
 /**
  * Remember whether the user explicitly left the product formally powered on.
- * A missing value defaults to on so firmware updates and first boot remain usable.
+ * A missing value defaults to off so USB-only first boot remains in standby.
  */
 bool config_store_get_user_powered_on(void);
 esp_err_t config_store_set_user_powered_on(bool powered_on);
@@ -222,6 +241,8 @@ esp_err_t config_store_stage_factory_default(uint32_t base_generation,
 
 /** Recovery path used by the reserved boot chord; bypasses generation confirmation. */
 esp_err_t config_store_force_factory_default(void);
+
+bool config_store_get_codex_voice_action(config_action_t *action);
 
 bool config_store_get_action(const char *control_id, config_action_t *action);
 bool config_store_get_macro_step(uint8_t macro_id, size_t index, config_macro_step_t *step,

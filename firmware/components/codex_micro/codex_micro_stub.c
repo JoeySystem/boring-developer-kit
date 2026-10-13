@@ -17,6 +17,10 @@ codex_agent_press_snapshot_t codex_micro_get_agent_press(void)
     return (codex_agent_press_snapshot_t){.agent = -1};
 }
 
+void codex_micro_clear_agent_press(void)
+{
+}
+
 bool codex_micro_ble_services_ready(void)
 {
     return false;
@@ -27,9 +31,10 @@ const char *codex_micro_ble_device_name(void)
     return WMP_BLE_NAME_DEFAULT;
 }
 
-esp_err_t codex_micro_init(const char *serial)
+esp_err_t codex_micro_init(const char *serial, bool initially_suspended)
 {
     (void)serial;
+    (void)initially_suspended;
     s_mode = CODEX_MICRO_MODE_NORMAL;
     return ESP_OK;
 }
@@ -119,6 +124,12 @@ bool codex_micro_ble_slot_paired(uint8_t slot)
 }
 
 bool codex_micro_ble_slot_connected(uint8_t slot)
+{
+    (void)slot;
+    return false;
+}
+
+bool codex_micro_take_ble_slot_redirect(uint8_t *slot)
 {
     (void)slot;
     return false;

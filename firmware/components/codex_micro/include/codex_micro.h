@@ -63,7 +63,7 @@ extern "C" {
  * In the normal no-BLE build this is a no-op so the original firmware target
  * keeps exactly one USB HID + CDC transport.
  */
-esp_err_t codex_micro_init(const char *serial);
+esp_err_t codex_micro_init(const char *serial, bool initially_suspended);
 /** Name loaded by this boot's BLE initialization; saves apply after reboot. */
 const char *codex_micro_ble_device_name(void);
 bool codex_micro_ble_services_ready(void);
@@ -128,6 +128,15 @@ bool codex_micro_ble_slot_paired(uint8_t slot);
 /** True when the requested slot is the active encrypted BLE connection. */
 bool codex_micro_ble_slot_connected(uint8_t slot);
 
+/**
+ * Consume the saved slot for a peer rejected from a different empty slot.
+ *
+ * Returns true once for each detected mismatch and writes the existing slot
+ * when slot is non-NULL. This is display guidance only; it never switches or
+ * clears a pairing slot.
+ */
+bool codex_micro_take_ble_slot_redirect(uint8_t *slot);
+
 /** Return the operating mode; cold boot and ordinary reconnect reset to NORMAL. */
 codex_micro_mode_t codex_micro_mode(void);
 
@@ -141,6 +150,8 @@ bool codex_micro_has_active_control(void);
 bool codex_micro_agent_focus_supported(void);
 /** Thread-safe, non-consuming latest physical Agent press notification. */
 codex_agent_press_snapshot_t codex_micro_get_agent_press(void);
+/** Invalidate an unconsumed focus notification after a behavior change. */
+void codex_micro_clear_agent_press(void);
 
 /** Send one standard keyboard/consumer/mouse report over the BLE HID link. */
 esp_err_t codex_micro_send_standard_report(uint8_t report_id,

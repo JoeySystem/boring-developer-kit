@@ -108,6 +108,7 @@ static size_t s_mouse_write;
 static uint32_t s_mouse_button_owners[8];
 static uint8_t s_mouse_buttons;
 static bool s_mouse_buttons_dirty;
+static bool s_calibration_interlock_seen;
 static char s_serial[18] = "CP01-000000000000";
 static uint8_t s_cdc_rx[512];
 static cdc_tx_node_t *s_cdc_tx_head;
@@ -775,6 +776,14 @@ static bool route_send_report(usb_service_route_t route, uint8_t report_id,
     if (!route_ready(route) || data == NULL || length == 0) {
         return false;
     }
+    if (config_protocol_calibration_output_interlock_active()) {
+        const uint8_t *bytes = data;
+        for (size_t index = 0; index < length; ++index) {
+            if (bytes[index] != 0) {
+                return false;
+            }
+        }
+    }
     if (route == USB_SERVICE_ROUTE_USB) {
         return tud_hid_n_report(USB_HID_INSTANCE_STANDARD, report_id, data,
                                 (uint16_t)length);
@@ -841,6 +850,12 @@ static bool update_hid_route(void)
 
 void usb_service_poll(void)
 {
+    const bool calibration_interlock =
+        config_protocol_calibration_output_interlock_active();
+    if (calibration_interlock && !s_calibration_interlock_seen) {
+        usb_service_release_all();
+    }
+    s_calibration_interlock_seen = calibration_interlock;
     if (usb_service_is_mounted()) {
         poll_cdc_tx();
 #if CONFIG_CODEX_MICRO_USB_ENABLED

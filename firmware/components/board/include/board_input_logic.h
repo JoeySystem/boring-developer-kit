@@ -81,3 +81,16 @@ uint8_t board_joystick_classify_axes_hysteresis(int x, int y, int center_x, int 
                                                  int enter_deadzone_x, int exit_deadzone_x,
                                                  int enter_deadzone_y, int exit_deadzone_y,
                                                  uint8_t previous_directions);
+
+/**
+ * Remove incidental cross-axis input from a cardinal push. Distances are
+ * normalized by the calibrated travel on the side being pushed. If only the
+ * minor axis has crossed its deadzone, wait for the major axis rather than
+ * sending the wrong direction. The smaller axis enters a diagonal at
+ * 70 percent of the larger axis and exits below 60 percent once both
+ * directions were active on the previous sample.
+ */
+uint8_t board_joystick_limit_diagonal(uint8_t directions,
+                                      int x, int y, int center_x, int center_y,
+                                      int span_x, int span_y,
+                                      uint8_t previous_directions);
