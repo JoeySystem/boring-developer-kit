@@ -108,6 +108,9 @@ class ProvisionRequest:
     operator: str = ""
     record_kind: RecordKind = RecordKind.VALIDATION
     verify_timeout_s: float = 30.0
+    # Post-OTA readback: long enough for an operator to replug the cable.
+    readback_timeout_s: float = 180.0
+    replug_prompt_after_s: float = 15.0
 
 
 @dataclass(frozen=True)

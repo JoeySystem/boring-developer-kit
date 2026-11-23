@@ -3,79 +3,185 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BORING MIST 固件恢复</title>
+  <title>BORING MIST 固件更新与校准</title>
   <link rel="stylesheet" href="/authority-update.css">
 </head>
 <body>
-  <main class="shell">
+  <main class="app">
     <header class="topbar">
-      <div class="brand-mark" aria-hidden="true">⚡</div>
-      <div>
-        <p class="eyebrow">BORING SERVICE TOOL</p>
-        <h1>恢复你的 BORING MIST</h1>
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7"></path><polyline points="20 4 20 9 15 9"></polyline></svg>
       </div>
-      <button id="exitButton" class="quiet-button" type="button">退出工具</button>
+      <div class="brand-text">
+        <span class="eyebrow">BORING SERVICE TOOL</span>
+        <span class="app-title">固件更新与校准</span>
+      </div>
+      <span id="testBadge" class="test-badge" hidden>验收测试版 · 固件未验证 · 不可交付</span>
+      <div id="deviceChip" class="device-chip waiting" role="status">
+        <span class="dot" aria-hidden="true"></span><span id="deviceChipText">未连接</span>
+      </div>
+      <button id="exitButton" class="quiet-button" type="button">退出</button>
     </header>
 
-    <section class="notice" aria-label="工具边界">
-      <strong>先退出 Boring Console，再连接 USB</strong>
-      <span>即使屏幕不亮也可以尝试检测。工具会检查 USB 通信，恢复固件并登记官方来源；保留设备身份和个人设置，不需要拆机。</span>
-    </section>
+    <ol id="steps" class="steps" aria-label="更新步骤">
+      <li data-step="1"><span class="num">1</span><span class="label">连接设备</span></li>
+      <li data-step="2"><span class="num">2</span><span class="label">更新固件</span></li>
+      <li data-step="3"><span class="num">3</span><span class="label">校准摇杆</span></li>
+      <li data-step="4"><span class="num">4</span><span class="label">完成</span></li>
+    </ol>
 
-    <section class="workspace">
-      <article class="authority-card">
-        <p class="eyebrow">内置官方恢复固件</p>
-        <div class="authority-row">
-          <div>
-            <h2 id="releaseId">正在读取…</h2>
-            <p id="buildId" class="muted">—</p>
-          </div>
-          <span id="validationState" class="badge">校验中</span>
+    <section id="stage" class="stage" aria-live="polite">
+      <div id="viewConnect" class="view">
+        <div class="heading">
+          <span class="step-eyebrow">第 1 步 · 连接设备</span>
+          <h1 id="connectTitle">请连接 BORING MIST</h1>
+          <p id="connectMessage" class="lead">工具会自动扫描。</p>
         </div>
-      </article>
+        <ol class="plan">
+          <li><span class="plan-num">1</span><strong>更新固件</strong><span>写入正式固件，重启后读回版本确认</span></li>
+          <li><span class="plan-num">2</span><strong>清空蓝牙槽位</strong><span>清除全部旧配对，交付时三个槽位都空闲</span></li>
+          <li><span class="plan-num">3</span><strong>校准摇杆</strong><span>按屏幕提示推动摇杆，保存后再验收四个方向</span></li>
+        </ol>
+        <div class="spacer"></div>
+        <details class="infobar">
+          <summary>
+            <span>端口 <strong id="devicePort">—</strong></span>
+            <span>内置固件 <strong id="firmwareVersion">—</strong></span>
+            <span class="infobar-toggle">技术信息</span>
+          </summary>
+          <dl id="techDetails" class="tech-details"></dl>
+        </details>
+      </div>
 
-      <article id="deviceCard" class="device-card waiting">
-        <div class="device-icon" aria-hidden="true">◎</div>
-        <div class="device-copy">
-          <p class="eyebrow">当前设备</p>
-          <h2 id="deviceTitle">请接入 1 台设备</h2>
-          <p id="deviceMessage" class="muted">工具会自动扫描。</p>
-          <p id="devicePort" class="device-port" hidden></p>
+      <div id="viewFirmware" class="view" hidden>
+        <div class="heading">
+          <span class="step-eyebrow">第 2 步 · 更新固件</span>
+          <h1 id="firmwareTitle">正在写入固件</h1>
+          <p id="firmwareLead" class="lead">不需要操作，等待自动完成即可。</p>
         </div>
-        <button id="scanButton" class="quiet-button" type="button">重新扫描</button>
-      </article>
-
-      <article id="progressCard" class="progress-card" hidden>
-        <div class="progress-heading">
-          <div>
-            <p class="eyebrow">更新进度</p>
-            <h2 id="progressTitle">准备更新</h2>
-          </div>
+        <div class="progress">
           <div class="progress-numbers">
-            <strong id="progressPercent">0%</strong>
+            <strong id="firmwarePercent">0%</strong>
             <span id="elapsedTime">已用时 00:00</span>
           </div>
+          <div class="progress-track" aria-hidden="true"><i id="firmwareFill"></i></div>
         </div>
-        <div class="progress-track" aria-hidden="true"><i id="progressFill"></i></div>
-        <p id="progressMessage" class="muted">请保持 USB 连接。</p>
-        <ol id="eventList" class="event-list"></ol>
-      </article>
+        <ul id="firmwareSteps" class="substeps">
+          <li data-key="transfer"><span class="mark" aria-hidden="true"></span><span class="name">传输固件</span><span id="transferBytes" class="meta"></span></li>
+          <li data-key="readback"><span class="mark" aria-hidden="true"></span><span class="name">重启并读回版本</span><span class="meta"></span></li>
+          <li data-key="slots"><span class="mark" aria-hidden="true"></span><span class="name">清空蓝牙槽位</span><span class="meta"></span></li>
+        </ul>
+        <div class="spacer"></div>
+        <div id="firmwareCallout" class="callout warn" role="status">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20L12 3z"></path><line x1="12" y1="10" x2="12" y2="14"></line><line x1="12" y1="17" x2="12" y2="17.01"></line></svg>
+          <span id="firmwareCalloutText">请勿拔线。固件写入期间窗口无法关闭。</span>
+        </div>
+        <details class="log">
+          <summary>详细日志</summary>
+          <ol id="eventList" class="event-list"></ol>
+        </details>
+      </div>
 
-      <article id="resultCard" class="result-card" hidden>
-        <p class="eyebrow">更新结果</p>
-        <h2 id="resultTitle"></h2>
-        <p id="resultMessage" class="muted"></p>
-        <dl id="resultDetails"></dl>
-      </article>
+      <div id="viewCalibrate" class="view" hidden>
+        <div class="cal-head">
+          <span class="step-eyebrow">第 3 步 · 校准摇杆</span>
+          <ol id="calPills" class="pills" aria-label="校准阶段">
+            <li data-key="capture">① 行程采集</li>
+            <li data-key="save">② 自动保存</li>
+            <li data-key="verify">③ 四向验收</li>
+          </ol>
+        </div>
+        <div class="cal-body">
+          <div id="stick" class="stick" role="img" aria-label="摇杆实时位置">
+            <div class="ring"></div>
+            <div class="axis axis-v"></div>
+            <div class="axis axis-h"></div>
+            <div class="center-mark"></div>
+            <span class="dir-chip" data-dir="up">上</span>
+            <span class="dir-chip" data-dir="down">下</span>
+            <span class="dir-chip" data-dir="left">左</span>
+            <span class="dir-chip" data-dir="right">右</span>
+            <div id="stickDot" class="stick-dot"></div>
+          </div>
+          <div class="cal-text">
+            <div class="heading">
+              <h1 id="calTitle">先松开摇杆</h1>
+              <p id="calHint" class="lead">设备正在记录中心位置，请不要碰摇杆。</p>
+            </div>
+            <ul id="calDirections" class="dir-list">
+              <li data-dir="up"><span class="mark" aria-hidden="true"></span>上</li>
+              <li data-dir="down"><span class="mark" aria-hidden="true"></span>下</li>
+              <li data-dir="left"><span class="mark" aria-hidden="true"></span>左</li>
+              <li data-dir="right"><span class="mark" aria-hidden="true"></span>右</li>
+            </ul>
+            <div id="calReturn" class="return-row"><span class="mark" aria-hidden="true"></span><span id="calReturnText">四个方向完成后，再推开一次并松手静置 1 秒</span></div>
+            <span id="calRaw" class="raw">原始读数 —</span>
+          </div>
+        </div>
+        <div class="spacer"></div>
+        <div id="calNote" class="callout info">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><line x1="12" y1="8" x2="12" y2="8.01"></line><line x1="12" y1="11" x2="12" y2="16"></line></svg>
+          <span id="calNoteText">采集完成后会自动保存并读回，然后进入四向验收。验收期间摇杆不会向电脑发送按键。</span>
+        </div>
+      </div>
 
-      <div id="errorBanner" class="error-banner" role="alert" hidden></div>
+      <div id="viewDone" class="view" hidden>
+        <div class="result-head">
+          <span class="result-icon ok" aria-hidden="true"><svg viewBox="0 0 24 24"><polyline points="5 12.5 10 17.5 19 7"></polyline></svg></span>
+          <div class="heading">
+            <h1>本台已完成</h1>
+            <p id="doneSummary" class="lead">固件、蓝牙槽位和摇杆验收全部通过</p>
+          </div>
+        </div>
+        <dl id="doneDetails" class="summary-tiles"></dl>
+        <div class="callout ok">
+          <div class="callout-body">
+            <strong>拔下 USB 即可交付</strong>
+            <span>不需要在电脑上配对。蓝牙槽位保持空闲，使用者拿到后自行配对。</span>
+            <span class="muted">请勿用本机测试蓝牙连接，否则会占用一个槽位。</span>
+          </div>
+        </div>
+        <div class="spacer"></div>
+        <details class="log">
+          <summary>各阶段耗时与记录位置</summary>
+          <dl id="doneTimings" class="tech-details"></dl>
+        </details>
+      </div>
 
-      <button id="primaryButton" class="primary-button" type="button" disabled>
-        等待设备
-      </button>
-      <p class="shortcut-hint">恢复过程中请保持 USB 连接。未检测到设备或恢复失败时，请将诊断文件发给售后。</p>
-      <a class="quiet-button" href="/api/authority-update/report" download>保存诊断信息</a>
+      <div id="viewFailed" class="view" hidden>
+        <div class="result-head">
+          <span class="result-icon fail" aria-hidden="true"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"></line><line x1="18" y1="6" x2="6" y2="18"></line></svg></span>
+          <div class="heading">
+            <h1>本台未完成</h1>
+            <p id="failedStage" class="lead">停在：更新固件</p>
+          </div>
+        </div>
+        <div class="callout fail">
+          <div class="callout-body">
+            <strong>原因</strong>
+            <span id="failedMessage">—</span>
+          </div>
+        </div>
+        <p class="lead">不要当作合格品交付。检查 USB 连接后点“重新开始”；同一台连续失败请单独放置并记下序列号。</p>
+        <div class="spacer"></div>
+        <details class="log" open>
+          <summary>失败前的操作日志</summary>
+          <ol id="failedLog" class="event-list"></ol>
+        </details>
+        <details class="log">
+          <summary>各阶段耗时与记录位置</summary>
+          <dl id="failedTimings" class="tech-details"></dl>
+        </details>
+      </div>
     </section>
+
+    <div id="errorBanner" class="error-banner" role="alert" hidden></div>
+
+    <footer class="actionbar">
+      <button id="cancelCalibrationButton" class="quiet-button danger-quiet" type="button" hidden>取消校准</button>
+      <span id="primaryHint" class="hint">一次只连接 1 台设备。点击即确认上面的操作范围。</span>
+      <button id="primaryButton" class="primary-button" type="button" disabled>等待设备</button>
+    </footer>
   </main>
   <script src="/authority-update.js"></script>
 </body>

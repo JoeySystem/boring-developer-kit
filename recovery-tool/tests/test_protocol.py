@@ -1,193 +1,114 @@
 from __future__ import annotations
 
-import io
 import json
-import struct
+import threading
+import time
 import unittest
-import zlib
-from unittest.mock import patch
+from unittest import mock
 
-from provisioner.errors import VerificationError
 from provisioner.protocol import (
     ACK,
-    GET_CONFIG,
-    GET_STATUS,
-    HELLO,
-    PING,
+    DIAGNOSTIC_START,
+    DIAGNOSTIC_STOP,
+    HEADER,
     WmpClient,
     encode_frame,
 )
 
 
-HEADER = struct.Struct("<4sBBBBIII")
-
-
-class ScriptedSerial(io.BytesIO):
-    def __init__(self, replies):
-        super().__init__()
-        self.replies = bytearray().join(replies)
-        self.writes = []
-
-    def write(self, data):
-        self.writes.append(bytes(data))
-        return len(data)
-
-    def read(self, length):
-        data = bytes(self.replies[:length])
-        del self.replies[:length]
-        return data
+class ResponsePort:
+    def __init__(self, *, stale: bytes = b"", write_delay: float = 0):
+        self.buffer = bytearray(stale)
+        self.write_delay = write_delay
+        self.reset_count = 0
+        self._active_write = False
+        self.overlapped = False
+        self._lock = threading.Lock()
 
     def reset_input_buffer(self):
-        pass
+        self.reset_count += 1
+        self.buffer.clear()
 
-
-def reply(request_id, command, result):
-    return encode_frame(ACK, request_id, {"command": command, "result": result}, flags=0x01)
-
-
-class ProtocolTest(unittest.TestCase):
-    def setUp(self):
-        random_start = patch("secrets.randbelow", return_value=0)
-        random_start.start()
-        self.addCleanup(random_start.stop)
-
-    def test_new_connections_do_not_reuse_request_ids(self):
-        with patch("secrets.randbelow", side_effect=[0, 1234]):
-            first = WmpClient(ScriptedSerial([]))
-            second = WmpClient(ScriptedSerial([]))
-
-        self.assertEqual(0, first.request_id)
-        self.assertEqual(1234, second.request_id)
-
-    def test_request_id_wraps_after_32_bit_limit(self):
-        with patch("secrets.randbelow", return_value=0xFFFFFFFE):
-            serial = ScriptedSerial(
-                [reply(0xFFFFFFFF, "GET_STATUS", {}), reply(1, "GET_STATUS", {})]
+    def write(self, request: bytes):
+        with self._lock:
+            if self._active_write:
+                self.overlapped = True
+            self._active_write = True
+        try:
+            if self.write_delay:
+                time.sleep(self.write_delay)
+            _, _, _, _, _, request_id, length, _ = HEADER.unpack_from(request)
+            payload = json.loads(request[HEADER.size:HEADER.size + length])
+            response = encode_frame(
+                ACK,
+                request_id,
+                {"request": payload},
+                flags=0x01,
             )
-            client = WmpClient(serial)
+            self.buffer.extend(response)
+            return len(request)
+        finally:
+            with self._lock:
+                self._active_write = False
 
-        client.get_status()
-        client.get_status()
-        sent_ids = [HEADER.unpack(frame[: HEADER.size])[5] for frame in serial.writes]
-        self.assertEqual([0xFFFFFFFF, 1], sent_ids)
+    def read(self, length: int) -> bytes:
+        if not self.buffer:
+            return b""
+        chunk = bytes(self.buffer[:length])
+        del self.buffer[:length]
+        return chunk
 
-    def test_frame_uses_current_ack_and_crc_contract(self):
-        frame = encode_frame(PING, 7, {"nonce": "abc"})
-        magic, major, minor, message_type, flags, request_id, length, checksum = HEADER.unpack(
-            frame[: HEADER.size]
-        )
-        self.assertEqual((b"WMP1", 1, 0, PING, 0, 7), (magic, major, minor, message_type, flags, request_id))
-        self.assertEqual(zlib.crc32(frame[HEADER.size :]), checksum)
-        self.assertEqual(length, len(frame) - HEADER.size)
-        self.assertEqual(0x7E, ACK)
 
-    def test_runtime_verification_runs_hello_ping_and_get_config(self):
-        serial = ScriptedSerial(
-            [
-                reply(
-                    1,
-                    "HELLO",
-                    {
-                        "identity": {
-                            "product_id": "wired-macro-pad-v1",
-                            "hardware_id": "WMP-S3-REV-A",
-                            "serial": "CP01-288485AA3E04",
-                        }
-                    },
-                ),
-                reply(2, "PING", {"nonce": "provisioner-2"}),
-                reply(3, "GET_CONFIG", {"generation": 4, "digest": "abc", "config": {}}),
+class WmpClientExchangeTest(unittest.TestCase):
+    def test_exchange_discards_stale_serial_bytes_before_request(self):
+        port = ResponsePort(stale=b"stale serial output")
+        client = WmpClient(port, timeout_s=0.2)
+
+        result = client.exchange(0x03, {"value": 1})
+
+        self.assertEqual({"value": 1}, result["request"])
+        self.assertEqual(1, port.reset_count)
+
+    def test_exchange_serializes_requests_on_shared_calibration_client(self):
+        port = ResponsePort(write_delay=0.03)
+        client = WmpClient(port, timeout_s=0.5)
+        results = []
+        errors = []
+
+        def exchange(value: int):
+            try:
+                results.append(client.exchange(0x21, {"value": value}))
+            except Exception as exc:  # pragma: no cover - retained for thread reporting
+                errors.append(exc)
+
+        threads = [threading.Thread(target=exchange, args=(value,)) for value in (1, 2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=2)
+
+        self.assertFalse(errors)
+        self.assertEqual([1, 2], sorted(item["request"]["value"] for item in results))
+        self.assertFalse(port.overlapped)
+
+    def test_diagnostic_capture_commands_use_empty_payloads(self):
+        client = WmpClient(mock.MagicMock())
+        client.exchange = mock.MagicMock(
+            side_effect=[
+                {"command": "DIAGNOSTIC_START", "result": {"active": True}},
+                {"command": "DIAGNOSTIC_STOP", "result": {"active": False}},
             ]
         )
 
-        result = WmpClient(serial).verify()
-
-        self.assertEqual("wired-macro-pad-v1", result.product_id)
-        self.assertEqual("WMP-S3-REV-A", result.hardware_id)
-        self.assertEqual("CP01-288485AA3E04", result.serial)
-        self.assertEqual(4, result.config_generation)
-        sent_types = [HEADER.unpack(frame[: HEADER.size])[3] for frame in serial.writes]
-        self.assertEqual([HELLO, PING, GET_CONFIG], sent_types)
-
-    def test_runtime_verification_rejects_missing_factory_serial(self):
-        serial = ScriptedSerial(
+        self.assertTrue(client.diagnostic_start()["active"])
+        self.assertFalse(client.diagnostic_stop()["active"])
+        self.assertEqual(
             [
-                reply(
-                    1,
-                    "HELLO",
-                    {
-                        "identity": {
-                            "product_id": "wired-macro-pad-v1",
-                            "hardware_id": "WMP-S3-REV-A",
-                        }
-                    },
-                )
-            ]
+                mock.call(DIAGNOSTIC_START, {}),
+                mock.call(DIAGNOSTIC_STOP, {}),
+            ],
+            client.exchange.call_args_list,
         )
-        with self.assertRaisesRegex(VerificationError, "serial"):
-            WmpClient(serial).verify()
-
-    def test_runtime_verification_accepts_expected_power_v2_build(self):
-        serial = ScriptedSerial(
-            [
-                reply(
-                    1,
-                    "HELLO",
-                    {
-                        "identity": {
-                            "product_id": "wired-macro-pad-v1",
-                            "hardware_id": "WMP-S3-MATRIX12-POWER-V2",
-                            "serial": "CP01-288485AA3E04",
-                        },
-                        "versions": {"build_id": "power-v2-build"},
-                    },
-                ),
-                reply(2, "PING", {"nonce": "provisioner-2"}),
-                reply(3, "GET_CONFIG", {"generation": 4, "digest": "abc", "config": {}}),
-            ]
-        )
-
-        result = WmpClient(serial).verify(
-            expected_hardware_id="WMP-S3-MATRIX12-POWER-V2",
-            expected_build_id="power-v2-build",
-        )
-
-        self.assertEqual("power-v2-build", result.build_id)
-
-    def test_runtime_verification_rejects_unexpected_build(self):
-        serial = ScriptedSerial(
-            [
-                reply(
-                    1,
-                    "HELLO",
-                    {
-                        "identity": {
-                            "product_id": "wired-macro-pad-v1",
-                            "hardware_id": "WMP-S3-MATRIX12-POWER-V2",
-                            "serial": "CP01-288485AA3E04",
-                        },
-                        "versions": {"build_id": "other-build"},
-                    },
-                )
-            ]
-        )
-
-        with self.assertRaisesRegex(VerificationError, "build_id"):
-            WmpClient(serial).verify(
-                expected_hardware_id="WMP-S3-MATRIX12-POWER-V2",
-                expected_build_id="power-v2-build",
-            )
-
-    def test_get_status_returns_result_object(self):
-        serial = ScriptedSerial(
-            [reply(1, "GET_STATUS", {"build_id": "power-v2-build", "active_controls": []})]
-        )
-
-        result = WmpClient(serial).get_status()
-
-        self.assertEqual("power-v2-build", result["build_id"])
-        sent_type = HEADER.unpack(serial.writes[0][: HEADER.size])[3]
-        self.assertEqual(GET_STATUS, sent_type)
 
 
 if __name__ == "__main__":

@@ -159,15 +159,36 @@ class RuntimeVerifier:
         expected_hardware_id: str,
         expected_build_id: str,
         expected_partition: str,
+        *,
+        replug_after_s: float | None = None,
+        on_replug_needed=None,
     ) -> RuntimeVerification:
+        """Wait for the restarted device and read back its exact build.
+
+        Firmware before the USB re-attach fix restarts without leaving the
+        bus; Windows can then keep the stale device (error 433) until the
+        cable is replugged. After replug_after_s without a readback,
+        on_replug_needed() is called once and polling simply continues, so a
+        replug completes the same readback without flashing again.
+        """
         try:
             import serial
         except ImportError as exc:
             raise VerificationError("缺少 pyserial，无法验证运行固件") from exc
 
-        deadline = time.monotonic() + timeout_s
+        started = time.monotonic()
+        deadline = started + timeout_s
         last_error = "设备尚未重新枚举"
+        replug_requested = False
         while time.monotonic() < deadline:
+            if (
+                not replug_requested
+                and replug_after_s is not None
+                and on_replug_needed is not None
+                and time.monotonic() - started >= replug_after_s
+            ):
+                replug_requested = True
+                on_replug_needed()
             candidates = [
                 port
                 for port in load_ports()

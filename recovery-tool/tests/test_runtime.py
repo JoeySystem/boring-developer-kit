@@ -152,5 +152,55 @@ class RuntimeSelectionTest(unittest.TestCase):
             )
 
 
+class PostOtaReplugTest(unittest.TestCase):
+    """Windows keeps a stale device after a restart that never left the bus."""
+
+    def setUp(self):
+        self.identity = UsbIdentity("Codex Micro", "303A", "8360")
+        self.stale = port("COM5", 0x303A, 0x8360, serial_number="CP01-288485AA3E04")
+        self.clock = [0.0]
+
+    def run_verify(self, open_results, *, replug_after_s=15.0, timeout_s=180.0):
+        prompts = []
+        attempts = iter(open_results)
+
+        def candidate(*_args, **_kwargs):
+            outcome = next(attempts)
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
+
+        def sleep(seconds):
+            self.clock[0] += 5.0
+
+        verifier = RuntimeVerifier(poll_interval_s=5.0)
+        with (
+            mock.patch("provisioner.runtime.load_ports", return_value=[self.stale]),
+            mock.patch("provisioner.runtime.time.monotonic", side_effect=lambda: self.clock[0]),
+            mock.patch("provisioner.runtime.time.sleep", side_effect=sleep),
+            mock.patch.object(RuntimeVerifier, "_verify_candidate", side_effect=candidate),
+            mock.patch.dict(sys.modules, {"serial": SimpleNamespace(SerialException=OSError)}),
+        ):
+            result = verifier.verify_serial(
+                self.identity, timeout_s, "CP01-288485AA3E04",
+                "WMP-S3-MATRIX12-POWER-V2", "build-2", "ota_1",
+                replug_after_s=replug_after_s,
+                on_replug_needed=lambda: prompts.append(self.clock[0]),
+            )
+        return result, prompts
+
+    def test_stale_port_prompts_once_then_replug_completes_the_same_readback(self):
+        stale = OSError("could not open port 'COM5': OSError(22, '指定不存在的设备。', None, 433)")
+        verified = SimpleNamespace(serial="CP01-288485AA3E04", port="COM5")
+        result, prompts = self.run_verify([stale] * 8 + [verified])
+        self.assertIs(result, verified)
+        self.assertEqual(prompts, [15.0])
+
+    def test_fast_readback_never_prompts(self):
+        verified = SimpleNamespace(serial="CP01-288485AA3E04", port="COM5")
+        _result, prompts = self.run_verify([OSError("busy"), verified])
+        self.assertEqual(prompts, [])
+
+
 if __name__ == "__main__":
     unittest.main()

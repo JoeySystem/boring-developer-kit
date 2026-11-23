@@ -1,49 +1,54 @@
-# BORING MIST 官方固件恢复工具
+# BORING MIST 固件更新与校准工具
 
-适用于 M 系列 Mac 与 WMP-S3-MATRIX12-POWER-V2 设备。内置 20261007.01 修复固件，保留个人配置和设备身份。
+适用于 WMP-S3-MATRIX12-POWER-V2（BORING MIST）。内置官方签名固件 **20261118.01-gf1f54815**，有 Apple 芯片 Mac 和 Windows 64 位两个版本。
 
-[下载安装包与源码](https://github.com/JoeySystem/boring-developer-kit/releases/tag/mist-recovery-20261007.01) · [AI 恢复提示词](AI-RECOVERY-PROMPT.md) · [故障排查](TROUBLESHOOTING.md)
+[下载 Mac / Windows 版](https://github.com/JoeySystem/boring-developer-kit/releases/tag/mist-recovery-20261118.01) · [故障排查](TROUBLESHOOTING.md) · [交给 AI 的提示词](AI-RECOVERY-PROMPT.md)
+
+## 它会做什么
+
+点“开始更新”后，工具依次自动完成：
+
+1. **写入固件**：通过 USB 写入内置固件，设备重启后读回版本核对。设备已经是这个版本时跳过写入，不重启。
+2. **清空蓝牙槽位**：三个蓝牙槽位逐个清除并读回，确认都为空。之后电脑和手机需要重新配对；电脑端的旧配对记录要在系统蓝牙设置里“忽略设备”。
+3. **设置第 8 键**：两个出厂 Profile（Codex macOS / Codex Windows）的第 8 键改为“单击说话（右 Option / 右 Alt + 空格）、双击发送（Enter）”，并移除全局语音键覆盖。自建 Profile 和其他按键不动。
+4. **校准摇杆**：按窗口提示把摇杆推到上、下、左、右极限再松手，完成后自动保存，再做一次四向验收。原有摇杆校准会被新结果替换。
+
+工具不改设备身份、不恢复出厂设置、不擦整片 Flash，也没有拆机或按 BOOT 的步骤。
 
 ## 使用
 
-1. 打开 DMG，把“BORING MIST 恢复工具”拖入“应用程序”。退出 Boring Console 和其他占用设备的程序。
-2. 用支持数据传输的 USB 线直连设备和 Mac。设备屏幕不亮或只有灯闪时，也可让工具检测。
-3. 打开恢复工具，浏览器会显示仅在本机运行的恢复页面。点击“恢复官方固件”，保持连接，等待重启和版本核对。
-4. 看到恢复成功且官方来源登记完成后，点击“退出工具”，再打开官方 Boring Console 0.2.1 或更新版。当前建议通过 USB 使用。
-5. 如果失败，点击“保存诊断信息”，把文件发给售后。日志不自动上传。
+1. 完全退出 BORING Console、串口助手和其他刷机工具。
+2. 用支持数据传输的 USB 线连接一台**正常开机**的 BORING MIST。
+3. Mac：解压 ZIP，打开 `BORING-MIST-BLE-Recovery.app`；首次被系统拦截时右键选“打开”。Windows：把整个 ZIP 解压到短路径（例如 `C:\BORING`），打开文件夹里的 `BORING-MIST-BLE-Recovery.exe`，不要把 EXE 单独拖出来。
+4. 窗口显示“已识别 1 台 BORING MIST”后点“开始更新”，按提示完成摇杆校准。
+5. 看到“本台已完成”即可拔线。ZIP 里另附 `Firmware-BORING-20261118.01.zip`，换电脑使用时可在 BORING Console 的“导入官方固件”里选它，让 Console 显示官方固件。
 
-工具需要设备仍能响应 USB 固件通信。不亮屏不代表一定不能恢复，但完全没有 USB 接口或协议无法响应时，工具无法越过硬件/启动故障强行烧录。无需拆机，也没有让用户按 BOOT 的操作。
+同一时间只能开一个工具窗口，一次只接一台设备。固件写入期间窗口无法关闭。
 
-macOS 应用目前为本地 ad-hoc 签名，未做 Apple Developer ID 公证；这与固件的 BORING 官方发布签名是两回事。首次打开若系统提示无法验证开发者，可在确认文件来自 BORING 售后的前提下，按 macOS“隐私与安全性”的“仍要打开”流程操作。公司管理策略禁止运行时请联系售后，不要关闭系统安全保护。
+## 限制
 
-## 官方识别
+- 需要设备能正常开机，并能通过 USB 数据通道通信。屏幕不亮、只有灯闪时可以先试，但完全没有 USB 响应的设备无法靠电脑端工具救回，请联系售后。
+- 校准期间关闭窗口：工具会先取消未保存的校准再退出，设备保留原配置。
+- Mac 版为本地临时签名，未做 Apple 公证；Windows 版未做程序签名，首次运行出现 SmartScreen 提示时选“仍要运行”。这与固件的 BORING 官方发布签名是两回事。
+- 20261118.01 是样机权威包（sample-verified），已在 Power V2 样机上通过 Console 导入和旧版升级验证；不代表所有设备、平台和长期运行都已验收。
+- 操作记录保存在本机：Mac 为 `~/Library/Application Support/Codex Micro Firmware Provisioner/history`，Windows 为 `%LOCALAPPDATA%\Codex Micro Firmware Provisioner\history`，不会自动上传。
 
-工具先验证内置固件的官方 Ed25519 签名。仅当 USB 刷写完成、同一设备重启并回读精确构建号后，才把这份有效签名发布记录加入当前 macOS 用户的 Console 官方记录。保留已有记录；不修改 Console 程序、信任公钥、设备证书或 eFuse。
+## 源码运行与构建
 
-这份记录只在执行工具的这台 Mac/当前账户登记。换电脑使用时，可在另一台 Mac 执行同样的恢复流程，或导入 Release 单独提供的官方签名 ZIP。固件签名不表示蓝牙问题已修复；当前售后范围是 USB 恢复。
-
-## 源码运行与修改
-
-需要 Python 3.13。执行：
+需要 Python 3.12 或 3.13。工具运行时要一份完整的固件包目录（含 `bootloader/`、`partition_table/`、`ota_data_initial.bin`、应用镜像、`firmware-manifest.json`，以及 `online/` 下带发布签名的 `Firmware-BORING-*.zip`），从 Release 的 `BORING-MIST-20261118.01-firmware-package.zip` 解压得到。
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m pip install -r requirements-authority-update.txt
+.venv/bin/python packaging/macos/prepare_bundle.py --tool-root . --output . \
+  --authority /path/to/BORING-MIST-20261118.01-firmware-package
 .venv/bin/python authority_update_app.py
 ```
 
-重建 DMG：`./build-macos.sh`。构建需要 macOS Command Line Tools；内置依赖，不要求客户安装 Python。产物架构与构建 Mac 相同；本次交付 arm64。
+重新打包：Mac 运行 `scripts/build-authority-updater-macos.sh /path/to/固件包目录`；Windows 在 PowerShell 运行 `scripts/build-authority-updater-windows.ps1 -AuthorityPath <固件包目录>`。社区构建使用 `packaging/make_icon.py` 生成的通用图标，官方版图标不在本仓库。
 
-可把整个目录交给 Codex 或其他 AI，入口见 AGENTS.md。修改检测、错误提示、串口连接或恢复流程后，先运行 `python -m unittest discover -s tests`，再用自己的样机验证。不要把仅检测到端口或发送完成当作恢复成功。
+修改检测、提示、串口或更新流程后，先运行 `python -m unittest discover -s tests -t .`，再用自己的样机验证。不要把“检测到端口”或“传输完成”当作更新成功。开发说明见 [AGENTS.md](AGENTS.md)。
 
-固件工程与修复补丁在交付目录的 `firmware-source.zip`。固件工具不包含发布私钥、生产根密钥、客户数据或本机配置。修改固件会使原签名失效；自改固件不能继续冒充官方构建，需自行按自定义固件流程使用。
+工具源码不含发布私钥、生产身份签发工具或客户数据。改过的固件会使官方签名失效，不能再当官方构建使用，请按[自定义固件流程](../firmware/README.md)处理。
 
-## 本次固件内容
-
-- 首次电量读取失败时，避免把原本已开机的设备错误记为关机。
-- 开机自检灯光从实际开始显示时计时，避免初始化耗时跳过后续灯光。
-- 构建号：20261007.01-gae3b06fb-dirty。保留真实工程状态；并非全量 stable 发布。
-
-实机结果见[公开验证记录](https://github.com/JoeySystem/boring-developer-kit/blob/main/docs/verification-mist-recovery-20261007.md)。
-
-源码沿用 PolyForm Noncommercial 1.0.0 非商业许可，见 LICENSE 和 NOTICE；第三方组件保留各自许可，见 THIRD-PARTY-NOTICES.md。
+源码沿用 PolyForm Noncommercial 1.0.0 非商业许可，见 [LICENSE](LICENSE) 和 [NOTICE](NOTICE)；第三方组件保留各自许可，见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。

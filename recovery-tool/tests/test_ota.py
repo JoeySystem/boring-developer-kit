@@ -181,6 +181,18 @@ class CdcOtaUpdaterTest(unittest.TestCase):
 
         self.assertNotIn(FW_BEGIN, [message_type for message_type, _ in client.calls])
 
+    def test_rejects_other_serial_before_any_firmware_write(self):
+        client = FakeClient(self.application)
+
+        with self.assertRaisesRegex(OtaUpdateError, "does not match"):
+            CdcOtaUpdater().update(
+                client,
+                self.application,
+                expected_serial="CP01-FFFFFFFFFFFF",
+            )
+
+        self.assertEqual([HELLO], [message_type for message_type, _ in client.calls])
+
     def test_rejects_unexpected_acknowledged_offset(self):
         client = FakeClient(self.application)
         original_exchange = client.exchange
