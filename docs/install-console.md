@@ -1,9 +1,9 @@
-# Console 0.2.1 安装包下载
+# Console 安装包下载
 
-以下安装包均通过 GitHub Releases 下载。
+当前官方版本：macOS **0.2.3**，Windows **0.2.1**。
 
-- [macOS Apple Silicon DMG](https://github.com/JoeySystem/boring-developer-kit/releases/download/v0.1.0-preview.10/BORING-Console-0.2.1-macOS-arm64.dmg)
-- [Windows x86_64 Setup EXE](https://github.com/JoeySystem/boring-developer-kit/releases/download/v0.1.0-preview.10/BORING-Console-0.2.1-Windows-x86_64-Setup.exe)
+- [macOS Apple Silicon DMG 0.2.1](https://github.com/JoeySystem/boring-developer-kit/releases/download/v0.1.0-preview.10/BORING-Console-0.2.1-macOS-arm64.dmg)：安装后应用会通过官方更新源自动升到 0.2.3（修复蓝牙连接时配置较多会读取超时的问题），已装 0.2.1 的 Mac 同样会自动收到。
+- [Windows x86_64 Setup EXE 0.2.1](https://github.com/JoeySystem/boring-developer-kit/releases/download/v0.1.0-preview.10/BORING-Console-0.2.1-Windows-x86_64-Setup.exe)：Windows 暂无 0.2.3；遇到蓝牙读配置超时时请先用 USB 连接。
 
 这是官方安装版，与本仓库社区构建分别交付。当前包尚无正式平台签名，系统可能提示未知开发者或发布者。macOS 更新后如快捷键无反应，请在“系统设置 → 隐私与安全性 → 辅助功能”中移除旧 BORING 条目，重新添加应用，再退出并重开控制台。Windows 0.2.1 已验证公开下载与更新签名，本轮未进行 Windows 实机安装测试。
 

@@ -32,3 +32,9 @@
 - esp_secure_cert_mgr 2.9.3：[上游](https://github.com/espressif/esp_secure_cert_mgr)。
 - led_strip 3.0.3：[组件来源](https://components.espressif.com/components/espressif/led_strip/versions/3.0.3)。
 - waveshare/esp_lcd_st7735 2.0.0：[组件来源](https://components.espressif.com/components/waveshare/esp_lcd_st7735/versions/2.0.0)。
+
+`firmware/components/esp_hid/` 是 ESP-IDF 6.0.2 `esp_hid` 组件的副本（Apache-2.0，保留 Espressif 版权头），仅新增输入报告订阅的保存与恢复；`firmware/tools/patches/esp-idf-v6.0.2-preserve-peripheral-bond.patch` 修改 ESP-IDF Bluedroid 源码（Apache-2.0）。两者沿用上游许可，不改为本仓库非商业许可，改动说明见 `firmware/components/esp_hid/BORING_CHANGES.md` 与 `firmware/BLE-BOND-PATCH.md`。
+
+## 固件更新与校准工具
+
+`recovery-tool/` 源码不捆绑第三方运行库。打包后的 Mac / Windows 工具包含 Python、pyserial、pywebview 等组件，清单与许可文本见 [recovery-tool/THIRD-PARTY-NOTICES.md](recovery-tool/THIRD-PARTY-NOTICES.md) 和 `recovery-tool/licenses/`。
