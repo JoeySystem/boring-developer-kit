@@ -250,9 +250,12 @@ static void build_home(const mist_glyph_page_context_t *context,
         ? (unsigned)context->mode : (unsigned)MIST_MODE_NORMAL;
     if (mode == MIST_MODE_NORMAL) {
         build_boot(scene);
-        return;
+    } else {
+        draw_icon_centered(scene, resources[mode], 12, gray_level(242));
     }
-    draw_icon_centered(scene, resources[mode], 12, gray_level(242));
+    if (context->state == MIST_STATE_ERROR) {
+        add_overlay_centered(scene, "CAL JOY", 100, gray_level(191));
+    }
 }
 
 static bool boring_cell_at(int x, int y)
@@ -413,9 +416,33 @@ static unsigned collect_energy_cells(energy_cell_t *cells)
     return count;
 }
 
+/* Low-battery guard art: red empty battery outline + LOW, used for both the
+ * warning and the notice before a protective power-off (2026-10-27 mockup
+ * option B, chosen by the product owner). */
+static void build_low_battery(mist_glyph_scene_t *scene)
+{
+    const int x0 = 4, y0 = 7, width = 16, height = 9;
+    for (int x = x0; x < x0 + width; ++x) {
+        mist_glyph_scene_set(scene, x, y0, MIST_GLYPH_RED);
+        mist_glyph_scene_set(scene, x, y0 + height - 1, MIST_GLYPH_RED);
+    }
+    for (int y = y0; y < y0 + height; ++y) {
+        mist_glyph_scene_set(scene, x0, y, MIST_GLYPH_RED);
+        mist_glyph_scene_set(scene, x0 + width - 1, y, MIST_GLYPH_RED);
+    }
+    for (int y = y0 + 3; y < y0 + height - 3; ++y)
+        mist_glyph_scene_set(scene, x0 + width, y, MIST_GLYPH_RED);
+    add_overlay_centered(scene, "LOW", 94, MIST_GLYPH_RED);
+}
+
 static void build_battery(const mist_glyph_page_context_t *context,
                           mist_glyph_scene_t *scene)
 {
+    if (context->state == MIST_STATE_APPLYING ||
+        context->state == MIST_STATE_ERROR) {
+        build_low_battery(scene);
+        return;
+    }
     const int percent = clamp_percent(context->battery_percent);
     if (percent >= 0) {
         static energy_cell_t cells[MIST_GLYPH_VALID_CELL_COUNT];
@@ -463,6 +490,12 @@ static uint8_t function_icon(unsigned selected)
     return resources[selected];
 }
 
+/* Settings menu entries in order: system, haptic, lighting, restart. This
+ * must list the same icons as settings_icons in action_engine.c. */
+static const uint8_t settings_page_icons[] = {21, 14, 13, 20};
+#define SETTINGS_PAGE_ICON_COUNT \
+    (sizeof(settings_page_icons) / sizeof(settings_page_icons[0]))
+
 static void build_carousel(mist_glyph_page_id_t page,
                            const mist_glyph_page_context_t *context,
                            mist_glyph_scene_t *scene)
@@ -477,10 +510,9 @@ static void build_carousel(mist_glyph_page_id_t page,
     if (page == MIST_PAGE_FUNCTION)
         resource = function_icon(context->selected % function_item_count(context));
     else if (page == MIST_PAGE_SYSTEM) resource = context->selected % 2 == 0 ? 2 : 3;
-    else if (page == MIST_PAGE_SETTINGS) {
-        static const uint8_t settings[] = {21, 14, 13, 15, 20};
-        resource = settings[context->selected % 5];
-    } else resource = page_icon_resources[context->selected % 22];
+    else if (page == MIST_PAGE_SETTINGS)
+        resource = settings_page_icons[context->selected % SETTINGS_PAGE_ICON_COUNT];
+    else resource = page_icon_resources[context->selected % 22];
     draw_icon_centered(scene, resource, 11, gray_level(242));
     if (page == MIST_PAGE_FUNCTION)
         add_overlay_centered(scene, resource == 0 ? "FOCUS"
@@ -501,7 +533,8 @@ static void build_carousel(mist_glyph_page_id_t page,
                  (unsigned)(context->selected % 22) + 1u);
         add_overlay_centered(scene, position, 111, gray_level(115));
     } else {
-        const unsigned count = page == MIST_PAGE_SETTINGS ? 5u
+        const unsigned count = page == MIST_PAGE_SETTINGS
+            ? (unsigned)SETTINGS_PAGE_ICON_COUNT
             : page == MIST_PAGE_FUNCTION ? function_item_count(context) : 2u;
         draw_marks(scene, count, context->selected % count);
     }
@@ -903,9 +936,9 @@ static void build_ble(const mist_glyph_page_context_t *context,
         draw_icon_centered(scene, 26, 8, gray_level(state == 2 ? 255u
                                                    : state == 1 ? 140u : 46u));
         if (state == 0) scene_line(scene, 9, 8, 15, 12, gray_level(128));
-        char host[10];
-        snprintf(host, sizeof(host), "HOST %u", context->slot);
-        add_overlay_centered(scene, host, 79, gray_level(204));
+        /* The switch key moved to another computer. No host number: the row
+         * of marks below shows which of the three it is. */
+        add_overlay_centered(scene, "NEXT PC", 79, gray_level(204));
         add_overlay_centered(scene, state == 2 ? "LINKED"
                                    : state == 1 ? "PAIRED" : "NEW PC",
                              97, gray_level(148));
@@ -1037,7 +1070,8 @@ static void build_local_text(const mist_glyph_page_context_t *context,
                          49, gray_level(242));
     if (context->secondary != NULL && context->secondary[0] != '\0')
         add_overlay_centered(scene, context->secondary, 74, gray_level(166));
-    if (context->footer != NULL)
+    /* Like the third row, an empty bottom row stays blank. */
+    if (context->footer != NULL && context->footer[0] != '\0')
         add_overlay_centered(scene, context->footer, 98, gray_level(128));
 }
 

@@ -20,6 +20,8 @@
 #include "codex_micro.h"
 #include "claude_status.h"
 #include "claude_status_codec.h"
+#include "desktop_agent_status.h"
+#include "desktop_agent_status_codec.h"
 #include "codex_micro_controls.h"
 #include "codex_micro_protocol.h"
 #include "config_store.h"
@@ -27,24 +29,37 @@
 #include "device_auth_codec.h"
 #include "device_identity.h"
 #include "esp_app_desc.h"
+#include "esp_attr.h"
 #include "esp_heap_caps.h"
+#include "esp_log.h"
+#include "esp_system.h"
+#include "nvs.h"
 #include "esp_timer.h"
+#include "firmware_confirm_model.h"
 #include "firmware_update.h"
 #include "firmware_update_protocol.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "battery_display.h"
 #include "cw2015.h"
+#include "heap_checkpoint.h"
+#include "heap_watch_model.h"
+#include "liveness.h"
+#include "boot_guard.h"
 #include "joystick_calibration_model.h"
 #include "prompt_store.h"
 #include "host_action_events.h"
-#include "psa/crypto.h"
+#include "ram_reserve.h"
+#include "wmp_sha256.h"
 #include "protocol_contract.h"
+#include "wmp_frame_scanner.h"
 #include "screen_icon_protocol.h"
 #include "screen_glyph_protocol.h"
 #include "screen_glyph_store.h"
 #include "screen_icon_store.h"
 #include "sdkconfig.h"
+#include "storage_recovery.h"
 
 #define RX_CAPACITY (WMP_PROTOCOL_HEADER_SIZE + WMP_PROTOCOL_MAX_PAYLOAD)
 #define TX_PAYLOAD_CAPACITY WMP_PROTOCOL_MAX_PAYLOAD
@@ -62,7 +77,7 @@ typedef struct {
     uint32_t request_id;
     uint8_t message_type;
     uint32_t payload_length;
-    uint8_t request_digest[PSA_HASH_LENGTH(PSA_ALG_SHA_256)];
+    uint8_t request_digest[WMP_SHA256_DIGEST_BYTES];
     uint8_t *response;
     size_t response_length;
     uint32_t age;
@@ -77,6 +92,22 @@ typedef struct {
 
 static uint8_t s_rx[RX_CAPACITY];
 static size_t s_rx_length;
+/* F-01 host-confirmation state of the current session (s_transport_mutex). */
+static firmware_confirm_session_t s_confirm_session;
+/* Stability item 4; written by the parser task and the main loop. */
+static portMUX_TYPE s_health_gate_lock = portMUX_INITIALIZER_UNLOCKED;
+static firmware_health_gate_t s_health_gate;
+static atomic_bool s_health_usb_mounted;
+static atomic_bool s_health_safe_mode;
+static atomic_bool s_health_ble_ready;
+/* Receive-side diagnostics since boot; updated under s_transport_mutex. */
+static uint32_t s_rx_last_ms;
+static struct {
+    uint32_t bad_frames;
+    uint32_t partial_timeouts;
+    uint32_t resyncs;
+    uint32_t overflows;
+} s_rx_stats;
 static uint8_t s_tx[WMP_PROTOCOL_HEADER_SIZE + TX_PAYLOAD_CAPACITY];
 static char s_serial[18] = "CP01-000000000000";
 static config_protocol_tx_fn s_tx_fn;
@@ -115,6 +146,228 @@ static void sample_protocol_stack(uint8_t message_type)
     sample->task = pcTaskGetName(NULL);
 }
 
+/* Low-memory watch (heap_watch_model.h). The record lives in RTC memory so a
+ * unit that restarted out of an exhausted heap still reports the episode. */
+#define HEAP_WATCH_PERIOD_US (2 * 1000 * 1000)
+static uint32_t protocol_uptime_ms(void);
+static RTC_NOINIT_ATTR heap_watch_record_t s_heap_watch_record;
+static bool s_heap_watch_low;
+static portMUX_TYPE s_heap_watch_lock = portMUX_INITIALIZER_UNLOCKED;
+static esp_timer_handle_t s_heap_watch_timer;
+/* The last episode is also kept in NVS: RTC memory is lost when a returned
+ * unit loses power on the way back. Written from config_protocol_poll(), not
+ * from the timer callback. */
+#define HEAP_WATCH_NVS_NAMESPACE "wmp_diag"
+#define HEAP_WATCH_NVS_KEY "low_memory"
+#define HEAP_WATCH_PERSISTED_MAGIC 0x4C4F574Du /* "LOWM" */
+typedef struct {
+    uint32_t magic;
+    uint32_t events;
+    uint32_t last_uptime_ms;
+    uint32_t last_free;
+    uint32_t last_largest;
+} heap_watch_persisted_t;
+static heap_watch_persisted_t s_heap_persisted;
+static atomic_bool s_heap_persist_pending;
+
+static void heap_watch_tick(void *context)
+{
+    (void)context;
+    const uint32_t caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA;
+    const uint32_t free_bytes = (uint32_t)heap_caps_get_free_size(caps);
+    const uint32_t largest = (uint32_t)heap_caps_get_largest_free_block(caps);
+    portENTER_CRITICAL(&s_heap_watch_lock);
+    const bool started = heap_watch_sample(&s_heap_watch_record, &s_heap_watch_low,
+                                           protocol_uptime_ms(), free_bytes, largest);
+    portEXIT_CRITICAL(&s_heap_watch_lock);
+    if (started) {
+        atomic_store(&s_heap_persist_pending, true);
+        ESP_LOGW("config_protocol",
+                 "internal DMA heap low: free=%" PRIu32 " largest=%" PRIu32,
+                 free_bytes, largest);
+    }
+}
+
+#if CONFIG_WMP_RAM_FAULT_INJECTION
+/* TEST ONLY (tools/build.sh --ram-fault-injection): keep every DMA-capable
+ * internal block, reproducing the exhausted heap of a returned unit. */
+#define RAM_FAULT_DELAY_US (20 * 1000 * 1000)
+static esp_timer_handle_t s_ram_fault_timer;
+
+static void ram_fault_exhaust(void *context)
+{
+    (void)context;
+    const uint32_t caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA;
+    size_t held = 0;
+    for (;;) {
+        const size_t largest = heap_caps_get_largest_free_block(caps);
+        if (largest < 16 || heap_caps_malloc(largest, caps) == NULL) {
+            break;
+        }
+        held += largest;
+    }
+    ESP_LOGW("config_protocol", "RAM fault injection holds %u bytes; free=%u",
+             (unsigned)held, (unsigned)heap_caps_get_free_size(caps));
+}
+
+static void ram_fault_schedule(void)
+{
+    const esp_timer_create_args_t args = {
+        .callback = ram_fault_exhaust,
+        .name = "ram_fault",
+    };
+    if (esp_timer_create(&args, &s_ram_fault_timer) == ESP_OK) {
+        (void)esp_timer_start_once(s_ram_fault_timer, RAM_FAULT_DELAY_US);
+    }
+}
+#else
+static inline void ram_fault_schedule(void) {}
+#endif
+
+static void load_persisted_heap_watch(void)
+{
+    nvs_handle_t handle = 0;
+    heap_watch_persisted_t stored = {0};
+    size_t length = sizeof(stored);
+    if (nvs_open(HEAP_WATCH_NVS_NAMESPACE, NVS_READONLY, &handle) == ESP_OK) {
+        if (nvs_get_blob(handle, HEAP_WATCH_NVS_KEY, &stored, &length) != ESP_OK ||
+            length != sizeof(stored) || stored.magic != HEAP_WATCH_PERSISTED_MAGIC) {
+            memset(&stored, 0, sizeof(stored));
+        }
+        nvs_close(handle);
+    }
+    portENTER_CRITICAL(&s_heap_watch_lock);
+    s_heap_persisted = stored;
+    portEXIT_CRITICAL(&s_heap_watch_lock);
+}
+
+static void persist_heap_watch(void)
+{
+    if (!atomic_exchange(&s_heap_persist_pending, false)) {
+        return;
+    }
+    portENTER_CRITICAL(&s_heap_watch_lock);
+    s_heap_persisted.magic = HEAP_WATCH_PERSISTED_MAGIC;
+    ++s_heap_persisted.events;
+    s_heap_persisted.last_uptime_ms = s_heap_watch_record.last_uptime_ms;
+    s_heap_persisted.last_free = s_heap_watch_record.last_free;
+    s_heap_persisted.last_largest = s_heap_watch_record.last_largest;
+    const heap_watch_persisted_t snapshot = s_heap_persisted;
+    portEXIT_CRITICAL(&s_heap_watch_lock);
+    nvs_handle_t handle = 0;
+    if (nvs_open(HEAP_WATCH_NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) {
+        return;
+    }
+    if (nvs_set_blob(handle, HEAP_WATCH_NVS_KEY, &snapshot, sizeof(snapshot)) == ESP_OK) {
+        (void)nvs_commit(handle);
+    }
+    nvs_close(handle);
+}
+
+static void heap_watch_start(void)
+{
+    if (s_heap_watch_timer != NULL) {
+        return;
+    }
+    load_persisted_heap_watch();
+    heap_watch_record_boot(&s_heap_watch_record,
+                           esp_reset_reason() == ESP_RST_POWERON);
+    const esp_timer_create_args_t args = {
+        .callback = heap_watch_tick,
+        .name = "heap_watch",
+    };
+    if (esp_timer_create(&args, &s_heap_watch_timer) != ESP_OK ||
+        esp_timer_start_periodic(s_heap_watch_timer, HEAP_WATCH_PERIOD_US) != ESP_OK) {
+        ESP_LOGW("config_protocol", "low-memory watch unavailable");
+    }
+    ram_fault_schedule();
+}
+
+static void add_heap_pool(cJSON *heap, const char *name, uint32_t caps)
+{
+    cJSON *pool = cJSON_AddObjectToObject(heap, name);
+    if (pool == NULL) {
+        return;
+    }
+    cJSON_AddNumberToObject(pool, "free", (double)heap_caps_get_free_size(caps));
+    cJSON_AddNumberToObject(pool, "largest",
+                            (double)heap_caps_get_largest_free_block(caps));
+    cJSON_AddNumberToObject(pool, "minimum",
+                            (double)heap_caps_get_minimum_free_size(caps));
+}
+
+static void add_heap_status(cJSON *result)
+{
+    cJSON *heap = cJSON_AddObjectToObject(result, "heap");
+    if (heap == NULL) {
+        return;
+    }
+    add_heap_pool(heap, "internal_dma", MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+    add_heap_pool(heap, "internal", MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+#if CONFIG_SPIRAM
+    add_heap_pool(heap, "spiram", MALLOC_CAP_SPIRAM);
+#endif
+    portENTER_CRITICAL(&s_heap_watch_lock);
+    const heap_watch_record_t record = s_heap_watch_record;
+    const bool low = s_heap_watch_low;
+    const heap_watch_persisted_t persisted = s_heap_persisted;
+    portEXIT_CRITICAL(&s_heap_watch_lock);
+    heap_checkpoint_t checkpoints[HEAP_CHECKPOINT_MAX];
+    const size_t checkpoint_count =
+        heap_checkpoint_list(checkpoints, HEAP_CHECKPOINT_MAX);
+    cJSON *points = cJSON_AddArrayToObject(heap, "checkpoints");
+    for (size_t index = 0; points != NULL && index < checkpoint_count; ++index) {
+        cJSON *point = cJSON_CreateObject();
+        if (point == NULL) {
+            break;
+        }
+        cJSON_AddStringToObject(point, "label", checkpoints[index].label);
+        cJSON_AddNumberToObject(point, "uptime_ms", checkpoints[index].uptime_ms);
+        cJSON_AddNumberToObject(point, "internal_dma_free",
+                                checkpoints[index].internal_dma_free);
+        cJSON_AddNumberToObject(point, "internal_dma_largest",
+                                checkpoints[index].internal_dma_largest);
+        cJSON_AddNumberToObject(point, "internal_free",
+                                checkpoints[index].internal_free);
+        cJSON_AddItemToArray(points, point);
+    }
+    cJSON_AddBoolToObject(heap, "reserve_held", ram_reserve_held());
+    cJSON_AddNumberToObject(heap, "reserve_bytes", RAM_RESERVE_BYTES);
+    cJSON *watch = cJSON_AddObjectToObject(heap, "low_memory");
+    if (watch == NULL) {
+        return;
+    }
+    cJSON_AddNumberToObject(watch, "threshold_bytes", HEAP_WATCH_LOW_ENTER_BYTES);
+    cJSON_AddBoolToObject(watch, "active", low);
+    cJSON_AddNumberToObject(watch, "events", record.events);
+    cJSON *saved = cJSON_AddObjectToObject(watch, "persisted");
+    if (saved != NULL) {
+        cJSON_AddNumberToObject(saved, "events", persisted.events);
+        if (persisted.events == 0) {
+            cJSON_AddNullToObject(saved, "last");
+        } else {
+            cJSON *saved_last = cJSON_AddObjectToObject(saved, "last");
+            if (saved_last != NULL) {
+                cJSON_AddNumberToObject(saved_last, "uptime_ms", persisted.last_uptime_ms);
+                cJSON_AddNumberToObject(saved_last, "free", persisted.last_free);
+                cJSON_AddNumberToObject(saved_last, "largest", persisted.last_largest);
+            }
+        }
+    }
+    if (record.events == 0) {
+        cJSON_AddNullToObject(watch, "last");
+        return;
+    }
+    cJSON *last = cJSON_AddObjectToObject(watch, "last");
+    if (last == NULL) {
+        return;
+    }
+    cJSON_AddNumberToObject(last, "boots_ago", heap_watch_last_boots_ago(&record));
+    cJSON_AddNumberToObject(last, "uptime_ms", record.last_uptime_ms);
+    cJSON_AddNumberToObject(last, "free", record.last_free);
+    cJSON_AddNumberToObject(last, "largest", record.last_largest);
+}
+
 static void add_protocol_stack_diagnostics(cJSON *result)
 {
     cJSON *root = cJSON_AddObjectToObject(result, "stack_diagnostics");
@@ -139,7 +392,7 @@ static bool s_capture_response;
 static uint32_t s_inflight_request_id;
 static uint8_t s_inflight_message_type;
 static uint32_t s_inflight_payload_length;
-static uint8_t s_inflight_request_digest[PSA_HASH_LENGTH(PSA_ALG_SHA_256)];
+static uint8_t s_inflight_request_digest[WMP_SHA256_DIGEST_BYTES];
 /* Protected by the existing transport mutex. Storage runs only in poll(),
  * never in the USB/BLE receive callbacks. Keep the original replay identity
  * until its delayed ACK/NACK is sent. */
@@ -147,20 +400,30 @@ static struct {
     bool pending;
     uint32_t request_id;
     uint32_t payload_length;
-    uint8_t digest[PSA_HASH_LENGTH(PSA_ALG_SHA_256)];
+    uint8_t digest[WMP_SHA256_DIGEST_BYTES];
     char name[WMP_BLE_NAME_MAX_UTF8_BYTES + 1u];
 } s_ble_name_write;
 static struct {
     bool pending;
     uint32_t request_id;
     uint32_t payload_length;
-    uint8_t digest[PSA_HASH_LENGTH(PSA_ALG_SHA_256)];
+    uint8_t digest[WMP_SHA256_DIGEST_BYTES];
     config_normal_agent_behavior_t behavior;
 } s_normal_agent_write;
+static struct {
+    bool pending;
+    uint32_t request_id;
+    uint32_t payload_length;
+    uint8_t digest[WMP_SHA256_DIGEST_BYTES];
+    uint8_t slot;
+} s_ble_slot_clear_request;
 static atomic_bool s_session_active;
 static atomic_bool s_ble_service_ready;
+static atomic_uchar s_usb_link_state;
+static atomic_uint_least32_t s_usb_remote_wakeups;
 static const char *s_action_host_output_state = "unknown";
 static const char *s_action_local_page = "unknown";
+static const char *_Atomic s_power_guard_state = "normal";
 static const char *s_action_round_setting_state = "unknown";
 static bool s_action_quick_config_active;
 static bool s_action_local_confirm_selected;
@@ -504,14 +767,19 @@ static bool diagnostic_capture_start_allowed(void)
     if (active || start_pending) {
         return true;
     }
+    /*
+     * Like calibration, capture may run in USB standby or the charge splash
+     * (the service tool verifies the joystick of a unit that is still OFF)
+     * and may borrow a local page's input, which gets it back afterwards.
+     */
     if (s_joystick_calibration.state != JOYSTICK_CALIBRATION_INACTIVE ||
         ((!waiting && !atomic_load(&s_calibration_output_interlock) &&
-          strcmp(s_action_host_output_state, "enabled") != 0) ||
+          strcmp(s_action_host_output_state, "enabled") != 0 &&
+          strcmp(s_action_host_output_state, "local_ui") != 0) ||
          ((waiting || atomic_load(&s_calibration_output_interlock)) &&
           strcmp(s_action_host_output_state, "wait_neutral") != 0)) ||
-        strcmp(s_action_local_page, "none") != 0 ||
         s_action_quick_config_active || s_action_idle_standby_active ||
-        s_action_usb_standby_active || firmware_update_is_active()) {
+        firmware_update_is_active()) {
         return false;
     }
     config_store_status_t status;
@@ -539,7 +807,89 @@ static bool normal_agent_write_busy(void)
            strcmp(s_action_host_output_state, "enabled") != 0 ||
            strcmp(s_action_local_page, "none") != 0 ||
            s_action_idle_standby_active || s_action_usb_standby_active ||
-           !board_inputs_neutral() || codex_micro_has_active_control();
+           !board_keys_neutral() || codex_micro_has_active_control();
+}
+
+/* Stability item 2: task liveness and the stall behind the last reset. */
+static void add_liveness_status(cJSON *result)
+{
+    liveness_status_t status;
+    liveness_get_status(&status);
+    cJSON *liveness = cJSON_AddObjectToObject(result, "liveness");
+    if (liveness == NULL) {
+        return;
+    }
+    cJSON_AddBoolToObject(liveness, "supervising", status.supervising);
+    cJSON_AddBoolToObject(liveness, "task_watchdog", status.task_watchdog);
+    cJSON_AddStringToObject(liveness, "previous_stall",
+                            liveness_channel_name(status.previous_stall));
+    cJSON_AddNumberToObject(liveness, "previous_stall_uptime_ms",
+                            status.previous_stall_uptime_ms);
+    cJSON *channels = cJSON_AddObjectToObject(liveness, "channels");
+    if (channels == NULL) {
+        return;
+    }
+    for (int channel = 0; channel < LIVENESS_CHANNEL_COUNT; ++channel) {
+        cJSON *entry = cJSON_AddObjectToObject(channels,
+                                               liveness_channel_name(channel));
+        if (entry != NULL) {
+            cJSON_AddBoolToObject(entry, "armed", status.armed[channel]);
+            cJSON_AddNumberToObject(entry, "beats", status.beats[channel]);
+            cJSON_AddBoolToObject(entry, "resets", status.resets[channel]);
+            cJSON_AddNumberToObject(entry, "max_gap_ms", status.max_gap_ms[channel]);
+            cJSON_AddNumberToObject(entry, "overdue", status.overdue[channel]);
+        }
+    }
+}
+
+/* Stability items 4-6: boot guard, safe mode and the confirmation gate. */
+static void add_boot_guard_status(cJSON *result)
+{
+    boot_guard_status_t guard;
+    boot_guard_get_status(&guard);
+    cJSON *safe_mode = cJSON_AddObjectToObject(result, "safe_mode");
+    if (safe_mode != NULL) {
+        cJSON_AddBoolToObject(safe_mode, "active", guard.safe_mode);
+        cJSON_AddStringToObject(safe_mode, "reason",
+                                boot_guard_reason_name(guard.reason));
+        cJSON_AddNumberToObject(safe_mode, "abnormal_resets", guard.abnormal_resets);
+        cJSON_AddNumberToObject(safe_mode, "limit", BOOT_GUARD_LIMIT);
+        cJSON_AddStringToObject(safe_mode, "reset_reason",
+                                boot_guard_reset_reason_name(guard.reset_reason));
+        cJSON_AddBoolToObject(safe_mode, "nvs_mirror", guard.nvs_mirror);
+        cJSON_AddBoolToObject(safe_mode, "stable_cleared", guard.stable_cleared);
+    }
+    cJSON *health = cJSON_AddObjectToObject(result, "firmware_health");
+    if (health != NULL) {
+        portENTER_CRITICAL(&s_health_gate_lock);
+        const firmware_health_gate_t gate = s_health_gate;
+        const uint32_t remaining =
+            firmware_health_gate_remaining_ms(&gate, protocol_uptime_ms());
+        portEXIT_CRITICAL(&s_health_gate_lock);
+        cJSON_AddBoolToObject(health, "healthy", gate.healthy);
+        cJSON_AddBoolToObject(health, "ble_ready", atomic_load(&s_health_ble_ready));
+        cJSON_AddBoolToObject(health, "approved", gate.approved);
+        cJSON_AddNumberToObject(health, "dwell_ms", FIRMWARE_HEALTH_DWELL_MS);
+        cJSON_AddNumberToObject(health, "ready_in_ms",
+                                remaining == UINT32_MAX ? -1.0 : (double)remaining);
+    }
+}
+
+static void add_power_button_status(cJSON *result)
+{
+    board_power_button_diagnostics_t button;
+    board_power_button_get_diagnostics(&button);
+    cJSON *power = cJSON_AddObjectToObject(result, "power_button");
+    if (power == NULL) {
+        return;
+    }
+    cJSON_AddNumberToObject(power, "presses", button.presses);
+    cJSON_AddNumberToObject(power, "short_presses", button.short_presses);
+    cJSON_AddNumberToObject(power, "long_presses", button.long_presses);
+    cJSON_AddNumberToObject(power, "ignored", button.ignored);
+    cJSON_AddStringToObject(power, "last_ignored", button.last_ignored);
+    cJSON_AddBoolToObject(power, "wake_mode", button.wake_mode);
+    cJSON_AddBoolToObject(power, "armed", button.armed);
 }
 
 static void add_battery_status(cJSON *result)
@@ -547,14 +897,80 @@ static void add_battery_status(cJSON *result)
     fuel_gauge_sample_t sample;
     const bool valid = fuel_gauge_latest(&sample);
     if (valid) {
+        /* Display value (see battery_display.h); battery_voltage_mv stays raw. */
         cJSON_AddNumberToObject(result, "battery",
-                                (uint8_t)(sample.soc_percent + 0.5f));
+                                battery_display_percent(sample.soc_percent));
     } else {
         cJSON_AddNullToObject(result, "battery");
     }
     cJSON_AddBoolToObject(result, "battery_valid", valid);
     /* USB host connectivity is not a measurement of battery charging. */
     cJSON_AddNullToObject(result, "is_charging");
+}
+
+void config_protocol_set_power_guard_state(const char *state)
+{
+    atomic_store(&s_power_guard_state, state != NULL ? state : "unknown");
+}
+
+/* Written by the Action Engine task, read by GET_STATUS: copy under a lock. */
+static usb_standby_trace_t s_usb_standby_trace;
+static portMUX_TYPE s_usb_standby_trace_lock = portMUX_INITIALIZER_UNLOCKED;
+
+void config_protocol_set_usb_standby_trace(const usb_standby_trace_t *trace)
+{
+    if (trace == NULL) return;
+    taskENTER_CRITICAL(&s_usb_standby_trace_lock);
+    s_usb_standby_trace = *trace;
+    taskEXIT_CRITICAL(&s_usb_standby_trace_lock);
+}
+
+/* USB standby periods since this boot (a reboot shows in FW_STATUS). */
+static void add_usb_standby_status(cJSON *result)
+{
+    taskENTER_CRITICAL(&s_usb_standby_trace_lock);
+    const usb_standby_trace_t trace = s_usb_standby_trace;
+    taskEXIT_CRITICAL(&s_usb_standby_trace_lock);
+    cJSON *standby = cJSON_AddObjectToObject(result, "usb_standby");
+    cJSON_AddBoolToObject(standby, "active", trace.active);
+    cJSON_AddNumberToObject(standby, "entries", trace.entries);
+    cJSON_AddNumberToObject(standby, "wakes", trace.wakes);
+    cJSON_AddStringToObject(standby, "last_entry_reason",
+                            usb_standby_entry_reason_name(trace.last_entry_reason));
+    cJSON_AddStringToObject(standby, "last_wake_reason",
+                            usb_standby_wake_reason_name(trace.last_wake_reason));
+    cJSON_AddNumberToObject(standby, "last_change_ms", trace.last_change_ms);
+    cJSON_AddNumberToObject(standby, "uptime_ms", protocol_uptime_ms());
+}
+
+/* Low-battery guard diagnostics. Cached values only: no I2C or NVS access. */
+static void add_power_guard_status(cJSON *result)
+{
+    fuel_gauge_sample_t sample;
+    if (fuel_gauge_latest(&sample)) {
+        cJSON_AddNumberToObject(result, "battery_voltage_mv",
+                                (uint32_t)(sample.voltage_v * 1000.0f + 0.5f));
+    } else {
+        cJSON_AddNullToObject(result, "battery_voltage_mv");
+    }
+    config_store_power_guard_t guard;
+    config_store_get_power_guard(&guard);
+    cJSON *power = cJSON_AddObjectToObject(result, "power_guard");
+    cJSON_AddStringToObject(power, "state", atomic_load(&s_power_guard_state));
+    cJSON_AddBoolToObject(power, "low_battery_lock", guard.low_battery_lock);
+    cJSON_AddNumberToObject(power, "brownout_resets", guard.brownout_resets);
+    cJSON_AddNumberToObject(power, "low_battery_shutdowns",
+                            guard.low_battery_shutdowns);
+}
+
+/* Receive-side parser counters since boot. */
+static void add_protocol_rx_status(cJSON *result)
+{
+    cJSON *rx = cJSON_AddObjectToObject(result, "protocol_rx");
+    cJSON_AddNumberToObject(rx, "bad_frames", s_rx_stats.bad_frames);
+    cJSON_AddNumberToObject(rx, "partial_timeouts", s_rx_stats.partial_timeouts);
+    cJSON_AddNumberToObject(rx, "resyncs", s_rx_stats.resyncs);
+    cJSON_AddNumberToObject(rx, "overflows", s_rx_stats.overflows);
 }
 
 static void add_codex_agent_press_status(cJSON *result)
@@ -572,6 +988,70 @@ static void add_codex_agent_press_status(cJSON *result)
     } else {
         cJSON_AddNullToObject(press, "agent");
         cJSON_AddNullToObject(press, "transport");
+    }
+}
+
+static const char *press_transport_name(codex_agent_press_transport_t transport)
+{
+    return transport == CODEX_AGENT_PRESS_TRANSPORT_USB ? "usb" : "ble";
+}
+
+/* GET_STATUS desktop_agent_status, desktop_agent_press, desktop_navigation. */
+static void add_desktop_agent_status(cJSON *result)
+{
+    desktop_agent_model_t snapshot;
+    desktop_agent_status_get(&snapshot);
+    const bool selected =
+        codex_micro_mode() == CODEX_MICRO_MODE_NORMAL && snapshot.active;
+    const codex_agent_press_transport_t requesting_transport =
+        config_protocol_active_transport() == CONFIG_PROTOCOL_TRANSPORT_USB
+            ? CODEX_AGENT_PRESS_TRANSPORT_USB : CODEX_AGENT_PRESS_TRANSPORT_BLE;
+    cJSON *status = cJSON_AddObjectToObject(result, "desktop_agent_status");
+    cJSON_AddStringToObject(status, "source", "desktop");
+    cJSON_AddBoolToObject(status, "active", snapshot.active);
+    cJSON_AddBoolToObject(status, "selected", selected);
+    cJSON_AddNumberToObject(status, "lease_ms", DESKTOP_AGENT_LEASE_MS);
+    cJSON *states = cJSON_AddArrayToObject(status, "states");
+    cJSON *counters = cJSON_AddArrayToObject(status, "completion_seq");
+    for (unsigned i = 0; i < DESKTOP_AGENT_SLOT_COUNT; ++i) {
+        cJSON_AddItemToArray(states,
+            cJSON_CreateString(desktop_agent_state_name(snapshot.states[i])));
+        cJSON_AddItemToArray(counters,
+            cJSON_CreateNumber(snapshot.completion_seq[i]));
+    }
+    cJSON_AddBoolToObject(status, "encoder_navigation",
+                          snapshot.encoder_navigation);
+
+    const codex_agent_press_snapshot_t event = desktop_agent_status_get_press();
+    cJSON *press = cJSON_AddObjectToObject(result, "desktop_agent_press");
+    cJSON_AddStringToObject(press, "source", "desktop");
+    cJSON_AddNumberToObject(press, "sequence", event.sequence);
+    if (event.agent >= 0 && event.transport == requesting_transport) {
+        cJSON_AddNumberToObject(press, "agent", event.agent);
+        cJSON_AddStringToObject(press, "transport",
+                                press_transport_name(event.transport));
+    } else {
+        cJSON_AddNullToObject(press, "agent");
+        cJSON_AddNullToObject(press, "transport");
+    }
+
+    const desktop_agent_navigation_t *navigation = &snapshot.navigation;
+    cJSON *nav = cJSON_AddObjectToObject(result, "desktop_navigation");
+    cJSON_AddStringToObject(nav, "source", "desktop");
+    cJSON_AddNumberToObject(nav, "sequence", navigation->sequence);
+    cJSON_AddNumberToObject(nav, "anchor_sequence", navigation->anchor_sequence);
+    cJSON_AddNumberToObject(nav, "offset", navigation->offset);
+    if (navigation->valid && snapshot.transport == requesting_transport) {
+        if (navigation->agent >= 0) {
+            cJSON_AddNumberToObject(nav, "agent", navigation->agent);
+        } else {
+            cJSON_AddNullToObject(nav, "agent");
+        }
+        cJSON_AddStringToObject(nav, "transport",
+                                press_transport_name(snapshot.transport));
+    } else {
+        cJSON_AddNullToObject(nav, "agent");
+        cJSON_AddNullToObject(nav, "transport");
     }
 }
 
@@ -665,6 +1145,8 @@ static void add_joystick_observation(cJSON *joystick)
     }
     cJSON_AddNumberToObject(joystick, "adc_failure_count",
                             observation.adc_failure_count);
+    cJSON_AddNumberToObject(joystick, "spikes_rejected",
+                            observation.spikes_rejected);
     cJSON *window = cJSON_AddObjectToObject(joystick, "window");
     cJSON_AddNumberToObject(window, "sample_count", observation.window_sample_count);
     if (observation.window_sample_count == 0) {
@@ -730,12 +1212,6 @@ static config_platform_t parse_platform(const cJSON *value)
     return CONFIG_PLATFORM_UNSELECTED;
 }
 
-static uint32_t read_u32_le(const uint8_t *data)
-{
-    return (uint32_t)data[0] | ((uint32_t)data[1] << 8) |
-           ((uint32_t)data[2] << 16) | ((uint32_t)data[3] << 24);
-}
-
 static void write_u32_le(uint8_t *data, uint32_t value)
 {
     data[0] = (uint8_t)value;
@@ -744,32 +1220,16 @@ static void write_u32_le(uint8_t *data, uint32_t value)
     data[3] = (uint8_t)(value >> 24);
 }
 
-static uint32_t crc32_ieee(const uint8_t *data, size_t length)
+/* Never allocates and cannot fail: the fingerprint gates every request,
+ * including HELLO and FW_BEGIN, so it must work with internal heap exhausted. */
+static void request_digest(uint8_t message_type, const uint8_t *payload, size_t length,
+                           uint8_t output[WMP_SHA256_DIGEST_BYTES])
 {
-    uint32_t crc = UINT32_MAX;
-    for (size_t i = 0; i < length; ++i) {
-        crc ^= data[i];
-        for (unsigned bit = 0; bit < 8; ++bit) {
-            crc = (crc >> 1) ^ (0xEDB88320u & (uint32_t)-(int32_t)(crc & 1u));
-        }
-    }
-    return crc ^ UINT32_MAX;
-}
-
-static bool request_digest(uint8_t message_type, const uint8_t *payload, size_t length,
-                           uint8_t output[PSA_HASH_LENGTH(PSA_ALG_SHA_256)])
-{
-    psa_hash_operation_t operation = PSA_HASH_OPERATION_INIT;
-    size_t output_length = 0;
-    if (psa_hash_setup(&operation, PSA_ALG_SHA_256) != PSA_SUCCESS ||
-        psa_hash_update(&operation, &message_type, sizeof(message_type)) != PSA_SUCCESS ||
-        psa_hash_update(&operation, payload, length) != PSA_SUCCESS ||
-        psa_hash_finish(&operation, output, PSA_HASH_LENGTH(PSA_ALG_SHA_256),
-                        &output_length) != PSA_SUCCESS) {
-        (void)psa_hash_abort(&operation);
-        return false;
-    }
-    return output_length == PSA_HASH_LENGTH(PSA_ALG_SHA_256);
+    wmp_sha256_t context;
+    wmp_sha256_init(&context);
+    wmp_sha256_update(&context, &message_type, sizeof(message_type));
+    wmp_sha256_update(&context, payload, length);
+    wmp_sha256_finish(&context, output);
 }
 
 static void replay_entry_clear(replay_entry_t *entry)
@@ -884,7 +1344,7 @@ static esp_err_t send_frame(uint8_t type, uint8_t flags, uint32_t request_id, co
     s_tx[7] = flags;
     write_u32_le(s_tx + 8, request_id);
     write_u32_le(s_tx + 12, payload_length);
-    write_u32_le(s_tx + 16, crc32_ieee((const uint8_t *)json, payload_length));
+    write_u32_le(s_tx + 16, wmp_crc32_ieee((const uint8_t *)json, payload_length));
     memcpy(s_tx + WMP_PROTOCOL_HEADER_SIZE, json, payload_length);
     const size_t frame_length = WMP_PROTOCOL_HEADER_SIZE + payload_length;
     /*
@@ -1145,6 +1605,58 @@ static void poll_normal_agent_write(void)
     s_capture_response = false;
 }
 
+static void send_ble_slot_state(uint32_t request_id, const char *command,
+                                uint8_t slot)
+{
+    cJSON *root = cJSON_CreateObject();
+    cJSON *result = root == NULL ? NULL : cJSON_AddObjectToObject(root, "result");
+    const bool built = result != NULL &&
+        cJSON_AddStringToObject(root, "command", command) &&
+        cJSON_AddNumberToObject(result, "slot", slot) &&
+        cJSON_AddBoolToObject(result, "paired",
+                              codex_micro_ble_slot_paired(slot)) &&
+        cJSON_AddBoolToObject(result, "connected",
+                              codex_micro_ble_slot_connected(slot));
+    if (built) {
+        send_json_value(request_id, root);
+    } else {
+        send_nack(request_id, command, WMP_ERROR_INTERNAL, "INTERNAL",
+                  "could not encode BLE slot state");
+    }
+    cJSON_Delete(root);
+}
+
+static void poll_ble_slot_clear_request(void)
+{
+    uint8_t slot = 0u;
+    esp_err_t error = ESP_OK;
+    if (!codex_micro_take_ble_slot_clear_protocol_result(&slot, &error)) {
+        return;
+    }
+    if (!s_ble_slot_clear_request.pending) {
+        return;
+    }
+    const uint32_t request_id = s_ble_slot_clear_request.request_id;
+    const uint8_t requested_slot = s_ble_slot_clear_request.slot;
+    s_ble_slot_clear_request.pending = false;
+    s_inflight_request_id = request_id;
+    s_inflight_message_type = WMP_MSG_BLE_SLOT_CLEAR;
+    s_inflight_payload_length = s_ble_slot_clear_request.payload_length;
+    memcpy(s_inflight_request_digest, s_ble_slot_clear_request.digest,
+           sizeof(s_inflight_request_digest));
+    s_capture_response = true;
+    if (slot != requested_slot) {
+        send_nack(request_id, "BLE_SLOT_CLEAR", WMP_ERROR_INTERNAL,
+                  "INTERNAL", "BLE slot clear result did not match request");
+    } else if (error != ESP_OK) {
+        send_store_error(request_id, "BLE_SLOT_CLEAR", error,
+                         "BLE slot could not be cleared");
+    } else {
+        send_ble_slot_state(request_id, "BLE_SLOT_CLEAR", slot);
+    }
+    s_capture_response = false;
+}
+
 static bool encode_json_string(const char *value, char *output, size_t capacity)
 {
     cJSON *string = cJSON_CreateString(value);
@@ -1244,6 +1756,13 @@ static void send_capabilities(uint32_t request_id)
     cJSON_AddBoolToObject(features, "codex_voice", codex_voice_supported);
     cJSON_AddBoolToObject(features, "codex_voice_hold",
                           codex_voice_supported);
+    cJSON_AddBoolToObject(features, "global_voice",
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+                          codex_voice_supported
+#else
+                          false
+#endif
+    );
     cJSON_AddBoolToObject(features, "ble_name", ble_name_supported());
     cJSON_AddBoolToObject(features, "display", product);
     cJSON_AddNumberToObject(features, "status_rgb_count",
@@ -1265,12 +1784,18 @@ static void send_capabilities(uint32_t request_id)
         features, "eda_mode",
         product && codex_micro_active_key_layout() ==
                        CODEX_MICRO_KEY_LAYOUT_REV_A);
-    cJSON_AddBoolToObject(
-        features, "claude_code_mode",
-        product && codex_micro_active_key_layout() ==
-                       CODEX_MICRO_KEY_LAYOUT_MATRIX12);
+    /* Claude Code mode left the double-click cycle (boring-D46); Console 0.2.x
+     * greys its tab out when this is false. Claude is shown through the
+     * shared desktop status source in Normal mode. */
+    cJSON_AddBoolToObject(features, "claude_code_mode", false);
     cJSON_AddBoolToObject(features, "firmware_update", product);
+    cJSON_AddBoolToObject(features, "firmware_host_confirm",
+                          product && CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE);
     cJSON_AddBoolToObject(features, "claude_code_status", claude_status_supported());
+    cJSON_AddBoolToObject(features, "desktop_agent_status",
+                          desktop_agent_status_supported());
+    cJSON_AddBoolToObject(features, "desktop_task_navigation",
+                          desktop_agent_status_supported());
     cJSON_AddBoolToObject(features, "codex_agent_focus",
                           product && codex_micro_agent_focus_supported());
     cJSON_AddBoolToObject(features, "normal_agent_key_behavior",
@@ -1495,6 +2020,209 @@ static void add_ble_slot_status(cJSON *ble)
     }
 }
 
+/* The last two bytes of one of this device's own Bluetooth addresses, as the
+ * end of the address a computer shows for the device. Enough to tell the
+ * device's addresses apart and to compare with the computer; the status never
+ * carries a whole address. */
+static void add_ble_address_tail(cJSON *object, const char *name,
+                                 const uint8_t address[6])
+{
+    char text[6];
+    snprintf(text, sizeof(text), "%02x:%02x", address[4], address[5]);
+    cJSON_AddStringToObject(object, name, text);
+}
+
+static const char *ble_address_kind_name(
+    codex_micro_ble_address_kind_t kind)
+{
+    switch (kind) {
+    case CODEX_MICRO_BLE_ADDRESS_PUBLIC: return "public";
+    case CODEX_MICRO_BLE_ADDRESS_RANDOM_STATIC: return "random_static";
+    case CODEX_MICRO_BLE_ADDRESS_RPA: return "rpa";
+    case CODEX_MICRO_BLE_ADDRESS_RANDOM_OTHER: return "random_other";
+    case CODEX_MICRO_BLE_ADDRESS_NONE:
+    default: return "none";
+    }
+}
+
+static const char *ble_reject_reason_name(
+    codex_micro_ble_reject_reason_t reason)
+{
+    switch (reason) {
+    case CODEX_MICRO_BLE_REJECT_UNKNOWN_HOST: return "unknown_host";
+    case CODEX_MICRO_BLE_REJECT_OTHER_SLOT: return "other_slot";
+    case CODEX_MICRO_BLE_REJECT_SUSPENDED: return "suspended";
+    case CODEX_MICRO_BLE_REJECT_NONE:
+    default: return "none";
+    }
+}
+
+static const char *ble_disconnect_source_name(
+    codex_micro_ble_disconnect_source_t source)
+{
+    switch (source) {
+    case CODEX_MICRO_BLE_DISCONNECT_STANDBY: return "standby";
+    case CODEX_MICRO_BLE_DISCONNECT_USB: return "usb";
+    case CODEX_MICRO_BLE_DISCONNECT_SLOT_SWITCH: return "slot_switch";
+    case CODEX_MICRO_BLE_DISCONNECT_REJECT: return "reject";
+    case CODEX_MICRO_BLE_DISCONNECT_STACK: return "stack";
+    case CODEX_MICRO_BLE_DISCONNECT_AUTH_FAIL: return "auth_fail";
+    case CODEX_MICRO_BLE_DISCONNECT_NONE:
+    default: return "none";
+    }
+}
+
+static const char *ble_slot_op_name(codex_micro_ble_slot_op_t op)
+{
+    switch (op) {
+    case CODEX_MICRO_BLE_SLOT_OP_CLEAR: return "clear";
+    case CODEX_MICRO_BLE_SLOT_OP_PAIR_SAVE: return "pair_save";
+    case CODEX_MICRO_BLE_SLOT_OP_SELECT: return "select";
+    case CODEX_MICRO_BLE_SLOT_OP_AUTO_RETURN: return "auto_return";
+    case CODEX_MICRO_BLE_SLOT_OP_NONE:
+    default: return "none";
+    }
+}
+
+static const char *ble_slot_source_name(uint8_t source)
+{
+    switch ((codex_micro_ble_slot_source_t)source) {
+    case CODEX_MICRO_BLE_SLOT_SOURCE_PROTOCOL: return "protocol";
+    case CODEX_MICRO_BLE_SLOT_SOURCE_KEY: return "key";
+    case CODEX_MICRO_BLE_SLOT_SOURCE_PAIRING: return "pairing";
+    case CODEX_MICRO_BLE_SLOT_SOURCE_AUTO: return "auto";
+    case CODEX_MICRO_BLE_SLOT_SOURCE_UNKNOWN:
+    default: return "unknown";
+    }
+}
+
+static void add_ble_runtime_diagnostics(
+    cJSON *ble, const codex_micro_diagnostics_t *diagnostics)
+{
+    cJSON *slots = cJSON_AddArrayToObject(ble, "ble_slots");
+    for (size_t index = 0; index < CODEX_MICRO_BLE_SLOT_COUNT; ++index) {
+        const codex_micro_ble_slot_diagnostics_t *slot =
+            &diagnostics->ble_slots[index];
+        cJSON *entry = cJSON_CreateObject();
+        cJSON_AddNumberToObject(entry, "slot", slot->slot);
+        cJSON_AddBoolToObject(entry, "paired", slot->paired);
+        cJSON_AddStringToObject(
+            entry, "address_kind",
+            ble_address_kind_name(slot->address_kind));
+        cJSON_AddBoolToObject(
+            entry, "identity_known", slot->identity_known);
+        cJSON_AddBoolToObject(entry, "own_address", slot->own_address);
+        if (slot->own_address) {
+            add_ble_address_tail(entry, "own_address_tail",
+                                 slot->local_address);
+        }
+        cJSON_AddItemToArray(slots, entry);
+    }
+    cJSON *rejects = cJSON_AddObjectToObject(ble, "ble_rejects");
+    cJSON_AddNumberToObject(
+        rejects, "count", diagnostics->ble_reject_count);
+    cJSON_AddStringToObject(
+        rejects, "last_reason",
+        ble_reject_reason_name(diagnostics->ble_last_reject_reason));
+    cJSON_AddNumberToObject(
+        rejects, "last_slot", diagnostics->ble_last_reject_slot);
+
+    cJSON *disconnect =
+        cJSON_AddObjectToObject(ble, "ble_last_disconnect");
+    cJSON_AddNumberToObject(
+        disconnect, "reason", diagnostics->ble_last_disconnect_reason);
+    cJSON_AddStringToObject(
+        disconnect, "source",
+        ble_disconnect_source_name(
+            diagnostics->ble_last_disconnect_source));
+
+    cJSON *slot_op = cJSON_AddObjectToObject(ble, "ble_last_slot_op");
+    cJSON_AddStringToObject(
+        slot_op, "op", ble_slot_op_name(diagnostics->ble_last_slot_op));
+    cJSON_AddNumberToObject(
+        slot_op, "slot", diagnostics->ble_last_slot_op_slot);
+    cJSON_AddNumberToObject(
+        slot_op, "error", diagnostics->ble_last_slot_op_error);
+    cJSON_AddBoolToObject(
+        slot_op, "timeout", diagnostics->ble_last_slot_op_timeout);
+    cJSON_AddNumberToObject(
+        slot_op, "timeout_count",
+        diagnostics->ble_slot_clear_timeout_count);
+    /* Added beside the existing objects; their shapes stay as they were. */
+    cJSON *window = cJSON_AddObjectToObject(ble, "ble_pairing_window");
+    cJSON_AddBoolToObject(
+        window, "open", diagnostics->ble_pairing_window_open);
+    cJSON_AddNumberToObject(
+        window, "slot", diagnostics->ble_pairing_window_slot);
+    cJSON_AddNumberToObject(
+        window, "return_slot", diagnostics->ble_pairing_return_slot);
+    cJSON_AddNumberToObject(
+        window, "returns", diagnostics->ble_pairing_window_returns);
+    cJSON_AddNumberToObject(
+        window, "active_persist_failures",
+        diagnostics->ble_active_persist_failures);
+    cJSON *connect_time = cJSON_AddObjectToObject(ble, "ble_connect_time");
+    cJSON_AddNumberToObject(
+        connect_time, "last_ms", diagnostics->ble_connect_last_ms);
+    cJSON_AddNumberToObject(
+        connect_time, "max_ms", diagnostics->ble_connect_max_ms);
+    cJSON *local_address =
+        cJSON_AddObjectToObject(ble, "ble_own_address");
+    if (diagnostics->ble_local_address_asked_random) {
+        add_ble_address_tail(local_address, "asked",
+                             diagnostics->ble_local_address_asked);
+    } else {
+        cJSON_AddStringToObject(local_address, "asked", "public");
+    }
+    if (!diagnostics->ble_local_address_in_use_known) {
+        cJSON_AddStringToObject(local_address, "in_use", "unknown");
+    } else if (diagnostics->ble_local_address_in_use_random) {
+        add_ble_address_tail(local_address, "in_use",
+                             diagnostics->ble_local_address_in_use);
+    } else {
+        cJSON_AddStringToObject(local_address, "in_use", "public");
+    }
+    cJSON_AddNumberToObject(
+        local_address, "set_rejections",
+        diagnostics->ble_local_address_set_rejections);
+    cJSON_AddNumberToObject(
+        local_address, "apply_failures",
+        diagnostics->ble_local_address_apply_failures);
+    cJSON_AddNumberToObject(
+        local_address, "adopt_mismatches",
+        diagnostics->ble_local_address_adopt_mismatches);
+    cJSON *reject_reasons =
+        cJSON_AddObjectToObject(ble, "ble_reject_reasons");
+    cJSON_AddNumberToObject(
+        reject_reasons, "unknown_host",
+        diagnostics->ble_reject_unknown_host_count);
+    cJSON_AddNumberToObject(
+        reject_reasons, "other_slot",
+        diagnostics->ble_reject_other_slot_count);
+    cJSON_AddNumberToObject(
+        reject_reasons, "suspended",
+        diagnostics->ble_reject_suspended_count);
+    codex_micro_ble_slot_history_entry_t history[8];
+    const size_t count = codex_micro_ble_slot_history(history, 8);
+    cJSON *ops = cJSON_AddArrayToObject(ble, "ble_slot_history");
+    for (size_t index = 0; ops != NULL && index < count; ++index) {
+        cJSON *item = cJSON_CreateObject();
+        if (item == NULL) {
+            break;
+        }
+        cJSON_AddStringToObject(
+            item, "op", ble_slot_op_name((codex_micro_ble_slot_op_t)history[index].op));
+        cJSON_AddNumberToObject(item, "slot", history[index].slot);
+        cJSON_AddStringToObject(item, "source",
+                                ble_slot_source_name(history[index].source));
+        cJSON_AddNumberToObject(item, "error", history[index].error);
+        cJSON_AddBoolToObject(item, "timeout", history[index].timeout);
+        cJSON_AddNumberToObject(item, "uptime_ms", history[index].uptime_ms);
+        cJSON_AddNumberToObject(item, "boots_ago", history[index].boots_ago);
+        cJSON_AddItemToArray(ops, item);
+    }
+}
+
 static bool validate_config_identity(uint32_t request_id, const char *command,
                                      const cJSON *candidate)
 {
@@ -1518,6 +2246,11 @@ static bool validate_config_identity(uint32_t request_id, const char *command,
 
 static cJSON *parse_json_object(const uint8_t *payload, size_t length)
 {
+    /* Checked before cJSON recurses: this runs on an 8 KB task stack, and
+     * before any handshake. */
+    if (!wmp_json_nesting_within(payload, length, WMP_JSON_MAX_NESTING)) {
+        return NULL;
+    }
     /* Reject trailing non-whitespace so one frame always contains one JSON object. */
     const char *parse_end = NULL;
     cJSON *value = cJSON_ParseWithLengthOpts((const char *)payload, length, &parse_end, false);
@@ -1543,6 +2276,203 @@ static bool json_payload_has_nul(const uint8_t *payload, size_t length)
         ++i;
     }
     return false;
+}
+
+static bool device_identity_available(void)
+{
+    return board_is_product_target() && device_identity_ready();
+}
+
+/* F-01 compatibility path: hosts without FW_CONFIRM (Console 0.2.x, the
+ * Windows updater) send HELLO and later GET_STATUS after every reconnect. A
+ * decoded GET_STATUS in a USB session proves the configuration channel, so
+ * confirm before the response is built: it then reports rollback_pending
+ * false to a host that reads it from this same response. */
+/* SET/CLEAR_AGENT_STATUS for source "desktop" (protocol.md). */
+static void handle_desktop_agent_status(uint32_t request_id,
+                                        const cJSON *request, bool set,
+                                        const char *command)
+{
+    if (!desktop_agent_status_supported() || !atomic_load(&s_session_active)) {
+        send_nack(request_id, command, WMP_ERROR_READ_ONLY, "READ_ONLY",
+                  "desktop status requires a supported HELLO session");
+        return;
+    }
+    desktop_agent_state_t states[DESKTOP_AGENT_SLOT_COUNT];
+    uint32_t counters[DESKTOP_AGENT_SLOT_COUNT];
+    bool encoder_navigation = false;
+    if (!(set ? desktop_agent_parse_snapshot(request, states, counters,
+                                             &encoder_navigation)
+              : desktop_agent_parse_clear(request))) {
+        send_nack(request_id, command, WMP_ERROR_VALIDATION_FAILED,
+                  "VALIDATION_FAILED", set
+                      ? "expected desktop source, six states and six uint32 completion_seq values"
+                      : "expected only the desktop source");
+        return;
+    }
+    if (set && codex_micro_mode() != CODEX_MICRO_MODE_NORMAL) {
+        send_nack(request_id, command, WMP_ERROR_READ_ONLY, "READ_ONLY",
+                  "desktop status requires Normal mode");
+        return;
+    }
+    if (set) {
+        desktop_agent_status_set(states, counters,
+            config_protocol_active_transport() == CONFIG_PROTOCOL_TRANSPORT_USB
+                ? CODEX_AGENT_PRESS_TRANSPORT_USB
+                : CODEX_AGENT_PRESS_TRANSPORT_BLE,
+            encoder_navigation);
+    } else {
+        desktop_agent_status_clear();
+    }
+    char response[128];
+    snprintf(response, sizeof(response),
+        "{\"command\":\"%s\",\"result\":{\"source\":\"desktop\",\"active\":%s,\"lease_ms\":%u}}",
+        command, set ? "true" : "false", DESKTOP_AGENT_LEASE_MS);
+    (void)send_frame(WMP_MSG_ACK, WMP_FLAG_RESPONSE, request_id, response);
+}
+
+/* Approve (item 4) and confirm at once if the device is already healthy
+ * long enough; otherwise the main loop confirms when the dwell completes. */
+static esp_err_t approve_firmware(bool by_host, bool *confirmed_now)
+{
+    portENTER_CRITICAL(&s_health_gate_lock);
+    firmware_health_gate_approve(&s_health_gate, by_host, protocol_uptime_ms());
+    const bool due = firmware_health_gate_due(&s_health_gate, protocol_uptime_ms());
+    portEXIT_CRITICAL(&s_health_gate_lock);
+    *confirmed_now = false;
+    if (!due) {
+        return ESP_OK;
+    }
+    const esp_err_t error = firmware_update_confirm_running(
+        by_host ? FIRMWARE_CONFIRM_SOURCE_HOST : FIRMWARE_CONFIRM_SOURCE_SESSION);
+    *confirmed_now = error == ESP_OK;
+    return error;
+}
+
+/* Safe-mode factory reset restarts after its ACK has left (review B9). */
+static atomic_bool s_safe_mode_restart_pending;
+static uint32_t s_safe_mode_restart_at_ms;
+
+/* FW_STATUS.result.firmware_update.confirm_wait (stability item 4). */
+static void add_confirm_wait(cJSON *update)
+{
+    const bool pending = firmware_update_confirm_pending();
+    portENTER_CRITICAL(&s_health_gate_lock);
+    const firmware_health_gate_t gate = s_health_gate;
+    const uint32_t now = protocol_uptime_ms();
+    const bool ready = firmware_health_gate_ready(&gate, now);
+    const uint32_t remaining = firmware_health_gate_remaining_ms(&gate, now);
+    const bool stuck = firmware_health_gate_stuck(&gate, pending, now);
+    portEXIT_CRITICAL(&s_health_gate_lock);
+    cJSON *wait = cJSON_AddObjectToObject(update, "confirm_wait");
+    if (wait == NULL) {
+        return;
+    }
+    cJSON_AddStringToObject(wait, "reason", firmware_wait_reason_name(firmware_wait_reason(
+        pending, gate.approved, atomic_load(&s_health_safe_mode),
+        atomic_load(&s_health_usb_mounted), ready)));
+    cJSON_AddBoolToObject(wait, "approved", gate.approved);
+    cJSON_AddNumberToObject(wait, "ready_in_ms",
+                            remaining == UINT32_MAX ? -1.0 : (double)remaining);
+    cJSON_AddBoolToObject(wait, "ble_ready", atomic_load(&s_health_ble_ready));
+    cJSON_AddBoolToObject(wait, "stuck", stuck);
+}
+
+void config_protocol_note_runtime_health(bool usb_mounted, bool safe_mode, bool ble_ready)
+{
+    atomic_store(&s_health_usb_mounted, usb_mounted);
+    atomic_store(&s_health_safe_mode, safe_mode);
+    atomic_store(&s_health_ble_ready, ble_ready);
+    const bool healthy = usb_mounted && !safe_mode;
+    portENTER_CRITICAL(&s_health_gate_lock);
+    firmware_health_gate_observe(&s_health_gate, healthy, protocol_uptime_ms());
+    const bool due = firmware_health_gate_due(&s_health_gate, protocol_uptime_ms());
+    const bool by_host = s_health_gate.approved_by_host;
+    portEXIT_CRITICAL(&s_health_gate_lock);
+    if (due && firmware_update_confirm_pending()) {
+        /* A failure stays pending (FW_STATUS current_confirm_error) and is
+         * retried on the next pass. */
+        (void)firmware_update_confirm_running(
+            by_host ? FIRMWARE_CONFIRM_SOURCE_HOST : FIRMWARE_CONFIRM_SOURCE_SESSION);
+    }
+}
+
+static void confirm_firmware_for_status(void)
+{
+    if (!firmware_confirm_auto_due(
+            &s_confirm_session,
+            config_protocol_active_transport() == CONFIG_PROTOCOL_TRANSPORT_USB,
+            firmware_update_confirm_pending())) {
+        return;
+    }
+    /* A failure stays pending and is reported in FW_STATUS
+     * current_confirm_error; the main loop retries. */
+    bool confirmed_now = false;
+    (void)approve_firmware(false, &confirmed_now);
+}
+
+static void handle_firmware_confirm(uint32_t request_id, const cJSON *request)
+{
+    const cJSON *build_id = cJSON_GetObjectItemCaseSensitive(request, "build_id");
+    const cJSON *partition =
+        cJSON_GetObjectItemCaseSensitive(request, "running_partition");
+    if (!cJSON_IsString(build_id) || !cJSON_IsString(partition)) {
+        send_nack(request_id, "FW_CONFIRM", WMP_ERROR_VALIDATION_FAILED,
+                  "VALIDATION_FAILED", "build_id and running_partition are required");
+        return;
+    }
+    firmware_update_status_t status;
+    firmware_update_get_status(&status);
+    switch (firmware_confirm_explicit_check(
+                &s_confirm_session, device_identity_available(),
+                build_id->valuestring, WMP_BUILD_ID, partition->valuestring,
+                status.running_partition)) {
+    case FIRMWARE_CONFIRM_NOT_AUTHENTICATED:
+        send_nack(request_id, "FW_CONFIRM", WMP_ERROR_AUTHENTICATION_REQUIRED,
+                  "AUTHENTICATION_REQUIRED",
+                  "complete HELLO and device authentication first");
+        return;
+    case FIRMWARE_CONFIRM_BUILD_MISMATCH:
+        send_nack(request_id, "FW_CONFIRM", WMP_ERROR_VALIDATION_FAILED,
+                  "VALIDATION_FAILED", "build_id does not match the running image");
+        return;
+    case FIRMWARE_CONFIRM_PARTITION_MISMATCH:
+        send_nack(request_id, "FW_CONFIRM", WMP_ERROR_VALIDATION_FAILED,
+                  "VALIDATION_FAILED",
+                  "running_partition does not match the running image");
+        return;
+    case FIRMWARE_CONFIRM_ALLOWED:
+    default:
+        break;
+    }
+    const bool was_pending = firmware_update_confirm_pending();
+    bool confirmed_now = false;
+    const esp_err_t error = was_pending ? approve_firmware(true, &confirmed_now) : ESP_OK;
+    if (error != ESP_OK) {
+        send_nack(request_id, "FW_CONFIRM", WMP_ERROR_STORAGE_FAILURE,
+                  "STORAGE_FAILURE", "could not cancel rollback");
+        return;
+    }
+    portENTER_CRITICAL(&s_health_gate_lock);
+    const bool health_ready =
+        firmware_health_gate_ready(&s_health_gate, protocol_uptime_ms());
+    const uint32_t remaining =
+        firmware_health_gate_remaining_ms(&s_health_gate, protocol_uptime_ms());
+    portEXIT_CRITICAL(&s_health_gate_lock);
+    firmware_update_get_status(&status);
+    char response[280];
+    /* rollback_pending stays true until the health dwell completes (item 4);
+     * the host polls FW_STATUS or repeats FW_CONFIRM. */
+    snprintf(response, sizeof(response),
+             "{\"command\":\"FW_CONFIRM\",\"result\":{\"was_pending\":%s,\"rollback_pending\":%s,\"confirm_source\":\"%s\",\"confirm_error\":%d,\"health_ready\":%s,\"confirm_in_ms\":%ld}}",
+             was_pending ? "true" : "false",
+             status.rollback_pending ? "true" : "false",
+             firmware_update_protocol_confirm_source_name(status.confirm_source),
+             (int)status.current_confirm_error,
+             health_ready ? "true" : "false",
+             status.rollback_pending
+                 ? (remaining == UINT32_MAX ? -1L : (long)remaining) : 0L);
+    (void)send_frame(WMP_MSG_ACK, WMP_FLAG_RESPONSE, request_id, response);
 }
 
 static void send_auth_certificate(uint32_t request_id)
@@ -1630,23 +2560,27 @@ static void send_auth_challenge(uint32_t request_id, const char *nonce)
         return;
     }
     size_t signing_length = 0;
-    uint8_t digest[PSA_HASH_LENGTH(PSA_ALG_SHA_256)];
-    size_t digest_length = 0;
+    uint8_t digest[WMP_SHA256_DIGEST_BYTES];
     size_t signature_length = 0;
-    if (!device_auth_build_signing_object(
-            nonce, work->identity.serial, work->signing_object, sizeof(work->signing_object),
-            &signing_length) ||
-        psa_hash_compute(PSA_ALG_SHA_256,
-                         (const uint8_t *)work->signing_object,
-                         signing_length, digest, sizeof(digest),
-                         &digest_length) != PSA_SUCCESS ||
-        digest_length != sizeof(digest) ||
-        device_identity_sign_digest(digest, work->signature, sizeof(work->signature),
-                                    &signature_length) != ESP_OK ||
-        signature_length != sizeof(work->signature) ||
-        !device_auth_base64url_encode(work->signature, signature_length,
-                                      work->encoded_signature,
-                                      sizeof(work->encoded_signature))) {
+    bool signed_challenge = device_auth_build_signing_object(
+        nonce, work->identity.serial, work->signing_object, sizeof(work->signing_object),
+        &signing_length);
+    if (signed_challenge) {
+        wmp_sha256(work->signing_object, signing_length, digest);
+        /* The DS signature allocates internal RAM inside ESP-IDF. */
+        ram_reserve_release();
+        const esp_err_t sign_error =
+            device_identity_sign_digest(digest, work->signature, sizeof(work->signature),
+                                        &signature_length);
+        ram_reserve_restore();
+        signed_challenge =
+            sign_error == ESP_OK &&
+            signature_length == sizeof(work->signature) &&
+            device_auth_base64url_encode(work->signature, signature_length,
+                                         work->encoded_signature,
+                                         sizeof(work->encoded_signature));
+    }
+    if (!signed_challenge) {
         memset(work->signature, 0, sizeof(work->signature));
         free(work);
         send_nack(request_id, "AUTH_CHALLENGE",
@@ -1672,6 +2606,7 @@ static void send_auth_challenge(uint32_t request_id, const char *nonce)
                   "device could not sign the authentication challenge");
         return;
     }
+    firmware_confirm_session_authenticated(&s_confirm_session);
     send_json_value(request_id, root);
     cJSON_Delete(root);
 }
@@ -1734,9 +2669,9 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
             send_nack(request_id, "HELLO", WMP_ERROR_VALIDATION_FAILED, "VALIDATION_FAILED", "hello shape is invalid");
             break;
         }
-        if (min_major->valueint > WMP_PROTOCOL_MAJOR || max_major->valueint < WMP_PROTOCOL_MAJOR ||
-            (max_major->valueint == WMP_PROTOCOL_MAJOR &&
-             (int)max_minor->valueint < (int)WMP_PROTOCOL_MINOR)) {
+        /* An older minor is compatible: the device answers with its own
+         * protocol_minor and the client reads features from CAPABILITIES. */
+        if (min_major->valueint > WMP_PROTOCOL_MAJOR || max_major->valueint < WMP_PROTOCOL_MAJOR) {
             send_nack(request_id, "HELLO", WMP_ERROR_UNSUPPORTED_PROTOCOL, "UNSUPPORTED_PROTOCOL", "client protocol range excludes device major");
             break;
         }
@@ -1744,13 +2679,22 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
          * cached HELLO retry is handled before reaching this branch. */
         s_ble_name_write.pending = false;
         s_normal_agent_write.pending = false;
+        s_ble_slot_clear_request.pending = false;
         screen_icon_protocol_reset_session();
         for (size_t index = 0; index < REPLAY_CACHE_ENTRIES; ++index) {
             replay_entry_clear(&s_replay_cache[index]);
         }
         config_store_status_t status;
         config_store_get_status(&status);
+        /* Degraded storage keeps write=true: Console 0.2.x refuses firmware
+         * maintenance on read-only devices, and updating is the way out.
+         * SET_CONFIG still refuses with STORAGE_FAILURE (F-04). */
         const bool writable = board_is_product_target();
+        const char *compatibility_reason =
+            !writable ? "devkit_read_only"
+            : status.safe_mode ? "safe_mode"
+            : status.storage_degraded ? "config_storage_unavailable"
+                                      : "compatible";
         const esp_app_desc_t *app_description = esp_app_get_description();
         char firmware_version_json[96];
         char build_id_json[96];
@@ -1765,15 +2709,16 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
         }
         snprintf(response, sizeof(response),
                  "{\"command\":\"HELLO\",\"result\":{\"identity\":{\"product_id\":\"%s\",\"hardware_id\":\"%s\",\"serial\":\"%s\",\"usb_vid\":%u,\"usb_pid\":%u},"
-                 "\"versions\":{\"firmware\":%s,\"build_id\":%s,\"protocol_major\":1,\"protocol_minor\":0,\"schema_version\":1},"
+                 "\"versions\":{\"firmware\":%s,\"build_id\":%s,\"protocol_major\":%u,\"protocol_minor\":%u,\"schema_version\":1},"
                  "\"config\":{\"generation\":%" PRIu32 ",\"digest\":\"%s\"},"
                  "\"compatibility\":{\"read\":true,\"write\":%s,\"reason\":\"%s\"}}}",
                  WMP_PRODUCT_ID, board_hardware_id(), s_serial, WMP_USB_VID,
                  WMP_USB_PID_ENGINEERING,
                  firmware_version_json, build_id_json,
+                 (unsigned)WMP_PROTOCOL_MAJOR, (unsigned)WMP_PROTOCOL_MINOR,
                  status.active_generation, status.active_digest,
-                 writable ? "true" : "false",
-                 writable ? "compatible" : "devkit_read_only");
+                 writable ? "true" : "false", compatibility_reason);
+        firmware_confirm_session_hello(&s_confirm_session);
         if (send_frame(WMP_MSG_ACK, WMP_FLAG_RESPONSE, request_id, response) ==
             ESP_OK) {
             atomic_store(&s_session_active, true);
@@ -1918,6 +2863,7 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
         break;
     }
     case WMP_MSG_GET_STATUS: {
+        confirm_firmware_for_status();
         config_store_status_t status;
         config_store_get_status(&status);
         cJSON *root = cJSON_CreateObject();
@@ -1925,6 +2871,9 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
         cJSON *result = cJSON_AddObjectToObject(root, "result");
         cJSON_AddStringToObject(result, "build_id", WMP_BUILD_ID);
         add_battery_status(result);
+        add_power_guard_status(result);
+        add_usb_standby_status(result);
+        add_protocol_rx_status(result);
         cJSON_AddStringToObject(result, "state",
                                 status.pending ? "PENDING_ACTIVATION" : "ACTIVE");
         cJSON_AddBoolToObject(result, "activation_failed", status.activation_failed);
@@ -1942,12 +2891,15 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
             result, "inputs_neutral",
             !atomic_load(&s_calibration_output_interlock) &&
                 board_inputs_neutral());
+        cJSON_AddBoolToObject(result, "joystick_suspect",
+                              board_joystick_suspect());
         cJSON_AddStringToObject(result, "platform",
                                 platform_name(config_store_get_platform()));
         cJSON_AddStringToObject(
             result, "operating_mode",
             codex_micro_mode_name(codex_micro_mode()));
         add_codex_agent_press_status(result);
+        add_desktop_agent_status(result);
         cJSON *action = cJSON_AddObjectToObject(result, "action_engine");
         bool capture_active;
         portENTER_CRITICAL(&s_diagnostic_capture_lock);
@@ -2005,6 +2957,10 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
         add_diagnostic_capture_status(result);
         add_input_event_losses(result);
         add_protocol_stack_diagnostics(result);
+        add_heap_status(result);
+        add_liveness_status(result);
+        add_boot_guard_status(result);
+        add_power_button_status(result);
         claude_status_model_t cc_snapshot;
         claude_status_get(&cc_snapshot);
         cJSON *cc = cJSON_AddObjectToObject(result, "claude_code_status");
@@ -2041,6 +2997,38 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
                                     joystick_diagnostics.radial_angle_turns);
             add_joystick_observation(joystick);
         }
+        {
+            static const char *const USB_LINK_NAMES[] = {
+                "none", "enumerating", "ready", "suspended",
+            };
+            const uint8_t state = atomic_load(&s_usb_link_state);
+            cJSON *usb_link = cJSON_AddObjectToObject(result, "usb_link");
+            cJSON_AddStringToObject(
+                usb_link, "state",
+                state < sizeof(USB_LINK_NAMES) / sizeof(USB_LINK_NAMES[0])
+                    ? USB_LINK_NAMES[state] : "unknown");
+            cJSON_AddNumberToObject(usb_link, "remote_wakeups",
+                                    atomic_load(&s_usb_remote_wakeups));
+            /* Review A2: unusable partitions are reported, never erased. */
+            const uint32_t unusable = storage_recovery_unusable_mask();
+            cJSON *storage = cJSON_AddObjectToObject(result, "storage_recovery");
+            cJSON_AddBoolToObject(storage, "ble_storage_unusable",
+                                  (unusable & STORAGE_RECOVERY_PARTITION_BLE) != 0);
+            cJSON_AddBoolToObject(storage, "config_storage_unusable",
+                                  (unusable & STORAGE_RECOVERY_PARTITION_CONFIG) != 0);
+            cJSON_AddBoolToObject(storage, "config_storage_degraded",
+                                  status.storage_degraded);
+            cJSON_AddStringToObject(storage, "config_storage_error",
+                                    status.storage_degraded
+                                        ? esp_err_to_name(status.storage_error)
+                                        : "none");
+            cJSON_AddBoolToObject(storage, "config_using_defaults",
+                                  status.storage_using_defaults);
+            cJSON_AddBoolToObject(storage, "unreadable_config_replaced",
+                                  status.unreadable_config_replaced);
+            cJSON_AddBoolToObject(storage, "stored_config_unusable",
+                                  status.stored_config_unusable);
+        }
 #if CONFIG_CODEX_MICRO_BLE_ENABLED
         codex_micro_diagnostics_t diagnostics;
         codex_micro_get_diagnostics(&diagnostics);
@@ -2051,11 +3039,37 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
         cJSON_AddBoolToObject(ble, "ble_connected",
                               diagnostics.ble_connected);
         cJSON_AddNumberToObject(ble, "init_error", diagnostics.init_error);
+        uint32_t status_age_ms = 0;
+        if (codex_micro_status_age_ms(&status_age_ms)) {
+            cJSON_AddNumberToObject(ble, "status_age_ms", status_age_ms);
+        } else {
+            cJSON_AddNullToObject(ble, "status_age_ms");
+        }
+        cJSON *recovery = cJSON_AddObjectToObject(ble, "ble_recovery");
+        cJSON_AddStringToObject(recovery, "result",
+                                diagnostics.ble_recovery_result != NULL
+                                    ? diagnostics.ble_recovery_result : "none");
+        cJSON_AddNumberToObject(recovery, "attempts_in_place",
+                                diagnostics.ble_recovery_attempts);
+        cJSON_AddNumberToObject(recovery, "last_error",
+                                diagnostics.ble_recovery_last_error);
+        cJSON_AddNumberToObject(recovery, "reset_reason",
+                                diagnostics.ble_recovery_reset_reason);
+        cJSON_AddNumberToObject(recovery, "crash_loop_count",
+                                diagnostics.ble_crash_loop_count);
         cJSON_AddBoolToObject(ble, "ble_services_ready",
                               diagnostics.ble_services_ready);
+        cJSON_AddNumberToObject(ble, "bond_count", diagnostics.bond_count);
+        cJSON_AddNumberToObject(ble, "active_slot_bond_state",
+                                diagnostics.active_slot_bond_state);
+        cJSON_AddNumberToObject(ble, "auth_fail_events",
+                                diagnostics.auth_fail_events);
+        cJSON_AddNumberToObject(ble, "last_auth_fail_reason",
+                                diagnostics.last_auth_fail_reason);
         cJSON_AddStringToObject(
             ble, "mode", codex_micro_mode_name(diagnostics.mode));
         add_ble_slot_status(ble);
+        add_ble_runtime_diagnostics(ble, &diagnostics);
         cJSON_AddNumberToObject(
             ble, "notify_subscribe_events",
             diagnostics.notify_subscribe_events);
@@ -2091,6 +3105,76 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
         cJSON_AddNumberToObject(ble, "tx_failures", diagnostics.tx_failures);
         cJSON_AddNumberToObject(
             ble, "last_tx_error", diagnostics.last_tx_error);
+        cJSON_AddNumberToObject(
+            ble, "hid_subscriptions", diagnostics.hid_subscriptions);
+        cJSON_AddNumberToObject(
+            ble, "hid_subscriptions_all", diagnostics.hid_subscriptions_all);
+        cJSON_AddNumberToObject(
+            ble, "subscription_restores", diagnostics.subscription_restores);
+        cJSON_AddNumberToObject(
+            ble, "subscription_default_restores",
+            diagnostics.subscription_default_restores);
+        cJSON_AddNumberToObject(
+            ble, "subscription_save_failures",
+            diagnostics.subscription_save_failures);
+        cJSON_AddNumberToObject(
+            ble, "hid_reports_dropped_unsubscribed",
+            diagnostics.hid_reports_dropped_unsubscribed);
+        cJSON_AddNumberToObject(
+            ble, "hid_report_failures", diagnostics.hid_report_failures);
+        cJSON_AddBoolToObject(
+            ble, "advertising_held", diagnostics.advertising_held);
+        cJSON_AddNumberToObject(
+            ble, "advertising_recoveries", diagnostics.advertising_recoveries);
+        cJSON *advertising = cJSON_AddObjectToObject(ble, "advertising");
+        if (advertising != NULL) {
+            cJSON_AddNumberToObject(advertising, "starts",
+                                    diagnostics.advertising_starts);
+            cJSON_AddNumberToObject(advertising, "start_failures",
+                                    diagnostics.advertising_start_failures);
+            cJSON_AddNumberToObject(advertising, "last_start_status",
+                                    diagnostics.advertising_last_start_status);
+            cJSON_AddNumberToObject(advertising, "stops",
+                                    diagnostics.advertising_stops);
+            cJSON_AddNumberToObject(advertising, "retries_exhausted",
+                                    diagnostics.advertising_retries_exhausted);
+            cJSON_AddNumberToObject(advertising, "backoff_level",
+                                    diagnostics.advertising_backoff_level);
+            cJSON_AddNumberToObject(advertising, "backoff_delay_ms",
+                                    diagnostics.advertising_backoff_delay_ms);
+            cJSON_AddNumberToObject(advertising, "input_restarts",
+                                    diagnostics.advertising_input_restarts);
+            cJSON_AddNumberToObject(advertising, "stale_flags",
+                                    diagnostics.advertising_stale_flags);
+            cJSON_AddBoolToObject(advertising, "active",
+                                  diagnostics.advertising_active);
+            cJSON_AddBoolToObject(advertising, "starting",
+                                  diagnostics.advertising_starting);
+            cJSON_AddBoolToObject(advertising, "data_configured",
+                                  diagnostics.advertising_configured);
+            cJSON_AddBoolToObject(advertising, "scan_response_configured",
+                                  diagnostics.scan_response_configured);
+            cJSON_AddBoolToObject(advertising, "peer_filter_ready",
+                                  diagnostics.peer_filter_ready);
+            cJSON_AddNumberToObject(advertising, "peer_filter_state",
+                                    diagnostics.peer_filter_state);
+            cJSON_AddBoolToObject(advertising, "slow", diagnostics.advertising_slow);
+        }
+        cJSON_AddNumberToObject(
+            ble, "advertising_pairing_boosts",
+            diagnostics.advertising_pairing_boosts);
+        cJSON_AddNumberToObject(
+            ble, "service_change_sent", diagnostics.service_change_sent);
+        cJSON_AddNumberToObject(
+            ble, "service_change_skipped", diagnostics.service_change_skipped);
+        cJSON_AddNumberToObject(
+            ble, "auth_fail_disconnects", diagnostics.auth_fail_disconnects);
+        cJSON_AddNumberToObject(
+            ble, "reauth_prompts", diagnostics.reauth_prompts);
+        cJSON_AddNumberToObject(
+            ble, "orphan_bonds_removed", diagnostics.orphan_bonds_removed);
+        cJSON_AddNumberToObject(
+            ble, "orphan_cleanup_skipped", diagnostics.orphan_cleanup_skipped);
 #endif
         send_json_value(request_id, root);
         cJSON_Delete(root);
@@ -2151,6 +3235,11 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
                       "VALIDATION_FAILED", "slot must be an integer from 1 to 3");
             break;
         }
+        if (clear && s_ble_slot_clear_request.pending) {
+            send_nack(request_id, command, WMP_ERROR_BUSY, "BUSY",
+                      "a BLE slot clear is already pending");
+            break;
+        }
         const esp_err_t error = clear
                                     ? codex_micro_clear_ble_slot(slot)
                                     : codex_micro_select_ble_slot(slot);
@@ -2160,16 +3249,16 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
                                    : "BLE slot could not be selected");
             break;
         }
-        cJSON *root = cJSON_CreateObject();
-        cJSON_AddStringToObject(root, "command", command);
-        cJSON *result = cJSON_AddObjectToObject(root, "result");
-        cJSON_AddNumberToObject(result, "slot", slot);
-        cJSON_AddBoolToObject(result, "paired",
-                              codex_micro_ble_slot_paired(slot));
-        cJSON_AddBoolToObject(result, "connected",
-                              codex_micro_ble_slot_connected(slot));
-        send_json_value(request_id, root);
-        cJSON_Delete(root);
+        if (clear) {
+            s_ble_slot_clear_request.request_id = request_id;
+            s_ble_slot_clear_request.payload_length = s_inflight_payload_length;
+            memcpy(s_ble_slot_clear_request.digest, s_inflight_request_digest,
+                   sizeof(s_ble_slot_clear_request.digest));
+            s_ble_slot_clear_request.slot = slot;
+            s_ble_slot_clear_request.pending = true;
+            break;
+        }
+        send_ble_slot_state(request_id, command, slot);
         break;
     }
     case WMP_MSG_GET_PROMPT_LIST: {
@@ -2424,12 +3513,20 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
             strcmp(s_action_host_output_state, "diagnostic_capture") == 0 ||
             /* A drifting, uncalibrated stick can itself keep output waiting
              * for neutral; calibration must be able to recover that state. */
-            strcmp(s_action_host_output_state, "wait_neutral") == 0;
+            strcmp(s_action_host_output_state, "wait_neutral") == 0 ||
+            /* A local page (for example the first-boot system selection)
+             * lends its input to calibration and gets it back afterwards. */
+            strcmp(s_action_host_output_state, "local_ui") == 0;
+        /*
+         * USB standby and the charge splash are allowed: the first formal
+         * firmware boots a factory unit into them (no saved ON state) and
+         * the service tool calibrates exactly then. The unit stays OFF.
+         */
         if (status.pending || atomic_load(&s_calibration_owner_requested) ||
             s_joystick_calibration.state != JOYSTICK_CALIBRATION_INACTIVE ||
-            !output_owner_available || strcmp(s_action_local_page, "none") != 0 ||
+            !output_owner_available ||
             s_action_quick_config_active || s_action_idle_standby_active ||
-            s_action_usb_standby_active || firmware_update_is_active()) {
+            firmware_update_is_active()) {
             send_nack(request_id, "CALIBRATION_START", WMP_ERROR_BUSY,
                       "BUSY", "another configuration operation is active");
             break;
@@ -2636,6 +3733,10 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
     case WMP_MSG_CLEAR_AGENT_STATUS: {
         const bool set = message_type == WMP_MSG_SET_AGENT_STATUS;
         const char *command = set ? "SET_AGENT_STATUS" : "CLEAR_AGENT_STATUS";
+        if (desktop_agent_is_source(request)) {
+            handle_desktop_agent_status(request_id, request, set, command);
+            break;
+        }
         if (!claude_status_supported()) {
             send_nack(request_id, command, WMP_ERROR_READ_ONLY,
                 "READ_ONLY", "Claude Code status is not supported on this target");
@@ -2676,6 +3777,22 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
             break;
         }
         char reason[128] = "factory reset failed";
+        config_store_status_t store_status;
+        config_store_get_status(&store_status);
+        if (store_status.safe_mode) {
+            /* Review B9: the one config write safe mode allows. */
+            const esp_err_t reset_error = config_store_safe_mode_factory_reset(
+                confirmation->valuestring, reason, sizeof(reason));
+            if (reset_error != ESP_OK) {
+                send_store_error(request_id, "FACTORY_DEFAULT", reset_error, reason);
+                break;
+            }
+            (void)send_frame(WMP_MSG_ACK, WMP_FLAG_RESPONSE, request_id,
+                             "{\"command\":\"FACTORY_DEFAULT\",\"result\":{\"state\":\"RESTARTING\",\"safe_mode\":true}}");
+            s_safe_mode_restart_at_ms = protocol_uptime_ms() + 1500u;
+            atomic_store(&s_safe_mode_restart_pending, true);
+            break;
+        }
         const esp_err_t error = config_store_factory_default(base_generation,
                                                               confirmation->valuestring,
                                                               reason, sizeof(reason));
@@ -2691,6 +3808,9 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
         (void)send_frame(WMP_MSG_ACK, WMP_FLAG_RESPONSE, request_id, response);
         break;
     }
+    case WMP_MSG_FW_CONFIRM:
+        handle_firmware_confirm(request_id, request);
+        break;
     case WMP_MSG_FW_BEGIN:
     case WMP_MSG_FW_DATA:
     case WMP_MSG_FW_STATUS:
@@ -2705,66 +3825,52 @@ static void handle_request(uint8_t message_type, uint32_t request_id,
     }
 }
 
+static void send_scan_nack(const wmp_scan_result_t *scan)
+{
+    switch (scan->error) {
+    case WMP_ERROR_PAYLOAD_TOO_LARGE:
+        send_nack(scan->request_id, "UNKNOWN", WMP_ERROR_PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE", "payload exceeds 20480 bytes");
+        break;
+    case WMP_ERROR_CRC_MISMATCH:
+        send_nack(scan->request_id, "UNKNOWN", WMP_ERROR_CRC_MISMATCH, "CRC_MISMATCH", "payload CRC32 does not match");
+        break;
+    case WMP_ERROR_UNSUPPORTED_PROTOCOL:
+        send_nack(scan->request_id, "UNKNOWN", WMP_ERROR_UNSUPPORTED_PROTOCOL, "UNSUPPORTED_PROTOCOL", "protocol header version is incompatible");
+        break;
+    default:
+        send_nack(scan->request_id, "UNKNOWN", WMP_ERROR_INVALID_FRAME, "INVALID_FRAME", "request header is invalid");
+        break;
+    }
+}
+
 static void parse_available(void)
 {
-    while (s_rx_length >= WMP_PROTOCOL_HEADER_SIZE) {
-        if (memcmp(s_rx, WMP_PROTOCOL_MAGIC, 4) != 0) {
-            size_t skip = s_rx_length > 3 ? s_rx_length - 3 : 1;
-            for (size_t index = 1; index + 4 <= s_rx_length; ++index) {
-                if (memcmp(s_rx + index, WMP_PROTOCOL_MAGIC, 4) == 0) {
-                    skip = index;
-                    break;
-                }
-            }
-            /* Preserve a possible partial magic suffix for the next CDC chunk. */
-            consume(skip);
-            continue;
-        }
-
-        const uint8_t major = s_rx[4];
-        const uint8_t minor = s_rx[5];
-        const uint8_t message_type = s_rx[6];
-        const uint8_t flags = s_rx[7];
-        const uint32_t request_id = read_u32_le(s_rx + 8);
-        const uint32_t payload_length = read_u32_le(s_rx + 12);
-        const uint32_t expected_crc = read_u32_le(s_rx + 16);
-
-        if (payload_length > WMP_PROTOCOL_MAX_PAYLOAD) {
-            if (request_id != 0) {
-                send_nack(request_id, "UNKNOWN", WMP_ERROR_PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE", "payload exceeds 20480 bytes");
-            }
-            consume(4);
-            continue;
-        }
-        const size_t frame_length = WMP_PROTOCOL_HEADER_SIZE + payload_length;
-        if (s_rx_length < frame_length) {
+    for (;;) {
+        const wmp_scan_result_t scan = wmp_frame_scan(s_rx, s_rx_length);
+        if (scan.kind == WMP_SCAN_NEED_MORE) {
             return;
         }
-        if (request_id == 0 || (flags & ~0x03u) != 0 || flags != 0) {
-            if (request_id != 0) {
-                send_nack(request_id, "UNKNOWN", WMP_ERROR_INVALID_FRAME, "INVALID_FRAME", "request header is invalid");
+        if (scan.kind != WMP_SCAN_FRAME) {
+            if (scan.kind == WMP_SCAN_REJECT) {
+                ++s_rx_stats.bad_frames;
+                if (scan.request_id != 0) {
+                    send_scan_nack(&scan);
+                }
             }
-            consume(frame_length);
+            if (scan.resync) {
+                ++s_rx_stats.resyncs;
+            }
+            consume(scan.consume);
             continue;
         }
-        if (major != WMP_PROTOCOL_MAJOR || minor != WMP_PROTOCOL_MINOR) {
-            send_nack(request_id, "UNKNOWN", WMP_ERROR_UNSUPPORTED_PROTOCOL, "UNSUPPORTED_PROTOCOL", "protocol header version is incompatible");
-            consume(frame_length);
-            continue;
-        }
+
+        const uint8_t message_type = scan.message_type;
+        const uint32_t request_id = scan.request_id;
+        const uint32_t payload_length = scan.payload_length;
+        const size_t frame_length = scan.consume;
         const uint8_t *payload = s_rx + WMP_PROTOCOL_HEADER_SIZE;
-        if (crc32_ieee(payload, payload_length) != expected_crc) {
-            send_nack(request_id, "UNKNOWN", WMP_ERROR_CRC_MISMATCH, "CRC_MISMATCH", "payload CRC32 does not match");
-            consume(frame_length);
-            continue;
-        }
-        uint8_t digest[PSA_HASH_LENGTH(PSA_ALG_SHA_256)];
-        if (!request_digest(message_type, payload, payload_length, digest)) {
-            send_nack(request_id, "UNKNOWN", WMP_ERROR_INTERNAL, "INTERNAL",
-                      "could not fingerprint request");
-            consume(frame_length);
-            continue;
-        }
+        uint8_t digest[WMP_SHA256_DIGEST_BYTES];
+        request_digest(message_type, payload, payload_length, digest);
         replay_entry_t *cached = find_replay_entry(request_id);
         if (s_ble_name_write.pending && request_id == s_ble_name_write.request_id) {
             const bool identical = message_type == WMP_MSG_BLE_NAME_SET &&
@@ -2789,6 +3895,21 @@ static void parse_available(void)
                           WMP_ERROR_DUPLICATE_REQUEST_MISMATCH,
                           "DUPLICATE_REQUEST_MISMATCH",
                           "request ID is awaiting persistence");
+            }
+            consume(frame_length);
+            continue;
+        }
+        if (s_ble_slot_clear_request.pending &&
+            request_id == s_ble_slot_clear_request.request_id) {
+            const bool identical = message_type == WMP_MSG_BLE_SLOT_CLEAR &&
+                payload_length == s_ble_slot_clear_request.payload_length &&
+                memcmp(digest, s_ble_slot_clear_request.digest,
+                       sizeof(digest)) == 0;
+            if (!identical) {
+                send_nack(request_id, "BLE_SLOT_CLEAR",
+                          WMP_ERROR_DUPLICATE_REQUEST_MISMATCH,
+                          "DUPLICATE_REQUEST_MISMATCH",
+                          "request ID is awaiting BLE slot removal");
             }
             consume(frame_length);
             continue;
@@ -2842,6 +3963,13 @@ static void parse_available(void)
     }
 }
 
+void config_protocol_set_usb_link_diagnostics(uint8_t link_state,
+                                              uint32_t remote_wakeups)
+{
+    atomic_store(&s_usb_link_state, link_state);
+    atomic_store(&s_usb_remote_wakeups, remote_wakeups);
+}
+
 void config_protocol_set_ble_service_ready(bool ready)
 {
     atomic_store(&s_ble_service_ready, ready);
@@ -2854,12 +3982,14 @@ void config_protocol_init(const char *serial, config_protocol_tx_fn tx, void *tx
     }
     s_usb_tx_fn = tx;
     s_usb_tx_context = tx_context;
+    firmware_update_protocol_set_status_extension(add_confirm_wait);
     s_tx_fn = tx;
     s_tx_context = tx_context;
     atomic_store(&s_active_transport, CONFIG_PROTOCOL_TRANSPORT_USB);
     if (s_transport_mutex == NULL) {
         s_transport_mutex = xSemaphoreCreateMutex();
     }
+    heap_watch_start();
     config_protocol_reset();
 }
 
@@ -2932,14 +4062,17 @@ void config_protocol_feed_transport(config_protocol_transport_t transport,
     while (length > 0) {
         const size_t available = RX_CAPACITY - s_rx_length;
         if (available == 0) {
-            /* A full buffer without a consumable frame cannot be recovered safely. */
-            config_protocol_reset();
-            xSemaphoreGive(s_transport_mutex);
-            return;
+            /* Full without a consumable frame: drop the oldest byte and
+             * resynchronise on the next magic instead of ending the session. */
+            ++s_rx_stats.overflows;
+            consume(1);
+            parse_available();
+            continue;
         }
         const size_t copy_length = length < available ? length : available;
         memcpy(s_rx + s_rx_length, data, copy_length);
         s_rx_length += copy_length;
+        s_rx_last_ms = protocol_uptime_ms();
         data += copy_length;
         length -= copy_length;
         parse_available();
@@ -2947,15 +4080,40 @@ void config_protocol_feed_transport(config_protocol_transport_t transport,
     xSemaphoreGive(s_transport_mutex);
 }
 
+/* Drop the head of an incomplete frame nobody is completing (for example a
+ * header whose length was corrupted larger), then resynchronise. Repeats on
+ * later polls until the stale bytes are gone or a frame completes. */
+static void expire_partial_frame(uint32_t now_ms)
+{
+    const uint32_t timeout_ms =
+        config_protocol_active_transport() == CONFIG_PROTOCOL_TRANSPORT_BLE
+            ? WMP_PARTIAL_FRAME_TIMEOUT_BLE_MS
+            : WMP_PARTIAL_FRAME_TIMEOUT_USB_MS;
+    if (!wmp_frame_partial_expired(s_rx_length, now_ms, s_rx_last_ms,
+                                   timeout_ms)) {
+        return;
+    }
+    ++s_rx_stats.partial_timeouts;
+    consume(1);
+    parse_available();
+}
+
 void config_protocol_poll(void)
 {
+    if (atomic_load(&s_safe_mode_restart_pending) &&
+        (int32_t)(protocol_uptime_ms() - s_safe_mode_restart_at_ms) >= 0) {
+        esp_restart();
+    }
+    persist_heap_watch();
     /* Closing CDC need not produce a USB detach. Expire uploads independently
      * of calibration, using the same mutex as connection callbacks/parser. */
     if (s_transport_mutex != NULL &&
         xSemaphoreTake(s_transport_mutex, 0) == pdTRUE) {
         poll_ble_name_write();
         poll_normal_agent_write();
+        poll_ble_slot_clear_request();
         screen_icon_protocol_poll(protocol_uptime_ms());
+        expire_partial_frame(protocol_uptime_ms());
         xSemaphoreGive(s_transport_mutex);
     }
     if (s_joystick_calibration.state == JOYSTICK_CALIBRATION_INACTIVE ||
@@ -3005,8 +4163,10 @@ void config_protocol_reset(void)
 {
     s_ble_name_write.pending = false;
     s_normal_agent_write.pending = false;
+    s_ble_slot_clear_request.pending = false;
     screen_icon_protocol_reset_session();
     claude_status_clear();
+    desktop_agent_status_clear();
     if (!atomic_load(&s_calibration_candidate_confirmed)) {
         calibration_end();
     }
@@ -3019,6 +4179,7 @@ void config_protocol_reset(void)
     };
     publish_lighting_preview_request(&clear_preview);
     atomic_store(&s_session_active, false);
+    firmware_confirm_session_reset(&s_confirm_session);
     s_rx_length = 0;
     s_capture_response = false;
     for (size_t index = 0; index < REPLAY_CACHE_ENTRIES; ++index) {
@@ -3040,6 +4201,7 @@ bool config_protocol_screen_icon_upload_active(void)
 bool config_protocol_restart_busy(void)
 {
     return s_ble_name_write.pending || s_normal_agent_write.pending ||
+           s_ble_slot_clear_request.pending ||
            preference_maintenance_busy() ||
            firmware_update_is_active();
 }

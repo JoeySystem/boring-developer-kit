@@ -40,3 +40,75 @@ key_gesture_result_t key_gesture_model_event(key_gesture_model_t *model,
     model->deadline_ms = now_ms + KEY_GESTURE_WINDOW_MS;
     return KEY_GESTURE_NONE;
 }
+
+static key_pulse_step_t key_pulse_advance(key_pulse_model_t *model,
+                                          key_pulse_step_t step,
+                                          uint32_t now_ms)
+{
+    switch (step) {
+    case KEY_PULSE_STEP_MODIFIERS_DOWN:
+        model->next_step = KEY_PULSE_STEP_KEY_DOWN;
+        model->next_ms = now_ms + KEY_PULSE_MODIFIER_LEAD_MS;
+        break;
+    case KEY_PULSE_STEP_KEY_DOWN:
+        model->next_step = KEY_PULSE_STEP_KEY_UP;
+        model->next_ms = now_ms + KEY_PULSE_HOLD_MS;
+        break;
+    case KEY_PULSE_STEP_KEY_UP:
+        if (model->has_modifiers) {
+            model->next_step = KEY_PULSE_STEP_MODIFIERS_UP;
+            model->next_ms = now_ms + KEY_PULSE_MODIFIER_TAIL_MS;
+        } else {
+            model->active = false;
+            model->next_step = KEY_PULSE_STEP_NONE;
+        }
+        break;
+    case KEY_PULSE_STEP_MODIFIERS_UP:
+    default:
+        model->active = false;
+        model->next_step = KEY_PULSE_STEP_NONE;
+        break;
+    }
+    return step;
+}
+
+key_pulse_step_t key_pulse_model_start(key_pulse_model_t *model,
+                                       bool has_modifiers, uint32_t now_ms)
+{
+    memset(model, 0, sizeof(*model));
+    model->active = true;
+    model->has_modifiers = has_modifiers;
+    return key_pulse_advance(model,
+                             has_modifiers ? KEY_PULSE_STEP_MODIFIERS_DOWN
+                                           : KEY_PULSE_STEP_KEY_DOWN,
+                             now_ms);
+}
+
+key_pulse_step_t key_pulse_model_poll(key_pulse_model_t *model, uint32_t now_ms)
+{
+    if (!model->active || (int32_t)(now_ms - model->next_ms) < 0) {
+        return KEY_PULSE_STEP_NONE;
+    }
+    return key_pulse_advance(model, model->next_step, now_ms);
+}
+
+key_pulse_step_t key_pulse_model_finish(key_pulse_model_t *model)
+{
+    if (!model->active) {
+        return KEY_PULSE_STEP_NONE;
+    }
+    key_pulse_step_t step = model->next_step;
+    if (step == KEY_PULSE_STEP_KEY_DOWN) {
+        /* Only modifiers went down: skip the key entirely. */
+        step = model->has_modifiers ? KEY_PULSE_STEP_MODIFIERS_UP
+                                    : KEY_PULSE_STEP_NONE;
+        if (step == KEY_PULSE_STEP_NONE) {
+            model->active = false;
+            return step;
+        }
+        model->active = false;
+        model->next_step = KEY_PULSE_STEP_NONE;
+        return step;
+    }
+    return key_pulse_advance(model, step, 0u);
+}

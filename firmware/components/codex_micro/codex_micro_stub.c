@@ -46,6 +46,32 @@ void codex_micro_register_ble_gatts_observer(
     (void)context;
 }
 
+void codex_micro_hold_advertising_for_services(void)
+{
+}
+
+void codex_micro_release_advertising_hold(void)
+{
+}
+
+void codex_micro_register_service_change_sender(
+    codex_micro_service_change_fn sender, void *context)
+{
+    (void)sender;
+    (void)context;
+}
+
+void codex_micro_note_service_change_result(bool delivered)
+{
+    (void)delivered;
+}
+
+bool codex_micro_take_ble_reauth_needed(uint8_t *slot)
+{
+    (void)slot;
+    return false;
+}
+
 void codex_micro_register_usb_hid(const codex_micro_usb_hid_t *transport)
 {
     (void)transport;
@@ -67,6 +93,10 @@ void codex_micro_prepare_soft_restart(void)
 {
 }
 
+void codex_micro_note_local_input(void)
+{
+}
+
 void codex_micro_set_input_suppressed(bool suppressed)
 {
     s_input_suppressed = suppressed;
@@ -74,6 +104,13 @@ void codex_micro_set_input_suppressed(bool suppressed)
 
 void codex_micro_set_ble_suspended(bool suspended)
 {
+    s_ble_suspended = suspended;
+}
+
+void codex_micro_set_ble_suspended_for_source(
+    bool suspended, codex_micro_ble_disconnect_source_t source)
+{
+    (void)source;
     s_ble_suspended = suspended;
 }
 
@@ -106,6 +143,28 @@ esp_err_t codex_micro_clear_ble_slot(uint8_t slot)
                : ESP_ERR_INVALID_ARG;
 }
 
+esp_err_t codex_micro_select_ble_slot_from(uint8_t slot,
+                                           codex_micro_ble_slot_source_t source)
+{
+    (void)source;
+    return codex_micro_select_ble_slot(slot);
+}
+
+esp_err_t codex_micro_clear_ble_slot_from(uint8_t slot,
+                                          codex_micro_ble_slot_source_t source)
+{
+    (void)source;
+    return codex_micro_clear_ble_slot(slot);
+}
+
+size_t codex_micro_ble_slot_history(codex_micro_ble_slot_history_entry_t *entries,
+                                    size_t capacity)
+{
+    (void)entries;
+    (void)capacity;
+    return 0;
+}
+
 esp_err_t codex_micro_factory_reset(void)
 {
     s_mode = CODEX_MICRO_MODE_NORMAL;
@@ -129,9 +188,53 @@ bool codex_micro_ble_slot_connected(uint8_t slot)
     return false;
 }
 
+bool codex_micro_ble_pairing_window(uint8_t *slot, uint8_t *return_slot)
+{
+    (void)slot;
+    (void)return_slot;
+    return false;
+}
+
+bool codex_micro_take_ble_pairing_return(uint8_t *slot)
+{
+    (void)slot;
+    return false;
+}
+
+uint8_t codex_micro_ble_free_slot(void)
+{
+    return 1u;
+}
+
+uint8_t codex_micro_ble_next_host_slot(void)
+{
+    return 0u;
+}
+
 bool codex_micro_take_ble_slot_redirect(uint8_t *slot)
 {
     (void)slot;
+    return false;
+}
+
+bool codex_micro_take_ble_peer_rejection(uint8_t *slot)
+{
+    (void)slot;
+    return false;
+}
+
+bool codex_micro_take_ble_slot_clear_result(uint8_t *slot, esp_err_t *error)
+{
+    (void)slot;
+    (void)error;
+    return false;
+}
+
+bool codex_micro_take_ble_slot_clear_protocol_result(
+    uint8_t *slot, esp_err_t *error)
+{
+    (void)slot;
+    (void)error;
     return false;
 }
 
@@ -144,10 +247,8 @@ codex_micro_mode_t codex_micro_toggle_mode(void)
 {
     const bool eda_supported =
         codex_micro_active_key_layout() == CODEX_MICRO_KEY_LAYOUT_REV_A;
-    const bool claude_code_supported =
-        codex_micro_active_key_layout() == CODEX_MICRO_KEY_LAYOUT_MATRIX12;
-    s_mode = codex_micro_next_mode(s_mode, false, eda_supported,
-                                   claude_code_supported);
+    /* Claude Code is no longer in the double-click cycle (boring-D46). */
+    s_mode = codex_micro_next_mode(s_mode, false, eda_supported, false);
     return s_mode;
 }
 
@@ -181,6 +282,12 @@ bool codex_micro_status_rgb(board_rgb_t status[8])
 codex_micro_attention_t codex_micro_take_attention_notification(void)
 {
     return CODEX_ATTENTION_NONE;
+}
+
+bool codex_micro_status_age_ms(uint32_t *age_ms)
+{
+    (void)age_ms;
+    return false;
 }
 
 void codex_micro_get_diagnostics(codex_micro_diagnostics_t *diagnostics)

@@ -21,4 +21,17 @@ menu "Codex Micro compatibility"
             The BLE compatibility runtime remains available as a fallback,
             while Codex vendor traffic prefers USB whenever it is mounted.
 
+    config CODEX_MICRO_BLE_FAULT_INJECTION
+        bool "TEST ONLY: scripted BLE start-up faults"
+        default n
+        depends on CODEX_MICRO_BLE_ENABLED
+        help
+            Never enable for a release. Each boot after a warm reset runs one
+            scripted fault so the BLE start-up recovery can be exercised on a
+            healthy board: one failed controller init, three failed inits, a
+            panic right after the controller starts, a panic when the HID
+            services report ready, then normal boots. A power-on reset
+            restarts the script. Built only with tools/build.sh
+            --ble-fault-injection.
+
 endmenu

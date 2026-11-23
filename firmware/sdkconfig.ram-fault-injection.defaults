@@ -1,0 +1,2 @@
+# TEST ONLY: exhaust the DMA-capable internal heap (tools/build.sh --ram-fault-injection).
+CONFIG_WMP_RAM_FAULT_INJECTION=y

@@ -7,6 +7,7 @@
 
 #include "board.h"
 #include "ble_name.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -14,8 +15,10 @@
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "psa/crypto.h"
+#include "wmp_sha256.h"
 #include "protocol_contract.h"
 #include "sdkconfig.h"
+#include "storage_recovery.h"
 
 #define CONFIG_PARTITION "config_nvs"
 #define CONFIG_NAMESPACE "wmpcfg"
@@ -32,6 +35,10 @@
 #define CONFIG_KEY_STANDBY_MINUTES "idle_min"
 #define DEFAULT_STANDBY_MINUTES 15
 #define CONFIG_KEY_USER_POWERED_ON "user_on"
+/* Low-battery guard diagnostics (u32 counters) and boot lock (u8). */
+#define CONFIG_KEY_BROWNOUT_RESETS "brownouts"
+#define CONFIG_KEY_LOW_BATTERY_OFFS "lowbat_offs"
+#define CONFIG_KEY_LOW_BATTERY_LOCK "lowbat_lock"
 #define CONFIG_KEY_BLE_NAME "ble_name"
 #define CONFIG_KEY_NORMAL_AGENT_BEHAVIOR "agent_mode"
 #define CONFIG_CONTROL_COUNT BOARD_CONTROL_COUNT
@@ -40,6 +47,13 @@
 #define MATRIX12_V1_HARDWARE_ID "WMP-S3-MATRIX12-V1"
 #define LEGACY_MATRIX12_EXTRA_KEY_FIRST 8u
 #define LEGACY_MATRIX12_EXTRA_KEY_COUNT 5u
+/* Power V2 factory Key 8 (Doubao voice-input default): click taps Right Option
+ * (macOS) / Right Alt (Windows) + Space to start or stop dictation; double-click
+ * taps Enter to send. */
+#define POWER_V2_VOICE_SHORT_NAME "Voice/Send"
+#define POWER_V2_VOICE_USAGE 44
+#define POWER_V2_VOICE_MODIFIER 230
+#define POWER_V2_VOICE_DOUBLE_USAGE 40
 
 static const char *TAG = "config_store";
 
@@ -116,6 +130,13 @@ static const char *const PLATFORM_CONTEXT_KEYS[CONFIG_PLATFORM_CONTEXT_COUNT] = 
 static config_platform_t s_pending_platform;
 static uint8_t s_activation_failures;
 static TickType_t s_activation_retry_at;
+/* F-04: config storage that cannot be used no longer stops the boot. */
+static atomic_bool s_storage_degraded;
+static esp_err_t s_storage_error;
+static bool s_storage_using_defaults;
+static bool s_unreadable_config_replaced; /* always false since review A2 */
+static bool s_stored_config_unusable;
+static bool s_safe_mode;
 
 typedef struct {
     config_platform_t platform;
@@ -153,6 +174,51 @@ static const quick_preset_t QUICK_PRESETS[CONFIG_QUICK_PRESET_COUNT] = {
 };
 
 static cJSON *parse_defaults(void);
+
+/*
+ * Config data lives in PSRAM when the board has it. GET_STATUS.heap
+ * checkpoints on Power V2 showed config_store_init taking 54 KB of the
+ * DMA-capable internal RAM that BLE, the PSA SHA driver and the OTA image
+ * check need; most of it was the resident cJSON tree. heap_caps_free() (and
+ * free()) release blocks from either region.
+ */
+/*
+ * Counts failed config allocations so read_slot() can tell a cJSON parse that
+ * ran out of memory from a damaged slot. Another task's failure in the same
+ * window only makes a read look short of memory, which writes nothing.
+ */
+static atomic_uint s_config_alloc_failures;
+
+static void *config_malloc(size_t size)
+{
+    void *block = heap_caps_malloc_prefer(size, 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
+                                          MALLOC_CAP_DEFAULT);
+    if (block == NULL && size != 0) {
+        atomic_fetch_add(&s_config_alloc_failures, 1u);
+    }
+    return block;
+}
+
+static void *config_calloc(size_t count, size_t size)
+{
+    void *block = heap_caps_calloc_prefer(count, size, 2,
+                                          MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
+                                          MALLOC_CAP_DEFAULT);
+    if (block == NULL && count != 0 && size != 0) {
+        atomic_fetch_add(&s_config_alloc_failures, 1u);
+    }
+    return block;
+}
+
+/* Global: every cJSON user (protocol requests, Codex RPC) follows. */
+static void install_config_json_allocator(void)
+{
+    cJSON_Hooks hooks = {
+        .malloc_fn = config_malloc,
+        .free_fn = heap_caps_free,
+    };
+    cJSON_InitHooks(&hooks);
+}
 
 static void set_reason(char *reason, size_t reason_size, const char *value)
 {
@@ -268,7 +334,7 @@ static bool canonical_write_value(json_writer_t *writer, const cJSON *value)
 static esp_err_t canonicalize(const cJSON *root, char **json,
                               char digest[CONFIG_STORE_DIGEST_HEX_LENGTH + 1])
 {
-    char *output = calloc(WMP_CONFIG_MAX_CANONICAL_BYTES + 1, 1);
+    char *output = config_calloc(WMP_CONFIG_MAX_CANONICAL_BYTES + 1, 1);
     if (output == NULL) {
         return ESP_ERR_NO_MEM;
     }
@@ -281,14 +347,8 @@ static esp_err_t canonicalize(const cJSON *root, char **json,
         free(output);
         return ESP_ERR_INVALID_SIZE;
     }
-    unsigned char hash[32];
-    size_t hash_length = 0;
-    if (psa_hash_compute(PSA_ALG_SHA_256, (const uint8_t *)output, writer.length,
-                         hash, sizeof(hash), &hash_length) != PSA_SUCCESS ||
-        hash_length != sizeof(hash)) {
-        free(output);
-        return ESP_FAIL;
-    }
+    unsigned char hash[WMP_SHA256_DIGEST_BYTES];
+    wmp_sha256(output, writer.length, hash);
     for (size_t index = 0; index < sizeof(hash); ++index) {
         snprintf(digest + index * 2, 3, "%02x", hash[index]);
     }
@@ -545,7 +605,7 @@ static bool validate_schema_for_hardware(const cJSON *root, bool allow_matrix12_
 {
     if (!KEYS_ARE(root, "product_id", "hardware_id", "schema_version", "created_by",
                   "active_profile", "profiles", "macros", "lighting", "haptic",
-                  "display", "joystick")) {
+                  "display", "joystick", "voice_action")) {
         set_reason(reason, reason_size, "config must be an object");
         return false;
     }
@@ -567,6 +627,22 @@ static bool validate_schema_for_hardware(const cJSON *root, bool allow_matrix12_
     if (!hardware_matches) {
         set_reason(reason, reason_size, "hardware_id does not match");
         return false;
+    }
+    const cJSON *global_voice = field(root, "voice_action");
+    if (global_voice != NULL) {
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+        const cJSON *voice_type = field(global_voice, "type");
+        if (strcmp(hardware->valuestring, "WMP-S3-MATRIX12-POWER-V2") != 0 ||
+            !valid_action(global_voice) || !cJSON_IsString(voice_type) ||
+            (strcmp(voice_type->valuestring, "key") != 0 &&
+             strcmp(voice_type->valuestring, "key_gesture") != 0)) {
+            set_reason(reason, reason_size, "voice_action requires key or key_gesture");
+            return false;
+        }
+#else
+        set_reason(reason, reason_size, "voice_action requires Matrix12 Power V2");
+        return false;
+#endif
     }
     if (!integer_in(field(root, "schema_version"), CONFIG_SCHEMA_VERSION, CONFIG_SCHEMA_VERSION)) {
         set_reason(reason, reason_size, "schema_version is unsupported");
@@ -900,6 +976,121 @@ static esp_err_t migrate_legacy_matrix12_extra_keys(cJSON *root, bool *changed)
 }
 
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+static bool empty_or_missing_array(const cJSON *value)
+{
+    return value == NULL || (cJSON_IsArray(value) && cJSON_GetArraySize(value) == 0);
+}
+
+/* The 20261016.01-20261026.01 factory Key 8: click F13, double-click Enter. */
+static bool mapping_is_legacy_power_v2_voice_gesture(cJSON *mapping)
+{
+    const cJSON *name = field(mapping, "short_name");
+    const cJSON *action = field(mapping, "action");
+    const cJSON *type = field(action, "type");
+    const cJSON *usage = field(action, "usage");
+    const cJSON *double_usage = field(action, "double_usage");
+    return cJSON_IsString(name) && strcmp(name->valuestring, "F13/Send") == 0 &&
+           cJSON_IsObject(action) && cJSON_IsString(type) &&
+           strcmp(type->valuestring, "key_gesture") == 0 &&
+           cJSON_IsNumber(usage) && usage->valueint == 104 &&
+           cJSON_IsNumber(double_usage) && double_usage->valueint == 40 &&
+           empty_or_missing_array(field(action, "modifiers")) &&
+           empty_or_missing_array(field(action, "double_modifiers"));
+}
+
+/* Unreleased 2c764bc candidate Key 8 (acceptance builds only): hold Right
+ * Option/Alt + Space. Moves so test samples match the shipped default. */
+static bool mapping_is_candidate_power_v2_voice_hold(cJSON *mapping)
+{
+    const cJSON *name = field(mapping, "short_name");
+    const cJSON *action = field(mapping, "action");
+    const cJSON *type = field(action, "type");
+    const cJSON *usage = field(action, "usage");
+    const cJSON *modifiers = field(action, "modifiers");
+    return cJSON_IsString(name) && strcmp(name->valuestring, "Voice hold") == 0 &&
+           cJSON_IsObject(action) && cJSON_IsString(type) &&
+           strcmp(type->valuestring, "key") == 0 &&
+           cJSON_IsNumber(usage) && usage->valueint == POWER_V2_VOICE_USAGE &&
+           cJSON_IsArray(modifiers) && cJSON_GetArraySize(modifiers) == 1 &&
+           cJSON_IsNumber(cJSON_GetArrayItem(modifiers, 0)) &&
+           cJSON_GetArrayItem(modifiers, 0)->valueint == POWER_V2_VOICE_MODIFIER;
+}
+
+static esp_err_t replace_with_voice_gesture(cJSON *mapping)
+{
+    cJSON *name = cJSON_CreateString(POWER_V2_VOICE_SHORT_NAME);
+    cJSON *action = cJSON_CreateObject();
+    cJSON *modifiers = cJSON_CreateArray();
+    cJSON *modifier = cJSON_CreateNumber(POWER_V2_VOICE_MODIFIER);
+    cJSON *double_modifiers = cJSON_CreateArray();
+    bool ok = name != NULL && action != NULL && modifiers != NULL &&
+              modifier != NULL && double_modifiers != NULL;
+    ok = ok && cJSON_AddItemToArray(modifiers, modifier);
+    if (ok) modifier = NULL;
+    ok = ok && cJSON_AddStringToObject(action, "type", "key_gesture") != NULL &&
+         cJSON_AddNumberToObject(action, "usage", POWER_V2_VOICE_USAGE) != NULL &&
+         cJSON_AddItemToObject(action, "modifiers", modifiers);
+    if (ok) modifiers = NULL;
+    ok = ok && cJSON_AddNumberToObject(action, "double_usage",
+                                       POWER_V2_VOICE_DOUBLE_USAGE) != NULL &&
+         cJSON_AddItemToObject(action, "double_modifiers", double_modifiers);
+    if (ok) double_modifiers = NULL;
+    if (!ok) {
+        cJSON_Delete(name);
+        cJSON_Delete(action);
+        cJSON_Delete(modifiers);
+        cJSON_Delete(modifier);
+        cJSON_Delete(double_modifiers);
+        return ESP_ERR_NO_MEM;
+    }
+    if (!cJSON_ReplaceItemInObjectCaseSensitive(mapping, "short_name", name)) {
+        cJSON_Delete(name);
+        cJSON_Delete(action);
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (!cJSON_ReplaceItemInObjectCaseSensitive(mapping, "action", action)) {
+        cJSON_Delete(action);
+        return ESP_ERR_INVALID_STATE;
+    }
+    return ESP_OK;
+}
+#endif
+
+/* Factory Key 8 became the Doubao voice gesture (click Right Option/Alt +
+ * Space, double-click Enter). Only the untouched factory value in the two
+ * factory profiles moves; user choices stay. */
+static esp_err_t migrate_power_v2_default_voice_key(cJSON *root, bool *changed)
+{
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    cJSON *profiles = mutable_field(root, "profiles");
+    cJSON *profile = NULL;
+    cJSON_ArrayForEach(profile, profiles) {
+        const cJSON *profile_name = field(profile, "name");
+        if (!cJSON_IsString(profile_name) ||
+            (strcmp(profile_name->valuestring, "Codex macOS") != 0 &&
+             strcmp(profile_name->valuestring, "Codex Windows") != 0)) {
+            continue;
+        }
+        cJSON *mapping = profile_mapping(profile, "key.8");
+        if (mapping == NULL ||
+            (!mapping_is_legacy_power_v2_voice_gesture(mapping) &&
+             !mapping_is_candidate_power_v2_voice_hold(mapping))) {
+            continue;
+        }
+        esp_err_t error = replace_with_voice_gesture(mapping);
+        if (error != ESP_OK) {
+            return error;
+        }
+        *changed = true;
+    }
+#else
+    (void)root;
+    (void)changed;
+#endif
+    return ESP_OK;
+}
+
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
 static bool json_rgb_equals(const cJSON *value, config_rgb_t expected)
 {
     return cJSON_IsObject(value) &&
@@ -981,6 +1172,28 @@ static esp_err_t migrate_power_v2_default_action_key_colors(cJSON *root,
     return ESP_OK;
 }
 
+/* Power V2 haptic levels are now off/60/80 percent: the former 40 and 50
+ * percent levels were barely perceptible, so weaker stored strengths become
+ * level 1. The enabled flag is left as stored. */
+#define POWER_V2_MIN_HAPTIC_STRENGTH 60
+
+static esp_err_t migrate_power_v2_weak_haptic_strength(cJSON *root, bool *changed)
+{
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    cJSON *strength = mutable_field(mutable_field(root, "haptic"), "strength");
+    if (!cJSON_IsNumber(strength) || strength->valueint <= 0 ||
+        strength->valueint >= POWER_V2_MIN_HAPTIC_STRENGTH) {
+        return ESP_OK;
+    }
+    cJSON_SetNumberValue(strength, POWER_V2_MIN_HAPTIC_STRENGTH);
+    *changed = true;
+#else
+    (void)root;
+    (void)changed;
+#endif
+    return ESP_OK;
+}
+
 static esp_err_t migrate_matrix12_v1_root(cJSON *root, bool *changed)
 {
     *changed = false;
@@ -1005,7 +1218,15 @@ static esp_err_t migrate_matrix12_v1_root(cJSON *root, bool *changed)
     if (error != ESP_OK) {
         return error;
     }
-    return migrate_legacy_matrix12_extra_keys(root, changed);
+    error = migrate_legacy_matrix12_extra_keys(root, changed);
+    if (error != ESP_OK) {
+        return error;
+    }
+    error = migrate_power_v2_weak_haptic_strength(root, changed);
+    if (error != ESP_OK) {
+        return error;
+    }
+    return migrate_power_v2_default_voice_key(root, changed);
 }
 
 static const char *slot_json_key(uint8_t slot)
@@ -1058,7 +1279,7 @@ static esp_err_t read_slot(uint8_t slot, cJSON **root, char **json, slot_meta_t 
         return ESP_ERR_INVALID_STATE;
     }
     size_t json_size = meta->json_length + 1;
-    char *stored = calloc(json_size, 1);
+    char *stored = config_calloc(json_size, 1);
     if (stored == NULL) {
         return ESP_ERR_NO_MEM;
     }
@@ -1075,7 +1296,13 @@ static esp_err_t read_slot(uint8_t slot, cJSON **root, char **json, slot_meta_t 
         free(stored);
         return ESP_ERR_INVALID_STATE;
     }
+    const unsigned failures_before = atomic_load(&s_config_alloc_failures);
     cJSON *parsed = cJSON_ParseWithLength(stored, meta->json_length);
+    if (parsed == NULL && atomic_load(&s_config_alloc_failures) != failures_before) {
+        set_reason(reason, reason_size, "inactive slot JSON parse ran out of memory");
+        free(stored);
+        return ESP_ERR_NO_MEM;
+    }
     char schema_reason[96];
     if (parsed == NULL ||
         !validate_schema_for_hardware(parsed, true, schema_reason, sizeof(schema_reason))) {
@@ -1090,6 +1317,11 @@ static esp_err_t read_slot(uint8_t slot, cJSON **root, char **json, slot_meta_t 
     char *canonical = NULL;
     char digest[CONFIG_STORE_DIGEST_HEX_LENGTH + 1];
     error = canonicalize(parsed, &canonical, digest);
+    if (error == ESP_ERR_NO_MEM) {
+        cJSON_Delete(parsed);
+        free(stored);
+        return ESP_ERR_NO_MEM;
+    }
     if (error != ESP_OK || strcmp(digest, meta->digest) != 0 ||
         strlen(canonical) != meta->json_length ||
         memcmp(canonical, stored, meta->json_length) != 0) {
@@ -1102,6 +1334,13 @@ static esp_err_t read_slot(uint8_t slot, cJSON **root, char **json, slot_meta_t 
     *root = parsed;
     *json = canonical;
     return ESP_OK;
+}
+
+/* read_slot() reports a missing slot and a damaged one alike. */
+static bool slot_present(uint8_t slot)
+{
+    size_t size = 0;
+    return nvs_get_blob(s_nvs, slot_meta_key(slot), NULL, &size) != ESP_ERR_NVS_NOT_FOUND;
 }
 
 static esp_err_t slot_write_error(esp_err_t error, const char *step,
@@ -1133,7 +1372,7 @@ static esp_err_t verify_slot_write(uint8_t slot, const char *json,
 
     const size_t expected_json_size = meta->json_length + 1;
     size_t stored_json_size = expected_json_size;
-    char *stored_json = malloc(expected_json_size);
+    char *stored_json = config_malloc(expected_json_size);
     if (stored_json == NULL) {
         return slot_write_error(ESP_ERR_NO_MEM, "JSON readback allocation",
                                 reason, reason_size);
@@ -1349,6 +1588,10 @@ static esp_err_t stage_locked(const cJSON *candidate, const char *expected_diges
                               uint8_t context_intent,
                               char *reason, size_t reason_size)
 {
+    if (atomic_load(&s_storage_degraded)) {
+        set_reason(reason, reason_size, "config storage unavailable; changes cannot be saved");
+        return ESP_FAIL;
+    }
     if (s_pending_root != NULL) {
         set_reason(reason, reason_size, "another config is pending activation");
         return ESP_ERR_INVALID_STATE;
@@ -1414,17 +1657,12 @@ static esp_err_t stage_locked(const cJSON *candidate, const char *expected_diges
     return ESP_OK;
 }
 
-esp_err_t config_store_init(void)
+static esp_err_t load_from_storage(void)
 {
-    atomic_store(&s_factory_reset_activated, false);
-    if (psa_crypto_init() != PSA_SUCCESS) {
-        return ESP_FAIL;
-    }
-    s_lock = xSemaphoreCreateMutex();
-    if (s_lock == NULL) {
-        return ESP_ERR_NO_MEM;
-    }
-    esp_err_t error = nvs_flash_init_partition(CONFIG_PARTITION);
+    /* Review A2: an unusable config partition is never erased; a confirmed
+     * image runs read-only, a fresh update rolls back. */
+    esp_err_t error = storage_recovery_init_partition(
+        CONFIG_PARTITION, STORAGE_RECOVERY_PARTITION_CONFIG);
     if (error != ESP_OK) {
         return error;
     }
@@ -1465,10 +1703,87 @@ esp_err_t config_store_init(void)
     cJSON *roots[2] = {NULL, NULL};
     char *jsons[2] = {NULL, NULL};
     slot_meta_t metas[2];
-    bool valid[2] = {
-        read_slot(0, &roots[0], &jsons[0], &metas[0], NULL, 0) == ESP_OK,
-        read_slot(1, &roots[1], &jsons[1], &metas[1], NULL, 0) == ESP_OK,
+    const esp_err_t reads[2] = {
+        read_slot(0, &roots[0], &jsons[0], &metas[0], NULL, 0),
+        read_slot(1, &roots[1], &jsons[1], &metas[1], NULL, 0),
     };
+    bool valid[2] = {reads[0] == ESP_OK, reads[1] == ESP_OK};
+    if (reads[0] == ESP_ERR_NO_MEM || reads[1] == ESP_ERR_NO_MEM) {
+        /*
+         * A slot that could not be read for lack of memory is not damaged.
+         * Choosing between slots, repairing markers or writing defaults now
+         * could replace the user's config, so write nothing: keep the
+         * marked active slot in RAM if it was read, otherwise the caller
+         * runs the built-in defaults read-only, and the next boot retries.
+         */
+        const int keep = marker_valid && valid[marker] ? marker : -1;
+        for (int slot = 0; slot < 2; ++slot) {
+            if (slot == keep) {
+                continue;
+            }
+            cJSON_Delete(roots[slot]);
+            free(jsons[slot]);
+        }
+        if (keep >= 0) {
+            s_active_slot = (uint8_t)keep;
+            s_active_root = roots[keep];
+            s_active_json = jsons[keep];
+            s_active_meta = metas[keep];
+        }
+        ESP_LOGE(TAG, "config slots short of memory (a=%s b=%s); nothing written",
+                 esp_err_to_name(reads[0]), esp_err_to_name(reads[1]));
+        return ESP_ERR_NO_MEM;
+    }
+    /*
+     * Review A2: a slot that exists but cannot be used (damaged, other schema
+     * version, failed digest) is never replaced, repaired or skipped over by
+     * an automatic write. Only a device with no stored slot at all gets the
+     * built-in defaults written; only an explicit host factory reset replaces
+     * stored config.
+     */
+    const bool present[2] = {slot_present(0), slot_present(1)};
+    const bool unusable[2] = {present[0] && !valid[0], present[1] && !valid[1]};
+    if (unusable[0] || unusable[1]) {
+        s_stored_config_unusable = true;
+        if (marker_valid && valid[marker]) {
+            /* The active slot is fine; only the inactive one is not. Run it
+             * normally but write nothing at boot (no marker or pending
+             * cleanup); a later save goes to the other slot as usual. */
+            s_active_slot = marker;
+            s_active_root = roots[marker];
+            s_active_json = jsons[marker];
+            s_active_meta = metas[marker];
+            cJSON_Delete(roots[1 - marker]);
+            free(jsons[1 - marker]);
+            if (!platform_state_known) {
+                atomic_store(&s_platform, CONFIG_PLATFORM_CUSTOM);
+            }
+            ESP_LOGW(TAG, "inactive config slot unusable (%s); left untouched",
+                     esp_err_to_name(reads[1 - marker]));
+            return ESP_OK;
+        }
+        /* The active config cannot be used: keep the best readable slot in
+         * RAM (otherwise the caller runs the defaults), read-only. A fresh
+         * update fails its boot instead and rolls back. */
+        const int keep = valid[0] && valid[1]
+            ? (metas[1].generation > metas[0].generation ? 1 : 0)
+            : valid[0] ? 0 : valid[1] ? 1 : -1;
+        for (int slot = 0; slot < 2; ++slot) {
+            if (slot != keep) {
+                cJSON_Delete(roots[slot]);
+                free(jsons[slot]);
+            }
+        }
+        if (keep >= 0) {
+            s_active_slot = (uint8_t)keep;
+            s_active_root = roots[keep];
+            s_active_json = jsons[keep];
+            s_active_meta = metas[keep];
+        }
+        ESP_LOGE(TAG, "stored config unusable (a=%s b=%s); nothing written",
+                 esp_err_to_name(reads[0]), esp_err_to_name(reads[1]));
+        return ESP_ERR_INVALID_STATE;
+    }
     for (uint8_t slot = 0; slot < 2; ++slot) {
         if (!valid[slot]) {
             continue;
@@ -1569,6 +1884,7 @@ esp_err_t config_store_init(void)
     cJSON_Delete(roots[1]);
     free(jsons[0]);
     free(jsons[1]);
+    /* Only reached with no stored slot at all (a new device). */
 
     cJSON *defaults = parse_defaults();
     if (defaults == NULL) {
@@ -1623,6 +1939,157 @@ esp_err_t config_store_init(void)
     return ESP_OK;
 }
 
+/*
+ * F-04: run read-only instead of failing every boot, so USB maintenance
+ * (HELLO, authentication, FW_STATUS, firmware update) stays reachable. A
+ * config that was read keeps working; otherwise the built-in defaults run.
+ * Nothing is written until the next restart: with the handle closed, every
+ * NVS call returns ESP_ERR_NVS_INVALID_HANDLE and stage_locked() refuses.
+ */
+static esp_err_t run_without_storage(esp_err_t cause)
+{
+    ESP_LOGE(TAG, "config storage unusable (%s); running read-only",
+             esp_err_to_name(cause));
+    if (s_nvs != 0) {
+        nvs_close(s_nvs);
+        s_nvs = 0;
+    }
+    cJSON_Delete(s_pending_root);
+    free(s_pending_json);
+    s_pending_root = NULL;
+    s_pending_json = NULL;
+    s_pending_factory_reset = false;
+    atomic_store(&s_has_pending, false);
+    s_storage_error = cause;
+    atomic_store(&s_storage_degraded, true);
+    if (s_active_root != NULL) {
+        return ESP_OK;
+    }
+    s_storage_using_defaults = true;
+    free(s_active_json);
+    s_active_json = NULL;
+    cJSON *defaults = parse_defaults();
+    if (defaults == NULL) {
+        return ESP_FAIL;
+    }
+    char reason[96];
+    slot_meta_t meta;
+    esp_err_t error = prepare_candidate(defaults, NULL, &s_active_root, &s_active_json,
+                                        &meta, reason, sizeof(reason));
+    cJSON_Delete(defaults);
+    if (error != ESP_OK) {
+        return error;
+    }
+    meta.generation = 1;
+    s_active_slot = 0;
+    s_active_meta = meta;
+    atomic_store(&s_platform, CONFIG_PLATFORM_UNSELECTED);
+    return ESP_OK;
+}
+
+esp_err_t config_store_init(void)
+{
+    install_config_json_allocator();
+    atomic_store(&s_factory_reset_activated, false);
+    if (psa_crypto_init() != PSA_SUCCESS) {
+        return ESP_FAIL;
+    }
+    s_lock = xSemaphoreCreateMutex();
+    if (s_lock == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    const esp_err_t error = load_from_storage();
+    if (error == ESP_OK) {
+        return ESP_OK;
+    }
+    /* A fresh update that cannot use the stored config rolls back (the boot
+     * fails before confirmation) to the image that wrote it. */
+    if (storage_recovery_image_pending_verify()) {
+        return error;
+    }
+    return run_without_storage(error);
+}
+
+/*
+ * Stability item 6: safe mode never reads the stored slots (a config can be
+ * what crashes the boot). The built-in defaults run from RAM read-only, the
+ * user's config stays untouched, and the next normal boot loads it again.
+ */
+esp_err_t config_store_init_safe_mode(void)
+{
+    install_config_json_allocator();
+    atomic_store(&s_factory_reset_activated, false);
+    if (psa_crypto_init() != PSA_SUCCESS) {
+        return ESP_FAIL;
+    }
+    s_lock = xSemaphoreCreateMutex();
+    if (s_lock == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    s_safe_mode = true;
+    ESP_LOGW(TAG, "safe mode: stored config not read");
+    return run_without_storage(ESP_ERR_INVALID_STATE);
+}
+
+/*
+ * Review B9: the one config write allowed in safe mode is an explicit factory
+ * reset. It removes the stored config (both slots, markers, OS choice, BLE
+ * name, agent key behavior) so the next normal boot starts as a new device
+ * and writes the built-in defaults; device state (power, standby, timers,
+ * low-battery guard) stays. The caller restarts.
+ */
+esp_err_t config_store_safe_mode_factory_reset(const char *confirmation,
+                                               char *reason, size_t reason_size)
+{
+    if (!s_safe_mode) {
+        set_reason(reason, reason_size, "only in safe mode");
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (confirmation == NULL || strcmp(confirmation, CONFIG_FACTORY_CONFIRMATION) != 0) {
+        set_reason(reason, reason_size, "confirmation must equal FACTORY_DEFAULT");
+        return ESP_ERR_INVALID_ARG;
+    }
+    static const char *const KEYS[] = {
+        "a_json", "a_meta", "b_json", "b_meta", CONFIG_KEY_ACTIVE, CONFIG_KEY_PENDING,
+        CONFIG_KEY_FACTORY_PENDING, CONFIG_KEY_PENDING_PLATFORM, CONFIG_KEY_PLATFORM,
+        CONFIG_KEY_BLE_NAME, CONFIG_KEY_NORMAL_AGENT_BEHAVIOR,
+    };
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    esp_err_t error = storage_recovery_init_partition(
+        CONFIG_PARTITION, STORAGE_RECOVERY_PARTITION_CONFIG);
+    if (error == ESP_ERR_NVS_NO_FREE_PAGES || error == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        /* The user asked for the reset: clearing an unusable partition is
+         * the explicit action review A2 reserves for this. */
+        error = storage_recovery_clear_partition(CONFIG_PARTITION);
+    }
+    nvs_handle_t handle = 0;
+    if (error == ESP_OK) {
+        error = nvs_open_from_partition(CONFIG_PARTITION, CONFIG_NAMESPACE,
+                                        NVS_READWRITE, &handle);
+    }
+    for (size_t index = 0; error == ESP_OK && index < sizeof(KEYS) / sizeof(KEYS[0]);
+         ++index) {
+        const esp_err_t erase = nvs_erase_key(handle, KEYS[index]);
+        error = erase == ESP_ERR_NVS_NOT_FOUND ? ESP_OK : erase;
+    }
+    for (uint8_t context = 0; error == ESP_OK && context < CONFIG_PLATFORM_CONTEXT_COUNT;
+         ++context) {
+        const esp_err_t erase = nvs_erase_key(handle, PLATFORM_CONTEXT_KEYS[context]);
+        error = erase == ESP_ERR_NVS_NOT_FOUND ? ESP_OK : erase;
+    }
+    if (error == ESP_OK) {
+        error = nvs_commit(handle);
+    }
+    if (handle != 0) {
+        nvs_close(handle);
+    }
+    xSemaphoreGive(s_lock);
+    if (error != ESP_OK) {
+        set_reason(reason, reason_size, "could not clear the stored config");
+    }
+    return error;
+}
+
 esp_err_t config_store_get_json(char **json, uint32_t *generation,
                                 char digest[CONFIG_STORE_DIGEST_HEX_LENGTH + 1])
 {
@@ -1631,7 +2098,7 @@ esp_err_t config_store_get_json(char **json, uint32_t *generation,
     }
     xSemaphoreTake(s_lock, portMAX_DELAY);
     const size_t length = strlen(s_active_json) + 1;
-    *json = malloc(length);
+    *json = config_malloc(length);
     if (*json != NULL) {
         memcpy(*json, s_active_json, length);
     }
@@ -1805,6 +2272,12 @@ void config_store_get_status(config_store_status_t *status)
     snprintf(status->active_digest, sizeof(status->active_digest), "%s", s_active_meta.digest);
     status->pending = s_pending_root != NULL;
     status->activation_failed = atomic_load(&s_activation_failed);
+    status->storage_degraded = atomic_load(&s_storage_degraded);
+    status->storage_error = s_storage_error;
+    status->storage_using_defaults = s_storage_using_defaults;
+    status->unreadable_config_replaced = s_unreadable_config_replaced;
+    status->stored_config_unusable = s_stored_config_unusable;
+    status->safe_mode = s_safe_mode;
     if (status->pending) {
         status->pending_generation = s_pending_meta.generation;
         snprintf(status->pending_digest, sizeof(status->pending_digest), "%s", s_pending_meta.digest);
@@ -2126,6 +2599,34 @@ esp_err_t config_store_set_standby_minutes(uint8_t minutes)
     return error;
 }
 
+bool config_store_boot_migration_pending(void)
+{
+    bool pending = false;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    cJSON *const roots[] = {s_active_root, s_pending_root};
+    for (size_t index = 0; index < sizeof(roots) / sizeof(roots[0]) && !pending;
+         ++index) {
+        if (roots[index] == NULL) {
+            continue;
+        }
+        cJSON *copy = cJSON_Duplicate(roots[index], true);
+        if (copy == NULL) {
+            ESP_LOGW(TAG, "cannot check boot migrations: out of memory");
+            break;
+        }
+        bool changed = false;
+        const esp_err_t error = migrate_matrix12_v1_root(copy, &changed);
+        cJSON_Delete(copy);
+        if (error != ESP_OK) {
+            ESP_LOGW(TAG, "cannot check boot migrations: %s", esp_err_to_name(error));
+            break;
+        }
+        pending = changed;
+    }
+    xSemaphoreGive(s_lock);
+    return pending;
+}
+
 bool config_store_get_user_powered_on(void)
 {
     uint8_t powered_on = 1;
@@ -2155,6 +2656,76 @@ esp_err_t config_store_set_user_powered_on(bool powered_on)
     if (error == ESP_OK) {
         error = nvs_commit(s_nvs);
     }
+    xSemaphoreGive(s_lock);
+    return error;
+}
+
+static bool s_power_guard_loaded;
+static config_store_power_guard_t s_power_guard;
+
+/* Caller holds s_lock. Missing keys read as zero / unlocked. */
+static void load_power_guard_locked(void)
+{
+    if (s_power_guard_loaded) return;
+    uint32_t value = 0;
+    if (nvs_get_u32(s_nvs, CONFIG_KEY_BROWNOUT_RESETS, &value) == ESP_OK)
+        s_power_guard.brownout_resets = value;
+    value = 0;
+    if (nvs_get_u32(s_nvs, CONFIG_KEY_LOW_BATTERY_OFFS, &value) == ESP_OK)
+        s_power_guard.low_battery_shutdowns = value;
+    uint8_t lock = 0;
+    s_power_guard.low_battery_lock =
+        nvs_get_u8(s_nvs, CONFIG_KEY_LOW_BATTERY_LOCK, &lock) == ESP_OK && lock != 0;
+    s_power_guard_loaded = true;
+}
+
+void config_store_get_power_guard(config_store_power_guard_t *out)
+{
+    if (out == NULL) return;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    load_power_guard_locked();
+    *out = s_power_guard;
+    xSemaphoreGive(s_lock);
+}
+
+esp_err_t config_store_note_brownout_reset(void)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    load_power_guard_locked();
+    if (s_power_guard.brownout_resets < UINT32_MAX) ++s_power_guard.brownout_resets;
+    esp_err_t error = nvs_set_u32(s_nvs, CONFIG_KEY_BROWNOUT_RESETS,
+                                  s_power_guard.brownout_resets);
+    if (error == ESP_OK) error = nvs_commit(s_nvs);
+    xSemaphoreGive(s_lock);
+    return error;
+}
+
+esp_err_t config_store_note_low_battery_shutdown(void)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    load_power_guard_locked();
+    if (s_power_guard.low_battery_shutdowns < UINT32_MAX)
+        ++s_power_guard.low_battery_shutdowns;
+    s_power_guard.low_battery_lock = true;
+    esp_err_t error = nvs_set_u32(s_nvs, CONFIG_KEY_LOW_BATTERY_OFFS,
+                                  s_power_guard.low_battery_shutdowns);
+    if (error == ESP_OK) error = nvs_set_u8(s_nvs, CONFIG_KEY_LOW_BATTERY_LOCK, 1u);
+    if (error == ESP_OK) error = nvs_commit(s_nvs);
+    xSemaphoreGive(s_lock);
+    return error;
+}
+
+esp_err_t config_store_set_low_battery_lock(bool locked)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    load_power_guard_locked();
+    if (s_power_guard.low_battery_lock == locked) {
+        xSemaphoreGive(s_lock);
+        return ESP_OK;
+    }
+    s_power_guard.low_battery_lock = locked;
+    esp_err_t error = nvs_set_u8(s_nvs, CONFIG_KEY_LOW_BATTERY_LOCK, locked ? 1u : 0u);
+    if (error == ESP_OK) error = nvs_commit(s_nvs);
     xSemaphoreGive(s_lock);
     return error;
 }
@@ -2319,6 +2890,17 @@ bool config_store_get_codex_voice_action(config_action_t *action)
 {
     xSemaphoreTake(s_lock, portMAX_DELAY);
     const cJSON *voice = field(active_profile_locked(), "codex_voice");
+    const bool found = voice != NULL;
+    if (found) parse_action_value(voice, action);
+    xSemaphoreGive(s_lock);
+    return found;
+}
+
+bool config_store_get_global_voice_action(config_action_t *action)
+{
+    if (action == NULL) return false;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    const cJSON *voice = field(s_active_root, "voice_action");
     const bool found = voice != NULL;
     if (found) parse_action_value(voice, action);
     xSemaphoreGive(s_lock);

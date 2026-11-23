@@ -63,6 +63,22 @@ static const char *state_name(firmware_update_state_t state)
     }
 }
 
+const char *firmware_update_protocol_confirm_source_name(
+    firmware_confirm_source_t source)
+{
+    switch (source) {
+    case FIRMWARE_CONFIRM_SOURCE_PENDING:
+        return "pending";
+    case FIRMWARE_CONFIRM_SOURCE_SESSION:
+        return "session";
+    case FIRMWARE_CONFIRM_SOURCE_HOST:
+        return "host";
+    case FIRMWARE_CONFIRM_SOURCE_NOT_REQUIRED:
+    default:
+        return "not_required";
+    }
+}
+
 static const char *boot_stage_name(firmware_boot_stage_t stage)
 {
     switch (stage) {
@@ -92,6 +108,14 @@ static const char *boot_stage_name(firmware_boot_stage_t stage)
     }
 }
 
+static firmware_update_protocol_status_extension_t s_status_extension;
+
+void firmware_update_protocol_set_status_extension(
+    firmware_update_protocol_status_extension_t extension)
+{
+    s_status_extension = extension;
+}
+
 void firmware_update_protocol_add_status(cJSON *parent)
 {
     firmware_update_status_t status;
@@ -114,6 +138,9 @@ void firmware_update_protocol_add_status(cJSON *parent)
                             boot_stage_name(status.current_boot_stage));
     cJSON_AddNumberToObject(update, "current_confirm_error",
                             status.current_confirm_error);
+    cJSON_AddStringToObject(update, "confirm_source",
+                            firmware_update_protocol_confirm_source_name(
+                                status.confirm_source));
     cJSON_AddNumberToObject(update, "previous_boot_sequence",
                             status.previous_boot_sequence);
     cJSON_AddStringToObject(update, "previous_boot_stage",
@@ -122,6 +149,9 @@ void firmware_update_protocol_add_status(cJSON *parent)
                             status.previous_reset_reason);
     cJSON_AddNumberToObject(update, "previous_confirm_error",
                             status.previous_confirm_error);
+    if (s_status_extension != NULL && update != NULL) {
+        s_status_extension(update);
+    }
 }
 
 static void send_status(uint32_t request_id,

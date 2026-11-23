@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "cw2015.c" "cw2015_model.c"
+    SRCS "cw2015.c" "cw2015_model.c" "battery_display.c"
     INCLUDE_DIRS "include"
     REQUIRES board esp_driver_i2c esp_timer
 )

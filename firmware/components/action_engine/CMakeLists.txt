@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "action_engine.c" "claude_code_shortcuts.c"
+    SRCS "action_engine.c" "battery_guard_model.c" "claude_code_shortcuts.c"
          "codex_attention_haptic_model.c"
          "diagnostic_capture_model.c"
          "double_click_model.c" "eda_shortcuts.c"
@@ -16,6 +16,7 @@ idf_component_register(
          "status_indicator.c"
          "under_key_self_test.c"
          "usb_connection_feedback.c"
+         "usb_link_model.c"
     INCLUDE_DIRS "include"
-    REQUIRES board codex_micro config_protocol config_store prompt_store fuel_gauge usb_device freertos esp_system firmware_update
+    REQUIRES board codex_micro config_protocol config_store prompt_store fuel_gauge usb_device freertos esp_system esp_timer firmware_update boot_guard
 )

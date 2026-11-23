@@ -46,6 +46,14 @@ typedef enum {
     FIRMWARE_BOOT_STAGE_MAIN_LOOP,
 } firmware_boot_stage_t;
 
+/* Who cancelled rollback for the running image (F-01). */
+typedef enum {
+    FIRMWARE_CONFIRM_SOURCE_PENDING = 0,  /* Awaiting a host; reset rolls back. */
+    FIRMWARE_CONFIRM_SOURCE_NOT_REQUIRED, /* Not pending at boot (e.g. factory flash). */
+    FIRMWARE_CONFIRM_SOURCE_SESSION,      /* Authenticated USB session answered GET_STATUS. */
+    FIRMWARE_CONFIRM_SOURCE_HOST,         /* Explicit FW_CONFIRM. */
+} firmware_confirm_source_t;
+
 typedef struct {
     firmware_update_state_t state;
     size_t expected_size;
@@ -65,6 +73,7 @@ typedef struct {
     firmware_boot_stage_t previous_boot_stage;
     int32_t previous_reset_reason;
     int32_t previous_confirm_error;
+    firmware_confirm_source_t confirm_source;
 } firmware_update_status_t;
 
 /** Preserve the previous boot stage across software resets and OTA rollback. */
@@ -76,8 +85,19 @@ void firmware_update_boot_stage(firmware_boot_stage_t stage);
 /** Initialize the in-application updater before the USB protocol starts. */
 esp_err_t firmware_update_init(void);
 
-/** Confirm a newly booted OTA image after all required services initialize. */
-esp_err_t firmware_update_confirm_running(void);
+/**
+ * Record that startup services are ready. A pending-verify image is NOT
+ * confirmed here: it waits for a host (firmware_update_confirm_running). Only
+ * an unreadable OTA state is an error.
+ */
+esp_err_t firmware_update_boot_ready(void);
+
+/** Cheap query: the running image still awaits host confirmation. */
+bool firmware_update_confirm_pending(void);
+
+/** Cancel rollback for the running image. Idempotent: ESP_OK with no flash
+ * write when nothing is pending. */
+esp_err_t firmware_update_confirm_running(firmware_confirm_source_t source);
 
 esp_err_t firmware_update_begin(const char *product_id, const char *hardware_id,
                                 const char *version, size_t image_size,

@@ -21,6 +21,9 @@ const screen_glyph_definition_t screen_glyph_catalog[SCREEN_GLYPH_COUNT] = {
     {"standby",7,8,true},{"exit",7,7,true},{"normal_small",5,5,true},
     {"codex_small",5,5,true},{"ble_link",13,7,true},{"restart",13,13,true},
     {"system",11,10,true},{"normal_mode",13,13,true},{"codex_mode",15,15,true},
+    /* Keep claude_code_mode even though the mode left the cycle (boring-D46):
+     * glyphs are stored in NVS by index (g%02u), so removing a row would shift
+     * usb, bluetooth and battery onto the wrong stored icons. */
     {"claude_code_mode",15,15,true},{"usb",13,15,true},{"bluetooth",9,15,true},
     {"battery",13,9,true},
 };

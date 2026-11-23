@@ -9,6 +9,7 @@
  */
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 typedef struct {
@@ -94,3 +95,27 @@ uint8_t board_joystick_limit_diagonal(uint8_t directions,
                                       int x, int y, int center_x, int center_y,
                                       int span_x, int span_y,
                                       uint8_t previous_directions);
+
+/**
+ * Median of the last three raw samples of one axis, so one isolated ADC
+ * sample (supply dip from a motor pulse, LED refresh or radio burst) cannot
+ * move the filtered position. A real push lasts far longer than one 10 ms
+ * sample and passes one sample later. The first two samples pass unchanged.
+ */
+typedef struct {
+    int older;
+    int newer;
+    uint8_t count;
+} board_joystick_median_t;
+
+/** Smallest distance between a sample and its median that counts as a spike. */
+#define BOARD_JOYSTICK_SPIKE_MIN 300
+
+void board_joystick_median_reset(board_joystick_median_t *median);
+
+/**
+ * Add one raw sample and return the value to feed the position filter.
+ * @param spike Set to true when the sample was rejected as an isolated spike.
+ */
+int board_joystick_median_push(board_joystick_median_t *median, int sample,
+                               bool *spike);

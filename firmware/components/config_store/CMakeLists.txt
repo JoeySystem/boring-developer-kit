@@ -12,5 +12,5 @@ idf_component_register(
     SRCS "config_store.c" "ble_name.c"
     INCLUDE_DIRS "include" "../../../protocol/generated"
     EMBED_TXTFILES "${DEFAULT_CONFIG_FILE}"
-    REQUIRES board cjson nvs_flash mbedtls freertos
+    REQUIRES board cjson heap nvs_flash mbedtls freertos storage_recovery wmp_sha256
 )

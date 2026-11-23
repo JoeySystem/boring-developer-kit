@@ -17,6 +17,12 @@ static bool json_object_complete(const char *data, size_t length, bool *valid)
             if (value == '{') {
                 started = true;
                 depth = 1;
+            } else if (value != '\0' && value != '\n' && value != '\r' &&
+                       value != ' ' && value != '\t') {
+                /* Whatever precedes the object reaches cJSON with it, so
+                 * leading brackets would nest without being counted. */
+                *valid = false;
+                return false;
             }
             continue;
         }

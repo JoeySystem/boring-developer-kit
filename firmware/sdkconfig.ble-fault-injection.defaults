@@ -1,0 +1,2 @@
+# TEST ONLY: scripted BLE start-up faults (tools/build.sh --ble-fault-injection).
+CONFIG_CODEX_MICRO_BLE_FAULT_INJECTION=y

@@ -6,6 +6,9 @@ validation_state=built
 custom_name=local
 official_build=false
 custom_selected=false
+ble_fault_injection=false
+ram_fault_injection=false
+crash_fault_injection=false
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --target|--custom-name)
@@ -14,9 +17,32 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         --official-build) official_build=true; shift ;;
-        *) echo "usage: $0 [--target TARGET] [--custom-name NAME | --official-build]" >&2; exit 2 ;;
+        --ble-fault-injection) ble_fault_injection=true; shift ;;
+        --ram-fault-injection) ram_fault_injection=true; shift ;;
+        --crash-fault-injection) crash_fault_injection=true; shift ;;
+        *) echo "usage: $0 [--target TARGET] [--custom-name NAME | --official-build] [--ble-fault-injection | --ram-fault-injection | --crash-fault-injection]" >&2; exit 2 ;;
     esac
 done
+if [ "$ble_fault_injection" = true ]; then
+    [ "$official_build" = false ] || { echo "BLE fault injection must be a custom test build" >&2; exit 2; }
+    [ "$custom_selected" = false ] || { echo "BLE fault injection uses the fixed custom name blefault" >&2; exit 2; }
+    [ "$board_target" = matrix12-power-v2-codex-usb ] || { echo "BLE fault injection requires --target matrix12-power-v2-codex-usb" >&2; exit 2; }
+    custom_name=blefault
+fi
+if [ "$ram_fault_injection" = true ]; then
+    [ "$ble_fault_injection" = false ] || { echo "Choose one test build" >&2; exit 2; }
+    [ "$official_build" = false ] || { echo "RAM fault injection must be a custom test build" >&2; exit 2; }
+    [ "$custom_selected" = false ] || { echo "RAM fault injection uses the fixed custom name ramfault" >&2; exit 2; }
+    [ "$board_target" = matrix12-power-v2-codex-usb ] || { echo "RAM fault injection requires --target matrix12-power-v2-codex-usb" >&2; exit 2; }
+    custom_name=ramfault
+fi
+if [ "$crash_fault_injection" = true ]; then
+    [ "$ble_fault_injection" = false ] && [ "$ram_fault_injection" = false ] || { echo "Choose one test build" >&2; exit 2; }
+    [ "$official_build" = false ] || { echo "Crash fault injection must be a custom test build" >&2; exit 2; }
+    [ "$custom_selected" = false ] || { echo "Crash fault injection uses the fixed custom name crashfault" >&2; exit 2; }
+    [ "$board_target" = matrix12-power-v2-codex-usb ] || { echo "Crash fault injection requires --target matrix12-power-v2-codex-usb" >&2; exit 2; }
+    custom_name=crashfault
+fi
 if [ "$official_build" = true ]; then
     [ "$custom_selected" = false ] || { echo "--official-build cannot be combined with --custom-name" >&2; exit 2; }
     custom_name=
@@ -66,6 +92,16 @@ case "$board_target" in
         ;;
 esac
 
+if [ "$ble_fault_injection" = true ]; then
+    sdkconfig_defaults="$sdkconfig_defaults;sdkconfig.ble-fault-injection.defaults"
+fi
+if [ "$ram_fault_injection" = true ]; then
+    sdkconfig_defaults="$sdkconfig_defaults;sdkconfig.ram-fault-injection.defaults"
+fi
+if [ "$crash_fault_injection" = true ]; then
+    sdkconfig_defaults="$sdkconfig_defaults;sdkconfig.crash-fault-injection.defaults"
+fi
+
 command -v idf.py >/dev/null 2>&1 || {
     echo "idf.py is not available; activate ESP-IDF 6.0.2 first" >&2
     exit 1
@@ -76,6 +112,19 @@ command -v rsync >/dev/null 2>&1 || {
 }
 
 firmware_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+case "$board_target" in
+    matrix12-power-v2-codex-ble|matrix12-power-v2-codex-usb)
+        # The stock 6.0.2 Bluedroid stack removes runtime and stored bond state
+        # after an authentication failure. Build this board only with our backport.
+        bond_patch="$firmware_root/tools/patches/esp-idf-v6.0.2-preserve-peripheral-bond.patch"
+        if [ -z "${IDF_PATH:-}" ] ||
+           [ "$(command -v idf.py)" != "$IDF_PATH/tools/idf.py" ] ||
+           ! git -C "$IDF_PATH" apply --reverse --check "$bond_patch" 2>/dev/null; then
+            echo "Matrix12 Power V2 BLE requires patched ESP-IDF 6.0.2; see firmware/BLE-BOND-PATCH.md" >&2
+            exit 1
+        fi
+        ;;
+esac
 software_root=$(dirname -- "$firmware_root")
 firmware_version=$(tr -d '[:space:]' < "$firmware_root/version.txt")
 if git_commit=$(git -C "$firmware_root" rev-parse HEAD 2>/dev/null); then

@@ -170,3 +170,41 @@ uint8_t board_joystick_limit_diagonal(uint8_t directions,
     }
     return directions;
 }
+
+void board_joystick_median_reset(board_joystick_median_t *median)
+{
+    if (median != NULL) {
+        median->older = 0;
+        median->newer = 0;
+        median->count = 0;
+    }
+}
+
+int board_joystick_median_push(board_joystick_median_t *median, int sample,
+                               bool *spike)
+{
+    if (spike != NULL) {
+        *spike = false;
+    }
+    if (median == NULL) {
+        return sample;
+    }
+    int result = sample;
+    if (median->count >= 2u) {
+        const int a = median->older;
+        const int b = median->newer;
+        const int lo = a < b ? a : b;
+        const int hi = a < b ? b : a;
+        result = sample < lo ? lo : (sample > hi ? hi : sample);
+        if (spike != NULL) {
+            const int distance = sample > result ? sample - result : result - sample;
+            *spike = distance >= BOARD_JOYSTICK_SPIKE_MIN;
+        }
+    }
+    median->older = median->newer;
+    median->newer = sample;
+    if (median->count < 2u) {
+        ++median->count;
+    }
+    return result;
+}

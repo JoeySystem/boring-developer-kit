@@ -8,3 +8,18 @@ CONFIG_TINYUSB_CDC_RX_BUFSIZE=512
 CONFIG_ESP_CONSOLE_UART_DEFAULT=y
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 CONFIG_COMPILER_OPTIMIZATION_DEBUG=y
+# The main loop validates and saves configuration changes made on the device,
+# and after a partial-frame timeout it dispatches the next buffered request
+# itself (config_protocol_poll). The 3.5 KB default left under 2 KB below the
+# request handler; match the 8 KB of the transport tasks that normally run it.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+# Stability item 2: only the liveness supervisor (components/liveness) is
+# subscribed; it feeds the task watchdog while the main loop, USB and BLE
+# tasks are alive, and a stall panics and resets (ESP_RST_TASK_WDT). Idle
+# tasks are not watched, so no new reset comes from a busy idle CPU.
+CONFIG_ESP_TASK_WDT_EN=y
+CONFIG_ESP_TASK_WDT_INIT=y
+CONFIG_ESP_TASK_WDT_PANIC=y
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=5
+# CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0 is not set
+# CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1 is not set

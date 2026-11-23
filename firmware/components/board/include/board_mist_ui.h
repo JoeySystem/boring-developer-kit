@@ -18,6 +18,14 @@ typedef enum {
     BOARD_MIST_PAGE_COUNT
 } board_mist_page_t;
 
+/* BOARD_MIST_BATTERY view.c: which battery presentation to draw. */
+enum {
+    BOARD_MIST_BATTERY_PERCENT = 0,
+    /* Both draw the red empty outline + LOW; the value records the cause. */
+    BOARD_MIST_BATTERY_LOW = 1,   /* Warning. */
+    BOARD_MIST_BATTERY_EMPTY = 2, /* Before a protective power-off. */
+};
+
 typedef enum {
     BOARD_MIST_TIMER_SETUP, BOARD_MIST_TIMER_RUNNING,
     BOARD_MIST_TIMER_PAUSED, BOARD_MIST_TIMER_DONE, BOARD_MIST_TIMER_CANCEL

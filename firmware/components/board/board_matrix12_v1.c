@@ -16,6 +16,8 @@
 #include "board_display_logic.h"
 #include "board_input_logic.h"
 #include "joystick_sample_recovery.h"
+#include "joystick_suspect_model.h"
+#include "led_power_model.h"
 #include "board_mist_icons.h"
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
 #include "board_matrix12_power_v2.h"
@@ -225,6 +227,15 @@ static uint32_t s_board_event_losses;
 static volatile uint32_t s_encoder_isr_losses;
 static adc_oneshot_unit_handle_t s_adc;
 static led_strip_handle_t s_under_key_strip;
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+_Static_assert(BOARD_MATRIX12_V1_UNDER_KEY_RGB_COUNT <= LED_POWER_MAX_PIXELS,
+               "LED power model pixel capacity");
+/* Wanted under-key output; the power model decides what is driven. */
+static led_power_rgb_t s_under_key_target[BOARD_MATRIX12_V1_UNDER_KEY_RGB_COUNT];
+static led_power_model_t s_led_power;
+static bool s_led_power_ramping;
+static esp_err_t render_under_key_target(void);
+#endif
 static esp_lcd_panel_handle_t s_panel;
 static uint16_t s_display_buffer[DISPLAY_MAX_WIDTH * DISPLAY_TRANSFER_LINES];
 static uint16_t s_controller_clear_buffer[
@@ -249,6 +260,10 @@ static TickType_t s_last_joystick_sample;
 static portMUX_TYPE s_joystick_observation_lock = portMUX_INITIALIZER_UNLOCKED;
 static uint32_t s_joystick_sample_count;
 static joystick_sample_recovery_t s_joystick_recovery;
+static board_joystick_median_t s_joystick_median_x;
+static board_joystick_median_t s_joystick_median_y;
+static uint32_t s_joystick_spikes_rejected;
+static joystick_suspect_model_t s_joystick_suspect;
 static uint32_t s_joystick_adc_failures;
 typedef struct {
     int minimum;
@@ -284,6 +299,11 @@ static int s_joystick_filtered_y = 2048;
 static power_button_t s_power_button;
 static bool s_shutdown_request_pending;
 static bool s_power_button_wake_mode;
+static uint32_t s_power_button_presses;
+static uint32_t s_power_button_short_presses;
+static uint32_t s_power_button_long_presses;
+static uint32_t s_power_button_ignored;
+static const char *s_power_button_last_ignored = "none";
 #endif
 static bool s_joystick_left;
 static bool s_joystick_right;
@@ -369,23 +389,8 @@ static void scan_matrix(bool pressed[BOARD_MATRIX12_V1_KEY_COUNT])
     }
 }
 
-static esp_err_t init_inputs(void)
+static esp_err_t configure_matrix(void)
 {
-    const uint64_t direct_input_mask =
-        (1ULL << BOARD_MATRIX12_V1_ENCODER_A_GPIO) |
-        (1ULL << BOARD_MATRIX12_V1_ENCODER_B_GPIO) |
-        (1ULL << BOARD_MATRIX12_V1_ENCODER_KEY_GPIO) |
-        (1ULL << BOARD_MATRIX12_V1_JOYSTICK_KEY_GPIO);
-    const gpio_config_t direct_input_config = {
-        .pin_bit_mask = direct_input_mask,
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    ESP_RETURN_ON_ERROR(gpio_config(&direct_input_config), "board",
-                        "configure direct inputs");
-
     const uint64_t column_mask =
         (1ULL << BOARD_MATRIX12_V1_COL0_GPIO) |
         (1ULL << BOARD_MATRIX12_V1_COL1_GPIO) |
@@ -418,6 +423,27 @@ static esp_err_t init_inputs(void)
     for (size_t row = 0; row < BOARD_MATRIX12_V1_MATRIX_ROW_COUNT; ++row) {
         gpio_set_level(s_matrix_rows[row], 1);
     }
+    return ESP_OK;
+}
+
+static esp_err_t init_inputs(void)
+{
+    const uint64_t direct_input_mask =
+        (1ULL << BOARD_MATRIX12_V1_ENCODER_A_GPIO) |
+        (1ULL << BOARD_MATRIX12_V1_ENCODER_B_GPIO) |
+        (1ULL << BOARD_MATRIX12_V1_ENCODER_KEY_GPIO) |
+        (1ULL << BOARD_MATRIX12_V1_JOYSTICK_KEY_GPIO);
+    const gpio_config_t direct_input_config = {
+        .pin_bit_mask = direct_input_mask,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    ESP_RETURN_ON_ERROR(gpio_config(&direct_input_config), "board",
+                        "configure direct inputs");
+
+    ESP_RETURN_ON_ERROR(configure_matrix(), "board", "configure key matrix");
 
     const TickType_t now = xTaskGetTickCount();
     for (size_t index = 0; index < sizeof(s_inputs) / sizeof(s_inputs[0]); ++index) {
@@ -563,6 +589,11 @@ static esp_err_t init_rgb(void)
                                   BOARD_MATRIX12_V1_UNDER_KEY_RGB_COUNT, LED_MODEL_WS2812,
                                   &s_under_key_strip),
                         "board", "create under-key RGB strip");
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    memset(s_under_key_target, 0, sizeof(s_under_key_target));
+    led_power_model_init(&s_led_power);
+    s_led_power_ramping = false;
+#endif
     return led_strip_clear(s_under_key_strip);
 }
 
@@ -665,6 +696,7 @@ esp_err_t board_init(void)
     s_encoder_isr_losses = 0;
     s_joystick_sample_count = 0;
     joystick_sample_recovery_reset(&s_joystick_recovery);
+    joystick_suspect_model_reset(&s_joystick_suspect);
     s_joystick_adc_failures = 0;
     memset(&s_joystick_window, 0, sizeof(s_joystick_window));
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
@@ -722,8 +754,10 @@ static void poll_power_button(TickType_t now)
         POWER_BUTTON_DEBOUNCE_MS, s_power_button_wake_mode
             ? POWER_BUTTON_WAKE_HOLD_MS : POWER_BUTTON_LONG_PRESS_MS);
     if (event == POWER_BUTTON_EVENT_PRESS) {
+        ++s_power_button_presses;
         enqueue_feedback_event(BOARD_CONTROL_ENCODER_PRESS);
     } else if (event == POWER_BUTTON_EVENT_SHORT_PRESS) {
+        ++s_power_button_short_presses;
         if (s_power_button_wake_mode) {
             /* Hardware may latch ON before the software wake deadline.
              * Cancel that partial wake only after release; never send a tap.
@@ -735,6 +769,7 @@ static void poll_power_button(TickType_t now)
         enqueue_event(BOARD_CONTROL_ENCODER_PRESS, true);
         enqueue_event(BOARD_CONTROL_ENCODER_PRESS, false);
     } else if (event == POWER_BUTTON_EVENT_LONG_PRESS) {
+        ++s_power_button_long_presses;
         s_shutdown_request_pending = true;
     }
 }
@@ -817,10 +852,23 @@ static void poll_joystick(TickType_t now)
         s_joystick_filtered_x = x;
         s_joystick_filtered_y = y;
     }
+    /* One isolated sample must not move the position filter: the filtered
+     * value drives the direction events, and a 1100 count blip past a small
+     * calibrated deadzone was enough for one stray key press. The raw value
+     * above and in the observation window stays untouched. */
+    bool spike_x = false;
+    bool spike_y = false;
+    const int steady_x = board_joystick_median_push(&s_joystick_median_x, x, &spike_x);
+    const int steady_y = board_joystick_median_push(&s_joystick_median_y, y, &spike_y);
+    if (spike_x || spike_y) {
+        portENTER_CRITICAL(&s_joystick_observation_lock);
+        ++s_joystick_spikes_rejected;
+        portEXIT_CRITICAL(&s_joystick_observation_lock);
+    }
     /* Higher filter values favor new samples; one percent still tracks slowly. */
     const int weight = s_joystick_filter > 0 ? s_joystick_filter : 1;
-    s_joystick_filtered_x += ((x - s_joystick_filtered_x) * weight) / 100;
-    s_joystick_filtered_y += ((y - s_joystick_filtered_y) * weight) / 100;
+    s_joystick_filtered_x += ((steady_x - s_joystick_filtered_x) * weight) / 100;
+    s_joystick_filtered_y += ((steady_y - s_joystick_filtered_y) * weight) / 100;
     portENTER_CRITICAL(&s_joystick_observation_lock);
     ++s_joystick_sample_count;
     const bool first = s_joystick_window.count == 0;
@@ -879,6 +927,8 @@ static void poll_joystick(TickType_t now)
     directions = board_joystick_limit_diagonal(
         directions, x, y, s_joystick_center_x, s_joystick_center_y,
         span_x, span_y, previous_directions);
+    (void)joystick_suspect_model_update(
+        &s_joystick_suspect, directions, board_ticks_to_ms(now));
     if (MATRIX12_JOYSTICK_HORIZONTAL_FUNCTION_ENABLED) {
         update_direction((directions & BOARD_JOYSTICK_LEFT) != 0,
                          &s_joystick_left, BOARD_CONTROL_JOYSTICK_LEFT);
@@ -901,6 +951,9 @@ void board_poll(void)
     poll_digital_inputs(now);
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
     poll_power_button(now);
+    if (s_led_power_ramping) {
+        (void)render_under_key_target();
+    }
 #endif
     poll_encoder();
     poll_joystick(now);
@@ -910,6 +963,27 @@ void board_poll(void)
         s_motor_running = false;
     }
 }
+
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+esp_err_t board_boot_keys_prepare(void)
+{
+    /* Same matrix setup as board_init, so keys can be read before it. */
+    return configure_matrix();
+}
+
+bool board_boot_key_held(board_control_t control)
+{
+    /* Raw scan: no debounce, events or other inputs (boot gestures only). */
+    bool pressed[BOARD_MATRIX12_V1_KEY_COUNT];
+    scan_matrix(pressed);
+    for (size_t index = 0; index < BOARD_MATRIX12_V1_KEY_COUNT; ++index) {
+        if (s_matrix_keys[index].control == control) {
+            return pressed[index];
+        }
+    }
+    return false;
+}
+#endif
 
 bool board_next_event(board_event_t *event)
 {
@@ -959,7 +1033,7 @@ bool board_is_product_target(void)
     return true;
 }
 
-bool board_inputs_neutral(void)
+bool board_keys_neutral(void)
 {
     for (size_t index = 0; index < BOARD_MATRIX12_V1_KEY_COUNT; ++index) {
         if (s_matrix_keys[index].stable) {
@@ -977,7 +1051,18 @@ bool board_inputs_neutral(void)
         return false;
     }
 #endif
-    return !s_joystick_left && !s_joystick_right && !s_joystick_up && !s_joystick_down;
+    return true;
+}
+
+bool board_inputs_neutral(void)
+{
+    return board_keys_neutral() && !s_joystick_left && !s_joystick_right &&
+           !s_joystick_up && !s_joystick_down;
+}
+
+bool board_joystick_suspect(void)
+{
+    return s_joystick_suspect.suspect;
 }
 
 size_t board_get_active_controls(board_control_t *controls, size_t capacity)
@@ -1023,6 +1108,7 @@ size_t board_get_active_controls(board_control_t *controls, size_t capacity)
 bool board_get_joystick_radial(float *angle_turns)
 {
     if (s_joystick_calibration_active ||
+        s_joystick_suspect.suspect ||
         s_joystick_recovery.waiting_for_center ||
         !MATRIX12_JOYSTICK_FUNCTION_ENABLED ||
         !MATRIX12_JOYSTICK_HORIZONTAL_FUNCTION_ENABLED) {
@@ -1160,11 +1246,13 @@ bool board_take_joystick_observation(board_joystick_observation_t *observation)
     uint32_t sample_count;
     TickType_t success_at;
     uint32_t adc_failures;
+    uint32_t spikes_rejected;
     portENTER_CRITICAL(&s_joystick_observation_lock);
     window = s_joystick_window;
     sample_count = s_joystick_sample_count;
     success_at = s_joystick_recovery.last_success_at;
     adc_failures = s_joystick_adc_failures;
+    spikes_rejected = s_joystick_spikes_rejected;
     memset(&s_joystick_window, 0, sizeof(s_joystick_window));
     portEXIT_CRITICAL(&s_joystick_observation_lock);
     const uint32_t count = window.count;
@@ -1174,6 +1262,7 @@ bool board_take_joystick_observation(board_joystick_observation_t *observation)
         .recent_sample_age_ms = sample_count > 0
             ? board_ticks_to_ms(xTaskGetTickCount() - success_at) : 0,
         .adc_failure_count = adc_failures,
+        .spikes_rejected = spikes_rejected,
         .window_start_ms = board_ticks_to_ms(window.start),
         .window_end_ms = board_ticks_to_ms(window.end),
         .window_sample_count = count,
@@ -1245,6 +1334,26 @@ void board_set_joystick_calibration_active(bool active)
 }
 
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+void board_power_button_get_diagnostics(board_power_button_diagnostics_t *diagnostics)
+{
+    if (diagnostics == NULL) {
+        return;
+    }
+    diagnostics->presses = s_power_button_presses;
+    diagnostics->short_presses = s_power_button_short_presses;
+    diagnostics->long_presses = s_power_button_long_presses;
+    diagnostics->ignored = s_power_button_ignored;
+    diagnostics->last_ignored = s_power_button_last_ignored;
+    diagnostics->wake_mode = s_power_button_wake_mode;
+    diagnostics->armed = s_power_button.armed;
+}
+
+void board_power_button_note_ignored(const char *reason)
+{
+    ++s_power_button_ignored;
+    s_power_button_last_ignored = reason != NULL ? reason : "unknown";
+}
+
 bool board_take_shutdown_request(void)
 {
     const bool pending = s_shutdown_request_pending;
@@ -1284,11 +1393,48 @@ static uint8_t limit_under_key_channel(uint8_t value)
     return value > maximum ? maximum : value;
 }
 
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+/* Drive the target through the current budget and rise ramp. */
+static esp_err_t render_under_key_target(void)
+{
+    if (s_under_key_strip == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    led_power_rgb_t output[BOARD_MATRIX12_V1_UNDER_KEY_RGB_COUNT];
+    s_led_power_ramping = led_power_model_render(
+        &s_led_power, s_under_key_target, output,
+        BOARD_MATRIX12_V1_UNDER_KEY_RGB_COUNT,
+        (uint32_t)pdTICKS_TO_MS(xTaskGetTickCount()));
+    for (size_t index = 0; index < BOARD_MATRIX12_V1_UNDER_KEY_RGB_COUNT; ++index) {
+        ESP_RETURN_ON_ERROR(led_strip_set_pixel(s_under_key_strip, index,
+                                                output[index].red,
+                                                output[index].green,
+                                                output[index].blue),
+                            "board", "buffer under-key RGB pixel");
+    }
+    return led_strip_refresh(s_under_key_strip);
+}
+
+static void set_under_key_target(size_t index, uint8_t red, uint8_t green,
+                                 uint8_t blue)
+{
+    s_under_key_target[index] = (led_power_rgb_t) {
+        .red = limit_under_key_channel(red),
+        .green = limit_under_key_channel(green),
+        .blue = limit_under_key_channel(blue),
+    };
+}
+#endif
+
 esp_err_t board_set_under_key_rgb(size_t index, uint8_t red, uint8_t green, uint8_t blue)
 {
     if (index >= BOARD_MATRIX12_V1_UNDER_KEY_RGB_COUNT) {
         return ESP_ERR_INVALID_ARG;
     }
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    set_under_key_target(index, red, green, blue);
+    return render_under_key_target();
+#else
     ESP_RETURN_ON_ERROR(led_strip_set_pixel(
                             s_under_key_strip, index,
                             limit_under_key_channel(red),
@@ -1296,6 +1442,7 @@ esp_err_t board_set_under_key_rgb(size_t index, uint8_t red, uint8_t green, uint
                             limit_under_key_channel(blue)),
                         "board", "set under-key RGB pixel");
     return led_strip_refresh(s_under_key_strip);
+#endif
 }
 
 esp_err_t board_apply_rgb(
@@ -1306,6 +1453,13 @@ esp_err_t board_apply_rgb(
     if (under_key == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    for (size_t index = 0; index < BOARD_MATRIX12_V1_UNDER_KEY_RGB_COUNT; ++index) {
+        set_under_key_target(index, under_key[index].red, under_key[index].green,
+                             under_key[index].blue);
+    }
+    return render_under_key_target();
+#else
     for (size_t index = 0; index < BOARD_MATRIX12_V1_UNDER_KEY_RGB_COUNT; ++index) {
         ESP_RETURN_ON_ERROR(led_strip_set_pixel(
                                 s_under_key_strip, index,
@@ -1315,6 +1469,7 @@ esp_err_t board_apply_rgb(
                             "board", "buffer under-key RGB pixel");
     }
     return led_strip_refresh(s_under_key_strip);
+#endif
 }
 
 esp_err_t board_apply_status_rgb(
@@ -2143,14 +2298,21 @@ void board_display_finish_mist_motion(void)
 
 esp_err_t board_display_show_round_home(board_round_mode_t mode,
                                         board_round_link_t link,
-                                        int battery_percent)
+                                        int battery_percent,
+                                        bool joystick_suspect)
 {
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
     if (mode > BOARD_ROUND_MODE_CLAUDE_CODE || link > BOARD_ROUND_LINK_BLE)
         return ESP_ERR_INVALID_ARG;
-    const board_mist_view_t view = {.page = BOARD_MIST_HOME, .a = mode, .phase = 1};
+    const board_mist_view_t view = {
+        .page = BOARD_MIST_HOME,
+        .a = mode,
+        .b = joystick_suspect,
+        .phase = 1,
+    };
     return board_display_show_mist(&view);
 #endif
+    (void)joystick_suspect;
     if (s_panel == NULL || mode > BOARD_ROUND_MODE_CLAUDE_CODE ||
         link > BOARD_ROUND_LINK_BLE || s_display_width > DISPLAY_MAX_WIDTH) {
         return ESP_ERR_INVALID_ARG;
@@ -2257,16 +2419,17 @@ esp_err_t board_display_show_round_battery(int battery_percent,
 
 static esp_err_t show_round_level_setting(round_icon_t icon,
                                           uint8_t candidate_level,
+                                          uint8_t max_level,
                                           board_round_setting_state_t state,
                                           bool confirm_selected)
 {
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
-    if (candidate_level > 4 || state > BOARD_ROUND_SETTING_ERROR)
+    if (candidate_level > max_level || state > BOARD_ROUND_SETTING_ERROR)
         return ESP_ERR_INVALID_ARG;
     const board_mist_view_t view = {
         .page = icon == ROUND_ICON_HAPTIC ? BOARD_MIST_HAPTIC : BOARD_MIST_LIGHTING,
         .a = candidate_level, .b = state, .c = confirm_selected,
-        .max_level = 4, .phase = 1,
+        .max_level = max_level, .phase = 1,
     };
     return board_display_show_mist(&view);
 #endif
@@ -2329,6 +2492,7 @@ esp_err_t board_display_show_round_haptic(uint8_t candidate_level,
                                           bool confirm_selected)
 {
     return show_round_level_setting(ROUND_ICON_HAPTIC, candidate_level,
+                                    BOARD_ROUND_HAPTIC_MAX_LEVEL,
                                     state, confirm_selected);
 }
 
@@ -2337,6 +2501,7 @@ esp_err_t board_display_show_round_lighting(uint8_t candidate_level,
                                             bool confirm_selected)
 {
     return show_round_level_setting(ROUND_ICON_LIGHTING, candidate_level,
+                                    BOARD_ROUND_LIGHTING_MAX_LEVEL,
                                     state, confirm_selected);
 }
 
@@ -2487,8 +2652,8 @@ esp_err_t board_display_show_round_icon_carousel(board_round_page_icon_t icon,
         .carousel_label = item_count == 2 && icon != BOARD_ROUND_PAGE_ICON_MACOS &&
             icon != BOARD_ROUND_PAGE_ICON_WINDOWS,
     };
-    if (item_count == 5) {
-        const uint8_t items[] = {21, 14, 13, 15, 20};
+    if (item_count == 4) {
+        const uint8_t items[] = {21, 14, 13, 20};
         memcpy(view.items, items, sizeof(items));
     } else if (icon == BOARD_ROUND_PAGE_ICON_MACOS || icon == BOARD_ROUND_PAGE_ICON_WINDOWS) {
         view.items[0] = BOARD_MIST_ICON_MACOS;
