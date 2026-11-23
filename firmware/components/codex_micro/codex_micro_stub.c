@@ -247,7 +247,7 @@ codex_micro_mode_t codex_micro_toggle_mode(void)
 {
     const bool eda_supported =
         codex_micro_active_key_layout() == CODEX_MICRO_KEY_LAYOUT_REV_A;
-    /* Claude Code is no longer in the double-click cycle (boring-D46). */
+    /* Claude Code is no longer in the double-click cycle. */
     s_mode = codex_micro_next_mode(s_mode, false, eda_supported, false);
     return s_mode;
 }

@@ -16,7 +16,7 @@ typedef enum {
 /**
  * Resolve the next volatile mode from supported features, not connection state.
  *
- * Callers pass claude_code_supported = false since boring-D46: Claude Code is
+ * Callers pass claude_code_supported = false since 20261118.01: Claude Code is
  * not part of the double-click cycle any more. The parameter and the
  * CODEX_MICRO_MODE_CLAUDE_CODE value stay until the second step removes the
  * mode code; a Claude Code current mode still resolves to Normal.

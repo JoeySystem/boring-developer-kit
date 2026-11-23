@@ -288,7 +288,7 @@ _Static_assert(sizeof(HAPTIC_LEVELS) / sizeof(HAPTIC_LEVELS[0]) ==
 static const uint8_t HAPTIC_LEVELS[] = {0, 40, 50, 60, 80};
 #endif
 /*
- * Idle standby is switched off (Joey, 2026-11-12): once in it only the
+ * Idle standby is switched off (2026-11-12): once in it only the
  * joystick woke the device, keys and the knob did not, and it bought little
  * battery life. The minutes a user saved earlier stay in NVS ("idle_min")
  * and are not read, so the model is never armed and the paths below that
@@ -1018,7 +1018,7 @@ static void show_status(const char *hint)
         (void)round_mode;
         (void)round_link;
         (void)battery_percent;
-        /* Interim product text (boring-D31, boring-20261111-04): no "safe
+        /* Interim product text: no "safe
          * mode" wording for users; replaced when the final copy arrives.
          * Each row fits the round screen (test_safe_mode_screen_text). */
         (void)board_display_show_local("REPAIR", "PLUG USB", "OPEN APP",
@@ -1098,7 +1098,7 @@ static void enter_initial_page(void)
         config_store_get_platform() != CONFIG_PLATFORM_UNSELECTED;
     /* The repair state runs the built-in defaults, which have no OS yet.
      * A choice made there cannot be saved, so it would only hide the repair
-     * instruction (boring-D31). */
+     * instruction. */
     if (product_target && !platform_selected && !boot_guard_safe_mode()) {
         enter_system_select();
     } else if (board_display_boot_should_start(
@@ -4120,7 +4120,7 @@ static board_control_t function_center_control(void)
 }
 
 /*
- * One key does all of Bluetooth (Joey, 2026-11-12): K8 while K3 is held.
+ * One key does all of Bluetooth (2026-11-12): K8 while K3 is held.
  * The user never picks a host number; K9 and K10 are ordinary keys again.
  */
 static bool ble_host_key_control(board_control_t control)
@@ -4180,7 +4180,7 @@ static void show_ble_slot_progress(uint8_t slot, uint8_t progress_percent)
 /* The round text page leaves an empty bottom row blank and rejects NULL. */
 #define BLE_HOST_BLANK_ROW ""
 /* How the pages name the Bluetooth key. No page names a host number. Wording
- * is interim (Joey, 2026-11-12, boring-20261111-03); the designer's replaces
+ * is interim (2026-11-12); the designer's replaces
  * it in a later build. */
 #define BLE_HOST_KEY_NAME "K3+K8"
 

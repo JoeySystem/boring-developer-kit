@@ -134,7 +134,7 @@ static TickType_t s_activation_retry_at;
 static atomic_bool s_storage_degraded;
 static esp_err_t s_storage_error;
 static bool s_storage_using_defaults;
-static bool s_unreadable_config_replaced; /* always false since review A2 */
+static bool s_unreadable_config_replaced; /* always false since the storage review */
 static bool s_stored_config_unusable;
 static bool s_safe_mode;
 
@@ -2059,7 +2059,7 @@ esp_err_t config_store_safe_mode_factory_reset(const char *confirmation,
         CONFIG_PARTITION, STORAGE_RECOVERY_PARTITION_CONFIG);
     if (error == ESP_ERR_NVS_NO_FREE_PAGES || error == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         /* The user asked for the reset: clearing an unusable partition is
-         * the explicit action review A2 reserves for this. */
+         * the explicit action the storage review reserves for this. */
         error = storage_recovery_clear_partition(CONFIG_PARTITION);
     }
     nvs_handle_t handle = 0;

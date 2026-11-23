@@ -399,7 +399,7 @@ class ConfigStoreNoMemTests(unittest.TestCase):
         self.assertEqual(ESP_OK, self.lib.load())
         self.assertEqual(b"newer", self.lib.active_text())
 
-    # review A2: a stored slot that cannot be used is never written over
+    # a stored slot that cannot be used is never written over
 
     def test_two_damaged_slots_are_left_untouched_and_defaults_run_read_only(self):
         self.two_slots()

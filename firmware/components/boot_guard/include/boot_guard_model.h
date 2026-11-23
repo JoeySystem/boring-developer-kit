@@ -20,7 +20,7 @@
  * A boot that does not crash but is unusable for lack of memory (the
  * returned unit: the DMA-capable internal heap was gone right after
  * start-up and every request was refused) restarts once straight into safe
- * mode (review A1): when the largest free internal DMA block stays below
+ * mode: when the largest free internal DMA block stays below
  * BOOT_GUARD_LOW_MEMORY_BYTES for BOOT_GUARD_LOW_MEMORY_MS during the boot
  * phase, or BLE start-up fails with ESP_ERR_NO_MEM. Never in safe mode or
  * during a firmware update; one restart per boot, and the safe-mode boot

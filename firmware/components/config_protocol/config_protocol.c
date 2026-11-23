@@ -1784,7 +1784,7 @@ static void send_capabilities(uint32_t request_id)
         features, "eda_mode",
         product && codex_micro_active_key_layout() ==
                        CODEX_MICRO_KEY_LAYOUT_REV_A);
-    /* Claude Code mode left the double-click cycle (boring-D46); Console 0.2.x
+    /* Claude Code mode left the double-click cycle; Console 0.2.x
      * greys its tab out when this is false. Claude is shown through the
      * shared desktop status source in Normal mode. */
     cJSON_AddBoolToObject(features, "claude_code_mode", false);
@@ -2349,7 +2349,7 @@ static esp_err_t approve_firmware(bool by_host, bool *confirmed_now)
     return error;
 }
 
-/* Safe-mode factory reset restarts after its ACK has left (review B9). */
+/* Safe-mode factory reset restarts after its ACK has left. */
 static atomic_bool s_safe_mode_restart_pending;
 static uint32_t s_safe_mode_restart_at_ms;
 

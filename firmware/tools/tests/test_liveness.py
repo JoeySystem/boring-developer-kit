@@ -2,7 +2,7 @@
 
 components/liveness: armed channels must beat within their timeout; the
 supervisor is the only task-watchdog subscriber and feeds it only while no
-resetting channel is stalled. After review A3 only our own tasks reset (the
+resetting channel is stalled. After the reliability review only our own tasks reset (the
 main loop once it runs, the USB config parser); TinyUSB and Bluedroid are
 probed and late answers are only reported; start-up is not watched. Each
 channel reports its longest gap so timeouts can be set from measurements.

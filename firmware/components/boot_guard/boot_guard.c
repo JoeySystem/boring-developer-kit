@@ -25,7 +25,7 @@ typedef struct {
 } safe_next_t;
 
 static RTC_NOINIT_ATTR boot_guard_record_t s_record;
-/* The count belongs to one firmware image (review C12): a different image
+/* The count belongs to one firmware image: a different image
  * starts from zero. */
 static RTC_NOINIT_ATTR uint32_t s_record_image;
 static RTC_NOINIT_ATTR safe_next_t s_safe_next;

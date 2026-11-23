@@ -69,7 +69,7 @@ class SafeModeScreenTextTests(unittest.TestCase):
                 self.assertLessEqual(columns(text, self.widths), row_limit(y))
 
     def test_no_safe_mode_wording_for_users(self):
-        # boring-D31: users never see "safe mode"; DOWNLOAD stays (after-sales).
+        # users never see "safe mode"; DOWNLOAD stays (after-sales).
         show = c_function(ACTION.read_text(), "static void show_status(const char *hint)")
         boot = c_function(APP_MAIN.read_text(), "static void boot_combo_confirm(boot_combo_t *combo)")
         for texts in local_text_calls(show) + local_text_calls(boot):

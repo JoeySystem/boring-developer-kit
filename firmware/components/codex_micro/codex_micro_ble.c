@@ -303,7 +303,7 @@ static atomic_bool s_local_input_pending;
 static atomic_bool s_advertising_input_pending;
 static ble_adv_backoff_t s_advertising_backoff;
 /* When s_advertising_starting / s_advertising_retry_running were set; a flag
- * older than BLE_ADVERTISING_FLAG_TIMEOUT_MS is stale (review B8). */
+ * older than BLE_ADVERTISING_FLAG_TIMEOUT_MS is stale. */
 static atomic_uint_least32_t s_advertising_starting_ms;
 static atomic_uint_least32_t s_advertising_retry_started_ms;
 static atomic_uint_least32_t s_advertising_stale_flags;
@@ -1376,7 +1376,7 @@ static void load_soft_restart_mode(void)
     if (esp_reset_reason() == ESP_RST_SW &&
         s_soft_restart_mode_magic == CODEX_MICRO_SOFT_RESTART_MODE_MAGIC &&
         s_soft_restart_mode_value > CODEX_MICRO_MODE_NORMAL &&
-        /* Claude Code is not restored (boring-D46): it comes back as Normal. */
+        /* Claude Code is not restored: it comes back as Normal. */
         s_soft_restart_mode_value < CODEX_MICRO_MODE_CLAUDE_CODE) {
         s_soft_restart_pending_mode =
             (codex_micro_mode_t)s_soft_restart_mode_value;
@@ -3651,7 +3651,7 @@ static void poll_advertising_watchdog(void)
         return;
     }
     /* A start that never completed, or a retry task that never finished,
-     * must not hold advertising back forever (review B8). */
+     * must not hold advertising back forever. */
     if (atomic_load(&s_advertising_starting) &&
         now_ms - atomic_load(&s_advertising_starting_ms) >= BLE_ADVERTISING_FLAG_TIMEOUT_MS) {
         atomic_store(&s_advertising_starting, false);
@@ -4277,7 +4277,7 @@ codex_micro_mode_t codex_micro_toggle_mode(void)
     const bool eda_supported =
         codex_micro_active_key_layout() == CODEX_MICRO_KEY_LAYOUT_REV_A;
     const codex_micro_mode_t current = codex_micro_mode();
-    /* Claude Code is no longer in the double-click cycle (boring-D46): Claude
+    /* Claude Code is no longer in the double-click cycle: Claude
      * is shown through the shared desktop status source in Normal mode. */
     const codex_micro_mode_t next = codex_micro_next_mode(
         current, true, eda_supported, false);

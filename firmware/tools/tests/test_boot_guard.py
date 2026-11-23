@@ -264,7 +264,7 @@ class BootGuardWiringTests(unittest.TestCase):
     def test_safe_mode_home_shows_fixed_text(self):
         show = c_function(ACTION.read_text(), "static void show_status(const char *hint)")
         self.assertIn("if (boot_guard_safe_mode()) {", show)
-        # Interim product text (boring-D31): repair guidance, no "safe mode".
+        # Interim product text: repair guidance, no "safe mode".
         self.assertIn('"REPAIR", "PLUG USB", "OPEN APP",', show)
 
     def test_crash_fault_injection_is_test_only(self):

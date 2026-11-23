@@ -126,7 +126,7 @@ static bool boot_combo_armed_before_board(boot_combo_t *combo)
 static void boot_combo_confirm(boot_combo_t *combo)
 {
     (void)board_set_display_config(BOOT_PROMPT_BRIGHTNESS_PERCENT, 0);
-    /* Interim text (boring-D31): after-sales gesture, no "safe mode" wording. */
+    /* Interim text: after-sales gesture, no "safe mode" wording. */
     (void)board_display_show_local("1+12", "REPAIR", "RELEASE", "KEYS", 0xFD20);
     boot_combo_state_t state;
     while ((state = sample_combo(combo, true)) == BOOT_COMBO_ARMED) {

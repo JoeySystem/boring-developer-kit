@@ -9,8 +9,8 @@
  *
  * On a freshly updated image that has not been confirmed yet, the previous
  * image wrote this data and can still read it, so the update is rolled back.
- * On a confirmed image the partition is left untouched (review A2, Joey
- * 2026-11-10; it used to be erased): the caller runs without it (config
+ * On a confirmed image the partition is left untouched (since 2026-11-10;
+ * it used to be erased): the caller runs without it (config
  * read-only on the built-in defaults, BLE off) and GET_STATUS reports it.
  * Clearing it is an explicit host or rescue action.
  */

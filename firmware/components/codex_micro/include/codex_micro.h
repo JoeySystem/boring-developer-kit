@@ -128,7 +128,7 @@ typedef struct {
     uint32_t advertising_backoff_level;
     uint32_t advertising_backoff_delay_ms;
     uint32_t advertising_input_restarts;
-    /* Start or retry flags cleared because they were stuck (review B8). */
+    /* Start or retry flags cleared because they were stuck. */
     uint32_t advertising_stale_flags;
     bool advertising_active;
     bool advertising_starting;

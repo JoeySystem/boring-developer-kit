@@ -1,5 +1,5 @@
-"""Unusable NVS partitions no longer stop the boot (#9), and since review A2
-(Joey, 2026-11-10) they are never erased automatically: a fresh update rolls
+"""Unusable NVS partitions no longer stop the boot, and since the storage review
+(2026-11-10) they are never erased automatically: a fresh update rolls
 back; a confirmed image leaves the partition untouched, runs without it
 (config read-only on defaults, BLE off) and reports it. Clearing is explicit
 (the safe-mode factory reset)."""

@@ -11,7 +11,7 @@
  * crash-loop guard (item 5) counts. The ESP-IDF tasks (TinyUSB, Bluedroid)
  * normally wait without a timeout, so first batch only probes them (queued
  * work that beats when it runs) and reports late answers; it never resets
- * for them (review A3). Start-up is not watched.
+ * for them. Start-up is not watched.
  *
  * Timeouts cover the slowest normal path of each channel (see liveness.h).
  * The stalled channel is kept in RTC memory for the next boot's GET_STATUS.

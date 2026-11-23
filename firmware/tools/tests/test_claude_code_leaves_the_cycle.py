@@ -1,4 +1,4 @@
-"""boring-D46 step one: Claude Code leaves the double-click mode cycle.
+"""Step one: Claude Code leaves the double-click mode cycle.
 
 Claude is shown through the shared desktop status source in Normal mode; the
 Claude Code mode code stays until step two so Console 0.2.x still works.

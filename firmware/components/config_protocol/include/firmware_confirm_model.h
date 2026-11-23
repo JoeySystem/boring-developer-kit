@@ -57,8 +57,7 @@ firmware_confirm_check_t firmware_confirm_explicit_check(
  * The proof (HELLO + GET_STATUS on USB, or an accepted FW_CONFIRM) approves
  * it; the image is confirmed once the device has also been healthy (main
  * loop running, USB mounted, not in safe mode) without a break for
- * FIRMWARE_HEALTH_DWELL_MS. BLE readiness is reported, not required
- * (review A4).
+ * FIRMWARE_HEALTH_DWELL_MS. BLE readiness is reported, not required.
  * Approval is kept for the boot, so a host that asked once is enough; the
  * main loop confirms when the dwell completes. Without a host's proof the
  * image is never confirmed: a broken USB configuration channel must roll
