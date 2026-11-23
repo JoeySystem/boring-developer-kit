@@ -35,13 +35,13 @@
 
 ## 源码运行与构建
 
-需要 Python 3.12 或 3.13。工具运行时要一份完整的固件包目录（含 `bootloader/`、`partition_table/`、`ota_data_initial.bin`、应用镜像、`firmware-manifest.json`，以及 `online/` 下带发布签名的 `Firmware-BORING-*.zip`），从 Release 的 `BORING-MIST-20261118.01-firmware-package.zip` 解压得到。
+需要 Python 3.12 或 3.13。工具运行时要一份完整的固件包目录（含 `bootloader/`、`partition_table/`、`ota_data_initial.bin`、应用镜像、`firmware-manifest.json`，以及 `online/` 下带发布签名的 `Firmware-BORING-*.zip`），从 Release 的 `BORING-MIST-20261118.01-firmware-package.zip` 解压得到 `matrix12-power-v2-20261118.01-sample-verified/` 目录。
 
 ```sh
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements-authority-update.txt
 .venv/bin/python packaging/macos/prepare_bundle.py --tool-root . --output . \
-  --authority /path/to/BORING-MIST-20261118.01-firmware-package
+  --authority /path/to/matrix12-power-v2-20261118.01-sample-verified
 .venv/bin/python authority_update_app.py
 ```
 
