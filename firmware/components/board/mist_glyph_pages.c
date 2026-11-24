@@ -496,6 +496,12 @@ static const uint8_t settings_page_icons[] = {21, 14, 13, 20};
 #define SETTINGS_PAGE_ICON_COUNT \
     (sizeof(settings_page_icons) / sizeof(settings_page_icons[0]))
 
+/* Function centre label row. SETTINGS is 32 font columns (95 px of ink);
+ * at y=94 the round edge leaves only 27 columns and it showed as SETTIN.
+ * y=85 is the lowest row that keeps 32 columns, and it still clears the
+ * icons' bottom cell (pixel 80), so all three labels share this row. */
+#define FUNCTION_LABEL_Y 85
+
 static void build_carousel(mist_glyph_page_id_t page,
                            const mist_glyph_page_context_t *context,
                            mist_glyph_scene_t *scene)
@@ -516,7 +522,8 @@ static void build_carousel(mist_glyph_page_id_t page,
     draw_icon_centered(scene, resource, 11, gray_level(242));
     if (page == MIST_PAGE_FUNCTION)
         add_overlay_centered(scene, resource == 0 ? "FOCUS"
-                             : resource == 1 ? "SETTINGS" : "BATTERY", 94,
+                             : resource == 1 ? "SETTINGS" : "BATTERY",
+                             FUNCTION_LABEL_Y,
                              gray_level(204));
     if (page == MIST_PAGE_ALL_CAROUSEL) {
         static const char *const labels[] = {
