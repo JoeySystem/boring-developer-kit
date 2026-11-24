@@ -1,13 +1,21 @@
 param(
-    [switch]$SkipInstaller
+    [switch]$SkipInstaller,
+    [string]$PythonPath
 )
 
 $ErrorActionPreference = 'Stop'
 $ProjectDir = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $SoftwareDir = (Resolve-Path (Join-Path $ProjectDir '..')).Path
-$Python = Join-Path $ProjectDir '.venv\Scripts\python.exe'
-$BuildDir = Join-Path $ProjectDir 'build\windows'
-$DistDir = Join-Path $ProjectDir 'dist\windows'
+$Python = if ($PythonPath) { $PythonPath } else { Join-Path $ProjectDir '.venv\Scripts\python.exe' }
+# The public kit only builds the community app.
+$BuildOrigin = 'custom'
+$AppName = 'BORING Console Community'
+$AppExeName = 'BORING Console Community.exe'
+$InstallerAppId = '{{84F4E74C-2C59-4DE5-9AA5-FAE7A21EF3E2}'
+$InstallerBaseName = 'BORING-Console-Community-Setup'
+$PortableName = 'BORING-Console-Community-Windows-portable.zip'
+$BuildDir = Join-Path $ProjectDir "build\windows\$BuildOrigin"
+$DistDir = Join-Path $ProjectDir "dist\windows\$BuildOrigin"
 
 if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
     throw 'Windows package must be built on Windows'
@@ -15,12 +23,17 @@ if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
 if (-not (Test-Path -LiteralPath $Python -PathType Leaf)) {
     throw "Missing project Python: $Python"
 }
-& $Python -c 'import nuitka'
-if ($LASTEXITCODE -ne 0) { throw 'Nuitka is not installed in .venv' }
-if ($BuildDir -ne (Join-Path $ProjectDir 'build\windows')) {
+& $Python -c 'from importlib.metadata import version; assert version("Nuitka") == "4.2.1"'
+if ($LASTEXITCODE -ne 0) { throw 'Build requires Nuitka 4.2.1 (Qt timer callback fix); install .[build] first' }
+$Iscc = $null
+if (-not $SkipInstaller) {
+    $Iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
+    if (-not $Iscc) { throw 'Inno Setup ISCC.exe is required; use -SkipInstaller only for portable QA' }
+}
+if ($BuildDir -ne (Join-Path $ProjectDir 'build\windows\custom')) {
     throw "Unexpected build directory: $BuildDir"
 }
-if ($DistDir -ne (Join-Path $ProjectDir 'dist\windows')) {
+if ($DistDir -ne (Join-Path $ProjectDir 'dist\windows\custom')) {
     throw "Unexpected dist directory: $DistDir"
 }
 foreach ($Target in @($BuildDir, $DistDir)) {
@@ -80,6 +93,7 @@ $QtTranslations = (& $Python -c 'from PySide6.QtCore import QLibraryInfo; print(
 if ($LASTEXITCODE -ne 0) { throw 'Unable to locate Qt translation catalogs' }
 
 & $Python -m nuitka `
+    --assume-yes-for-downloads `
     --standalone `
     --enable-plugin=pyside6 `
     --windows-console-mode=disable `
@@ -100,6 +114,7 @@ $PackageDir = Join-Path $DistDir 'BORING Console Community'
 Copy-Item -LiteralPath $ConsoleDist.FullName -Destination $PackageDir -Recurse
 
 & $Python -m nuitka `
+    --assume-yes-for-downloads `
     --onefile `
     --enable-plugin=pyside6 `
     --windows-console-mode=disable `
@@ -123,9 +138,7 @@ Sign-Artifact (Join-Path $PackageDir 'boring-extension-runner.exe')
 
 Compress-Archive -LiteralPath $PackageDir -DestinationPath (Join-Path $DistDir 'BORING-Console-Community-Windows-portable.zip')
 if (-not $SkipInstaller) {
-    $Iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
-    if (-not $Iscc) { throw 'Inno Setup ISCC.exe is required; use -SkipInstaller only for portable QA' }
-    & $Iscc "/DSourceDir=$PackageDir" "/DOutputDir=$DistDir" "/DAppVersion=$AppVersion" (Join-Path $ProjectDir 'deploy\boring-console.iss')
+    & $Iscc "/DSourceDir=$PackageDir" "/DOutputDir=$DistDir" "/DAppVersion=$AppVersion" "/DAppId=$InstallerAppId" "/DAppName=$AppName" "/DAppExeName=$AppExeName" "/DOutputBaseFilename=$InstallerBaseName" (Join-Path $ProjectDir 'deploy\boring-console.iss')
     if ($LASTEXITCODE -ne 0) { throw 'Windows installer build failed' }
     Sign-Artifact (Join-Path $DistDir 'BORING-Console-Community-Setup.exe')
 }

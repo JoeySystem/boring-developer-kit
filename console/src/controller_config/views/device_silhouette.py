@@ -25,15 +25,12 @@ from PySide6.QtGui import (
     QTransform,
 )
 from PySide6.QtWidgets import (
-    QComboBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
     QSizePolicy,
-    QSlider,
-    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -250,6 +247,12 @@ class DeviceModelCanvas(QWidget):
     def set_agent_states(self, states) -> None:
         self._agent_states = dict(zip(("key.1", "key.2", "key.4", "key.5", "key.6", "key.7"), states))
         self.update()
+
+    def set_connection_preview(self, enabled: bool) -> None:
+        """The community schematic has no connection animation; kept for API parity."""
+
+    def set_configured_lighting(self, snapshot) -> None:
+        """The community schematic does not draw key lights; kept for API parity."""
 
     def set_control_labels(self, labels: dict[str, str]) -> None:
         self._mappings = {**self._mappings, **{key: {**self._mappings.get(key, {}), "short_name": value} for key, value in labels.items()}}
@@ -764,15 +767,79 @@ class DeviceModelShell(QFrame):
         for control_id, control in canvas._buttons.items():
             rect = canvas.screen_rect() if control_id == "display" else canvas.control_rect(control_id)
             width, height = max(1, round(rect.width())), max(1, round(rect.height()))
-            control.setStyleSheet(
-                f"min-width: {width}px; max-width: {width}px; "
-                f"min-height: {height}px; max-height: {height}px; "
-                "background: transparent; border: none; padding: 0;"
-            )
-            control.setFixedSize(width, height)
-            control.move(round(rect.left()), round(rect.top()))
+            left, top = round(rect.left()), round(rect.top())
+            if (
+                control.x() != left
+                or control.y() != top
+                or control.width() != width
+                or control.height() != height
+            ):
+                control.setGeometry(left, top, width, height)
             canvas.update_control_mask(control_id, control)
         canvas.update()
+
+
+def _resolved_device_mappings(snapshot: DeviceSnapshot | None, mappings: dict[str, dict]) -> dict[str, dict]:
+    mode = str(snapshot.status.get("operating_mode", "")) if snapshot else ""
+    if (snapshot is not None and mode in {"normal", "codex"}
+            and isinstance(snapshot.config.get("voice_action"), dict)):
+        return {**mappings, "key.8": {"action": snapshot.config["voice_action"],
+                                       "short_name": "语音输入"}}
+    if (snapshot is not None and mode == "codex"
+            and str(snapshot.identity.get("hardware_id", "")) in MATRIX12_HARDWARE_IDS):
+        voice_action = ((snapshot.active_profile or {}).get("codex_voice", {"type": "none"})
+                        if snapshot.capabilities.get("features", {}).get("codex_voice") is True
+                        else {"type": "none"})
+        return {**mappings, "key.8": {"action": voice_action, "short_name": ""}}
+    return mappings
+
+
+def _device_control_labels(snapshot: DeviceSnapshot | None, mappings: dict[str, dict]) -> dict[str, str]:
+    platform = str(snapshot.status.get("platform", "")) if snapshot else ""
+    mode = str(snapshot.status.get("operating_mode", "")) if snapshot else ""
+    labels = {}
+    for index in range(1, 13):
+        control_id = f"key.{index}"
+        text = translate_ui_text(_mapping_action_summary(mappings, control_id, platform, mode=mode)) if control_id in mappings else ""
+        if 8 <= index <= 10:
+            text = f"BT {index - 7}  {text}".strip()
+        labels[control_id] = text
+    return labels
+
+
+def update_device_silhouette(
+    shell: DeviceModelShell,
+    snapshot: DeviceSnapshot,
+    *,
+    mappings: dict[str, dict],
+    selected_control_id: str | None,
+    control_labels: dict[str, str] | None = None,
+) -> None:
+    """Refresh mapping semantics without replacing or resizing the 3D host."""
+    mappings = _resolved_device_mappings(snapshot, mappings)
+    canvas = shell._canvas
+    labels = _device_control_labels(snapshot, mappings)
+    if control_labels is not None:
+        labels.update(control_labels)
+    canvas.set_control_labels(labels)
+    canvas.set_selected_control(selected_control_id)
+    canvas.set_configured_lighting(snapshot)
+    canvas.set_agent_states(canvas._snapshot_agent_states(snapshot))
+    platform = str(snapshot.status.get("platform", ""))
+    mode = str(snapshot.status.get("operating_mode", ""))
+    for control_id, button in canvas._buttons.items():
+        if not control_id.startswith("key."):
+            continue
+        mapping = mappings.get(control_id)
+        button.setProperty("mapped", mapping is not None)
+        action = _mapping_action_summary(mappings, control_id, platform, mode=mode)
+        inscription = button.findChild(QLabel, "keycapInscription")
+        if inscription is not None and inscription.text() != action:
+            inscription.setText(action)
+            inscription.setToolTip(action)
+        button.setToolTip(labels[control_id] if control_labels is not None
+                          else translate_ui_text(f"点击设置{_physical_control_name(control_id)}")
+                          + (f"\n{translate_ui_text(action)}" if inscription is not None else ""))
 
 
 def create_device_silhouette(
@@ -784,12 +851,9 @@ def create_device_silhouette(
 ) -> QFrame:
     """Create the canonical product silhouette for any application page."""
 
-    resolved_mappings = (snapshot.mappings if snapshot else {}) if mappings is None else mappings
-    mode = str(snapshot.status.get("operating_mode", "")) if snapshot else ""
-    if snapshot is not None and mode == "codex" and str(snapshot.identity.get("hardware_id", "")) in MATRIX12_HARDWARE_IDS:
-        voice_action = ((snapshot.active_profile or {}).get("codex_voice", {"type": "none"})
-                        if snapshot.capabilities.get("features", {}).get("codex_voice") is True else {"type": "none"})
-        resolved_mappings = {**resolved_mappings, "key.8": {"action": voice_action, "short_name": ""}}
+    resolved_mappings = _resolved_device_mappings(
+        snapshot, (snapshot.mappings if snapshot else {}) if mappings is None else mappings
+    )
     device_shell = DeviceModelShell(objectName="deviceShell") if snapshot is None or str(snapshot.identity.get("hardware_id", "")) in MATRIX12_HARDWARE_IDS else QFrame(objectName="deviceShell")
     device_shell.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
     if snapshot is None or str(snapshot.identity.get("hardware_id", "")) in MATRIX12_HARDWARE_IDS:
@@ -809,13 +873,15 @@ def create_device_silhouette(
             selected_control_id,
             face,
         )
+        platform = str(snapshot.status.get("platform", "")) if snapshot else ""
+        canvas.set_control_labels(_device_control_labels(snapshot, resolved_mappings))
         canvas.setGeometry(0, 0, MATRIX12_CANVAS_SIZE, MATRIX12_CANVAS_SIZE)
         canvas.show()
         holder = QWidget()
         grid = _matrix12_control_layout(
             snapshot,
             resolved_mappings,
-            str(snapshot.status.get("platform", "")) if snapshot else "",
+            platform,
             on_control,
             selected_control_id,
         )
@@ -833,11 +899,15 @@ def create_device_silhouette(
             )
             width = max(24, round(rect.width()))
             height = max(24, round(rect.height()))
-            control.setFixedSize(width, height)
-            control.move(round(rect.left()), round(rect.top()))
+            # These controls are manual overlays, no longer layout-managed.
+            # Clear construction-time size hints so one geometry update can
+            # resize and move each hit target without reparsing style sheets.
+            control.setMinimumSize(0, 0)
+            control.setMaximumSize(16777215, 16777215)
+            control.setGeometry(
+                round(rect.left()), round(rect.top()), width, height
+            )
             control.setStyleSheet(
-                f"min-width: {width}px; max-width: {width}px; "
-                f"min-height: {height}px; max-height: {height}px; "
                 "background: transparent; border: none; padding: 0;"
             )
             for label in control.findChildren(QLabel):
@@ -866,150 +936,6 @@ def create_device_silhouette(
     )
     shell_layout.addWidget(device_face)
     return device_shell
-
-
-def create_prompt_silhouette(
-    snapshot: DeviceSnapshot,
-    *,
-    application_style: str = "",
-) -> QFrame:
-    """Create the label-free silhouette shown behind four prompt directions."""
-
-    shell = create_device_silhouette(snapshot, mappings=snapshot.mappings)
-    shell.setStyleSheet(
-        application_style
-        + V4_STYLE
-        + "QFrame#deviceShell { background: transparent; border: none; }"
-    )
-    for label in shell.findChildren(QLabel):
-        label.hide()
-    for key in shell.findChildren(KeycapButton):
-        key.setProperty("lightingPreview", True)
-        key.setFocusPolicy(Qt.NoFocus)
-        key.setToolTip("")
-    return shell
-
-
-def create_lighting_silhouette_preview(
-    snapshot: DeviceSnapshot,
-    editor,
-) -> QWidget:
-    """Create the shared silhouette adapted for local lighting configuration."""
-
-    stage = QWidget(objectName="lightingDevicePreview")
-    stage.setMinimumWidth(426)
-    stage.setMinimumHeight(460)
-    layout = QVBoxLayout(stage)
-    layout.setContentsMargins(0, 20, 0, 20)
-    layout.addStretch(1)
-    swatches = {
-        button.property("controlId"): button
-        for _, button in editor._under_key_colors
-    }
-    preview_control_ids = (
-        editor._under_key_control_ids - editor._agent_status_control_ids
-    )
-    shell = create_device_silhouette(snapshot, mappings=snapshot.mappings)
-    canvas = shell.findChild(DeviceModelCanvas, "deviceModelCanvas")
-    if canvas is not None:
-        if swatches:
-            canvas.set_selected_control(next(iter(swatches)))
-    display = shell.findChild(QFrame, "displayControl")
-    if display is not None:
-        for label in display.findChildren(QLabel):
-            label.hide()
-        if canvas is None:
-            brand = Boring5RLabel(
-                "BORING", scale=0.5, color="#EFEAE0", alignment=Qt.AlignCenter
-            )
-            display.layout().addWidget(brand, 0, Qt.AlignCenter)
-
-            def update_display(*_args):
-                enabled = editor.values()[2].get("brightness", 0) > 0
-                brand.setVisible(enabled)
-                ring_color = "#FF6A00" if enabled else "#41413B"
-                display.setStyleSheet(
-                    "QFrame#displayControl { background: #121311; "
-                    f"border: 2px solid {ring_color}; border-radius: 26px; }}"
-                )
-        else:
-            def update_display(*_args):
-                canvas.set_screen_enabled(
-                    editor.values()[2].get("brightness", 0) > 0
-                )
-
-        control = getattr(editor, "_display_brightness", None)
-        if isinstance(control, QComboBox):
-            control.currentIndexChanged.connect(update_display)
-        elif isinstance(control, (QSlider, QSpinBox)):
-            control.valueChanged.connect(update_display)
-        update_display()
-    encoder = shell.findChild(QPushButton, "encoderControl")
-    if encoder is not None:
-        for label in encoder.findChildren(QLabel):
-            label.hide()
-        encoder.setToolTip(translate_ui_text("旋钮不带可配置灯光"))
-    for key in shell.findChildren(KeycapButton):
-        control_id = key.property("controlId")
-        for inscription in key.findChildren(QLabel):
-            inscription.hide()
-        key.setAccessibleName(str(control_id))
-        if control_id in swatches:
-            key.setToolTip(translate_ui_text("点击调整该按键灯颜色"))
-            key.setFocusPolicy(Qt.StrongFocus)
-            def select_light(
-                _checked=False,
-                value=control_id,
-                swatch=swatches[control_id],
-            ):
-                if canvas is not None:
-                    canvas.set_selected_control(value)
-                swatch.click()
-
-            key.clicked.connect(select_light)
-            if canvas is not None:
-                swatches[control_id].clicked.connect(
-                    lambda _checked=False, value=control_id: canvas.set_selected_control(value)
-                )
-        else:
-            key.setToolTip(
-                translate_ui_text("状态灯由 Codex 自动控制。")
-            )
-            key.setFocusPolicy(Qt.NoFocus)
-    layout.addWidget(shell, 0, Qt.AlignCenter)
-    layout.addStretch(1)
-
-    def update_lighting(lighting):
-        colors = lighting.get("under_key", [])
-        brightness = (
-            min(80, lighting.get("brightness", 0)) / 80
-            if lighting.get("enabled")
-            else 0
-        )
-        for key in shell.findChildren(KeycapButton):
-            control_id = key.property("controlId")
-            color = QColor(0, 0, 0, 0)
-            if control_id in preview_control_ids:
-                index = int(control_id.split(".")[-1]) - 1
-                if index < len(colors):
-                    rgb = colors[index]
-                    peak = max(rgb.values())
-                    if peak > 0:
-                        opacity = round(235 * (brightness * peak / 255) ** 0.45)
-                        color = QColor(
-                            round(rgb["r"] * 255 / peak),
-                            round(rgb["g"] * 255 / peak),
-                            round(rgb["b"] * 255 / peak),
-                            opacity,
-                        )
-            key.setProperty("lightingColor", color)
-            key.update()
-        if canvas is not None:
-            canvas.update()
-
-    editor.lighting_changed.connect(update_lighting)
-    update_lighting(editor.lighting_value())
-    return stage
 
 
 def create_control_layout(
@@ -1283,7 +1209,7 @@ def _mapping_action_summary(
 ) -> str:
     mapping = mappings.get(control_id)
     action = mapping.get("action") if isinstance(mapping, dict) else None
-    if mode == "codex" and control_id == "key.8" and (action or {}).get("type") != "key_gesture":
+    if mode == "codex" and control_id == "key.8" and (action or {}).get("type") == "none":
         return "Codex 自带语音"
     return describe_action(action, platform=platform, compact=True, control_id=control_id)
 

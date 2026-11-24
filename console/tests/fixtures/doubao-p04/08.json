@@ -1,0 +1,2746 @@
+{
+  "active_id": "38447205414643970",
+  "captured_at": 1792344131.2429664,
+  "process_session": "6596",
+  "fixture_source": "2026-10-19 actual P04 UIA; only current document nodes retained",
+  "nodes": [
+    {
+      "depth": 9,
+      "name": "",
+      "id": "RootWebArea",
+      "kind": "DocumentControl",
+      "class": "",
+      "value": "chrome://doubaowork-chat/chat/38447205414643970"
+    },
+    {
+      "depth": 16,
+      "name": "doc_editor",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative w-full flex-shrink flex-grow basis-0 min-h-100 flex items-center flex-col flow-disable-select-bar flow-ext-disable-select-bar"
+    },
+    {
+      "depth": 17,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "message-list-zLoNs1 opacity-0 opacity-100"
+    },
+    {
+      "depth": 18,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "v_list-D34x3M"
+    },
+    {
+      "depth": 19,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "scroller v_list_scroller-BxcoIX show-scrollbar-thumb-Z56ba3"
+    },
+    {
+      "depth": 20,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "scroll_holder"
+    },
+    {
+      "depth": 20,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "list_items"
+    },
+    {
+      "depth": 21,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "v_list_row"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "v_list_top_indicator-OESqxW"
+    },
+    {
+      "depth": 21,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": " v_list_row"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative min-w-0 max-w-full container-AsfIjW"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 24,
+      "name": "BORING 状态采集实验 P02（取消对照）。只在本会话写一篇约 5000 字的中文短文，主题是图书分类，共 30 段；不使用工具、不创建或修改文件、不访问网站。我会在生成过程中手动停止，用于验证真实停止后的界面状态。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 21,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": " v_list_row"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative grid w-full grid-cols-[minmax(0,1fr)_auto]"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative z-0 max-w-full min-w-0"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 25,
+      "name": "图书是人类知识的容器，而分类则是让知识重新变得可用的桥梁。面对满架藏书，如果没有一套分类体系，找一本书就可能变成一场漫长的翻找；而合理的分类，能让每一次取阅都准确、迅速，甚至让书架本身成为一张无声的知识地图。图书分类，既是图书管理学的古老课题，也是每个爱书人日常生活中的实用技艺。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ListControl",
+      "class": "container-RLBpOb"
+    },
+    {
+      "depth": 25,
+      "name": "分类的前提是明白它的目的。图书馆分类服务于检索效率，书店分类服务于销售陈列，个人书架分类服务于使用习惯。目的不同，分类的尺度就不同，因此在动手分类之前，先想清楚你的书是为谁、为何而排，这决定了整个体系的走向。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "1. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "分类的前提是明白它的目的。图书馆分类服务于检索效率，书店分类服务于销售陈列，个人书架分类服务于使用习惯。目的不同，分类的尺度就不同，因此在动手分类之前，先想清楚你的书是为谁、为何而排，这决定了整个体系的走向。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "人类对图书分类的探索由来已久。中国最早的分类体系可以追溯到汉代刘向、刘歆父子整理的《七略》，将图书分为六略三十八类；西晋荀勖则创立了甲乙丙丁四部，后来演变为经、史、子、集四部分类法，这一体系延续了近两千年。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "2. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "人类对图书分类的探索由来已久。中国最早的分类体系可以追溯到汉代刘向、刘歆父子整理的《七略》，将图书分为六略三十八类；西晋荀勖则创立了甲乙丙丁四部，后来演变为经、史、子、集四部分类法，这一体系延续了近两千年。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "十九世纪以后，现代分类法逐渐成形。1876 年，杜威十进制分类法问世，把人类知识分为十大类，每类再细分为百个二级类目；此后又出现了国际通用的《国际十进分类法》和美国的《国会图书馆分类法》，它们构成了现代图书馆分类的基石。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "3. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "十九世纪以后，现代分类法逐渐成形。1876 年，杜威十进制分类法问世，把人类知识分为十大类，每类再细分为百个二级类目；此后又出现了国际通用的《国际十进分类法》和美国的《国会图书馆分类法》，它们构成了现代图书馆分类的基石。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "在中国，最具影响力的当属《中国图书馆分类法》，简称中图法。它将图书分为马克思主义、哲学、社会科学、自然科学等二十二个大类，用字母加数字的编号表示类目层级。中图法是国内公共图书馆和高校图书馆普遍采用的标准。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "4. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "在中国，最具影响力的当属《中国图书馆分类法》，简称中图法。它将图书分为马克思主义、哲学、社会科学、自然科学等二十二个大类，用字母加数字的编号表示类目层级。中图法是国内公共图书馆和高校图书馆普遍采用的标准。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "分类法的本质是对知识进行树状切分。任何一个分类体系，都要回答三个问题：按什么标准切分、切分到多细、交叉学科的书归到哪里。这三问决定了体系的稳定性和实用性，也是个人分类时常遇到的困惑所在。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "5. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "分类法的本质是对知识进行树状切分。任何一个分类体系，都要回答三个问题：按什么标准切分、切分到多细、交叉学科的书归到哪里。这三问决定了体系的稳定性和实用性，也是个人分类时常遇到的困惑所在。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "对普通家庭书架而言，照搬图书馆分类法往往过于复杂。个人藏书的规模通常在几十到几千本之间，需要的不是严谨的学术分类，而是一套自己用得顺手、记得住的规则。简单、稳定、可扩展，是个人分类体系的三个关键词。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "6. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "对普通家庭书架而言，照搬图书馆分类法往往过于复杂。个人藏书的规模通常在几十到几千本之间，需要的不是严谨的学术分类，而是一套自己用得顺手、记得住的规则。简单、稳定、可扩展，是个人分类体系的三个关键词。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "最常见的个人分类维度是按内容领域划分，例如文学、历史、哲学、科学、艺术、经济、心理、工具书等。这种方法直观易懂，找书时凭感觉就能定位。缺点是边界模糊，比如一本《达・芬奇密码》究竟算文学还是历史，往往需要事先约定。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "7. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "最常见的个人分类维度是按内容领域划分，例如文学、历史、哲学、科学、艺术、经济、心理、工具书等。这种方法直观易懂，找书时凭感觉就能定位。缺点是边界模糊，比如一本《达・芬奇密码》究竟算文学还是历史，往往需要事先约定。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "另一种常用维度是按用途划分：工作资料、学习教材、消遣读物、收藏珍本。这种分类贴近生活场景，特别适合办公桌与床头并行存在的情况。它的问题在于同一本书可能兼具多种用途，需要确立 “优先归入某一类” 的规则。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "8. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "另一种常用维度是按用途划分：工作资料、学习教材、消遣读物、收藏珍本。这种分类贴近生活场景，特别适合办公桌与床头并行存在的情况。它的问题在于同一本书可能兼具多种用途，需要确立 “优先归入某一类” 的规则。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "还可以按阅读状态分类：在读、待读、已读、重读、封存。这种以时间轴为核心的分类，能直观反映你的阅读计划与进度，尤其适合书量不大但阅读节奏快的人。它的代价是状态会频繁变动，需要不断重新整理。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "9. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "还可以按阅读状态分类：在读、待读、已读、重读、封存。这种以时间轴为核心的分类，能直观反映你的阅读计划与进度，尤其适合书量不大但阅读节奏快的人。它的代价是状态会频繁变动，需要不断重新整理。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "按语言分类也很有价值，尤其对于多语种阅读者。将中文、英文、日文或其他语种的书分开摆放，既符合阅读习惯，也便于观察自己阅读版图的构成。更细致的做法是按作者分类，...",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "10. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "按语言分类也很有价值，尤其对于多语种阅读者。将中文、英文、日文或其他语种的书分开摆放，既符合阅读习惯，也便于观察自己阅读版图的构成。更细致的做法是按作者分类，...",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "消耗 <0.01%",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "min-w-0 truncate"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "消耗 <0.01%",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "radix-:r1pm:",
+      "kind": "ButtonControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "TextControl",
+      "class": "\n        shrink-0 self-center text-14 leading-20 whitespace-nowrap\n        text-dbx-text-secondary\n        ml-14\n      "
+    },
+    {
+      "depth": 23,
+      "name": "今天 00:27",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 21,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": " v_list_row"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative min-w-0 max-w-full container-AsfIjW"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 24,
+      "name": "BORING 状态采集实验 P03。仅在本会话回复，不使用工具、不创建或修改文件、不访问网站。请写一篇约 3000 字的中文短文，主题是如何整理旅行行李，分成 25 个编号段落。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 21,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": " v_list_row"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative grid w-full grid-cols-[minmax(0,1fr)_auto]"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative z-0 max-w-full min-w-0"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 25,
+      "name": "我将依次完成两个实验：P02 为约 5000 字、30 段的《图书分类》短文；P03 为约 3000 字、25 段的《如何整理旅行行李》短文。以下均为本会话内生成的文本。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "SeparatorControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "P02 图书分类（30 段）",
+      "id": "",
+      "kind": "TextControl",
+      "class": "container-KCOKpE"
+    },
+    {
+      "depth": 25,
+      "name": "P02 图书分类（30 段）",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ListControl",
+      "class": "container-RLBpOb"
+    },
+    {
+      "depth": 25,
+      "name": "图书分类，表面上是给书找个摆放位置，实质上是给自己的知识建立秩序。书架上一本书的位置，决定你找到它的速度；而分类的方式，则决定你与这套知识相处的方式。一个合适的分类系统，能让几千册书像一张展开的地图，任何一条信息都能按图索骥。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "1. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "图书分类，表面上是给书找个摆放位置，实质上是给自己的知识建立秩序。书架上一本书的位置，决定你找到它的速度；而分类的方式，则决定你与这套知识相处的方式。一个合适的分类系统，能让几千册书像一张展开的地图，任何一条信息都能按图索骥。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "分类的念头古已有之。亚历山大图书馆的馆员们就曾按题材将莎草纸卷分成哲学、历史、医学等大类；中国汉代刘向、刘歆父子编撰《七略》，把当时可见的典籍分为六大类。这些早期尝试证明，只要藏书超过一定规模，分类就不再是爱好，而是刚需。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "2. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "分类的念头古已有之。亚历山大图书馆的馆员们就曾按题材将莎草纸卷分成哲学、历史、医学等大类；中国汉代刘向、刘歆父子编撰《七略》，把当时可见的典籍分为六大类。这些早期尝试证明，只要藏书超过一定规模，分类就不再是爱好，而是刚需。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "近代最著名的分类体系是杜威十进制图书分类法。它将全部知识分为十个大类，每类再以十进制的层级细分，用三位数字加小数点的编号为每本书定位。杜威体系的伟大之处在于它的可扩展性：图书馆可以只用到一级编号，也可以深入到小数点后好几位。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "3. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "近代最著名的分类体系是杜威十进制图书分类法。它将全部知识分为十个大类，每类再以十进制的层级细分，用三位数字加小数点的编号为每本书定位。杜威体系的伟大之处在于它的可扩展性：图书馆可以只用到一级编号，也可以深入到小数点后好几位。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "另一套影响深远的是美国国会图书馆分类法。它用二十多个拉丁字母代表大类，字母后再跟数字细分，专为大型学术图书馆设计。相比杜威体系，国会图书馆分类法的类目更精细、更贴合学术研究的实际需要，至今仍是北美高校图书馆的主流。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "4. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "另一套影响深远的是美国国会图书馆分类法。它用二十多个拉丁字母代表大类，字母后再跟数字细分，专为大型学术图书馆设计。相比杜威体系，国会图书馆分类法的类目更精细、更贴合学术研究的实际需要，至今仍是北美高校图书馆的主流。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "在中国，最通行的则是《中国图书馆分类法》。它以英文字母标记二十二个大类，从马克思主义理论、哲学，一直到自然科学与综合性图书。公共图书馆、高校图书馆和大多数单位图书馆，都以中图法的索书号作为藏书排列的基本依据。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "5. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "在中国，最通行的则是《中国图书馆分类法》。它以英文字母标记二十二个大类，从马克思主义理论、哲学，一直到自然科学与综合性图书。公共图书馆、高校图书馆和大多数单位图书馆，都以中图法的索书号作为藏书排列的基本依据。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "中图法的二十二大类各有归属：A 类为马克思主义、列宁主义等，B 类为哲学，C 至 K 类涵盖社会科学，N 至 X 类属于自然科学与工程技术，Z 类则是综合性图书。这套体系覆盖了人类知识的全部领域，也为中文世界的图书分类提供了统一语言。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "6. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "中图法的二十二大类各有归属：A 类为马克思主义、列宁主义等，B 类为哲学，C 至 K 类涵盖社会科学，N 至 X 类属于自然科学与工程技术，Z 类则是综合性图书。这套体系覆盖了人类知识的全部领域，也为中文世界的图书分类提供了统一语言。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "然而，专业图书馆的分类体系并不适合直接照搬到家庭书架。公共图书馆的服务对象是成千上万互不相识的读者，而个人藏书只为一人服务。你的书架不需要照顾陌生人的检索习惯，只需要让自己找书够快、放回够顺。因此，个人分类应当另起炉灶。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "7. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "然而，专业图书馆的分类体系并不适合直接照搬到家庭书架。公共图书馆的服务对象是成千上万互不相识的读者，而个人藏书只为一人服务。你的书架不需要照顾陌生人的检索习惯，只需要让自己找书够快、放回够顺。因此，个人分类应当另起炉灶。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "个人图书分类的第一原则，是按自己的使用方式来分，而不是按学科逻辑来分。一个法律从业者的书架，未必需要哲学与法律并列；一个科幻爱好者，也不必把科幻小说拆散到各国文学类目里。分类是工具，工具要适应使用者，而不是反过来。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "8. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "个人图书分类的第一原则，是按自己的使用方式来分，而不是按学科逻辑来分。一个法律从业者的书架，未必需要哲学与法律并列；一个科幻爱好者，也不必把科幻小说拆散到各国文学类目里。分类是工具，工具要适应使用者，而不是反过来。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "分类之前，先做一次彻底清点。把所有书从书架搬出，摊开统计总数，同时把散落在床头、书桌、包里、单位的书都归拢到一起。清点的意义不只是数字，更是让你直面 “我到底拥有多少书” 这一事实，为后续的取舍与规划提供依据。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "9. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "分类之前，先做一次彻底清点。把所有书从书架搬出，摊开统计总数，同时把散落在床头、书桌、包里、单位的书都归拢到一起。清点的意义不只是数字，更是让你直面 “我到底拥有多少书” 这一事实，为后续的取舍与规划提供依据。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "清点之后，通常要经历一轮淘汰。读后不再想留的、内容过时的工具书、买来从未翻开且确定不会再翻的书，都可以处理掉。图书分类的效率，很大程度上取决于藏书的 “质量密度”；书越少越精，分类越轻快，找书越快。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "10. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "清点之后，通常要经历一轮淘汰。读后不再想留的、内容过时的工具书、买来从未翻开且确定不会再翻的书，都可以处理掉。图书分类的效率，很大程度上取决于藏书的 “质量密度”；书越少越精，分类越轻快，找书越快。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "个人分类最简单实用的起点，是先把书分成虚构与非虚构两大类。虚构类包括小说、诗歌、戏剧，非虚构类则是历史、科学、传记、随笔等一切讲述真实世界的书。这一步就把最常困扰人的 “这本书放哪” 问题切掉了一半。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "11. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "个人分类最简单实用的起点，是先把书分成虚构与非虚构两大类。虚构类包括小说、诗歌、戏剧，非虚构类则是历史、科学、传记、随笔等一切讲述真实世界的书。这一步就把最常困扰人的 “这本书放哪” 问题切掉了一半。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "虚构类图书的再细分，常见做法是按作者或国别。如果藏书中某位作家作品特别多，可以为他单独设一格；其余按国别文学排列，比如中国文学、日本文学、欧美文学。多数读者寻找小说时，记住的是作者与书名，因此这类分法最贴近使用习惯。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "12. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "虚构类图书的再细分，常见做法是按作者或国别。如果藏书中某位作家作品特别多，可以为他单独设一格；其余按国别文学排列，比如中国文学、日本文学、欧美文学。多数读者寻找小说时，记住的是作者与书名，因此这类分法最贴近使用习惯。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "非虚构类则可以按主题继续拆。历史、哲学、心理学、经济、科技、艺术、生活等，每一大类占据书架的一层或一格。主题分类的好处是，当你研究某个方向时，相关书籍聚集在一处，浏览与比对都非常方便。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "13. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "非虚构类则可以按主题继续拆。历史、哲学、心理学、经济、科技、艺术、生活等，每一大类占据书架的一层或一格。主题分类的好处是，当你研究某个方向时，相关书籍聚集在一处，浏览与比对都非常方便。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "另一套在个人书架上很管用的逻辑，是按阅读状态分类：正在读、打算读、已经读。把待读书目放在最顺手的位置，把已读的书移到次层，能有效避免 “书架上永远堆着永远没读的旧书” 的困境。阅读状态会随时间变化，因此这类分类需要定期维护。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "14. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "另一套在个人书架上很管用的逻辑，是按阅读状态分类：正在读、打算读、已经读。把待读书目放在最顺手的位置，把已读的书移到次层，能有效避免 “书架上永远堆着永远没读的旧书” 的困境。阅读状态会随时间变化，因此这类分类需要定期维护。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "按功能分类同样值得考虑。工具书、字典、手册、菜谱这类 “查一下就用” 的书，应与通读类图书分开存放，最好放在固定、好取的位置。把工具书混进普通书架，每次查阅都要凭记忆翻找，会大大降低使用频率。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "15. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "按功能分类同样值得考虑。工具书、字典、手册、菜谱这类 “查一下就用” 的书，应与通读类图书分开存放，最好放在固定、好取的位置。把工具书混进普通书架，每次查阅都要凭记忆翻找，会大大降低使用频率。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "也有不少人偏好纯粹的 “作者 — 书名” 排列法：先按作者姓氏拼音或笔画排序，同一作者再按书名排序。这种方法的优点是规则简单、无需判断主题，缺点是不利于主题浏览。它适合以小说和文集为主的藏书，且适合不喜欢做学科判断的人。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "16. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "也有不少人偏好纯粹的 “作者 — 书名” 排列法：先按作者姓氏拼音或笔画排序，同一作者再按书名排序。这种方法的优点是规则简单、无需判断主题，缺点是不利于主题浏览。它适合以小说和文集为主的藏书，且适合不喜欢做学科判断的人。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "分类的粒度需要拿捏。全部按学科细分到极致，会导致同一层书架出现大量空位和碎片，检索成本反而上升；分得太粗，又会回到 “所有书乱炖一锅” 的状态。一个可行的折中：大类不超过十个，每类之下只做一层子分类，够用即可。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "17. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "分类的粒度需要拿捏。全部按学科细分到极致，会导致同一层书架出现大量空位和碎片，检索成本反而上升；分得太粗，又会回到 “所有书乱炖一锅” 的状态。一个可行的折中：大类不超过十个，每类之下只做一层子分类，够用即可。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "开本与尺寸是家庭书架不得不面对的现实问题。大画册、精装本与口袋书混排，既不美观也浪费空间。可以在分类之外，把超大开本单独安置一层，把同尺寸的书集中排放，既整齐又能提高空间利用率。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "18. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "开本与尺寸是家庭书架不得不面对的现实问题。大画册、精装本与口袋书混排，既不美观也浪费空间。可以在分类之外，把超大开本单独安置一层，把同尺寸的书集中排放，既整齐又能提高空间利用率。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "书架层的分配要遵循 “上常下备” 的思路：视线与伸手可及的高度，留给最常读的书；顶层与底层，留给厚重画册或较少翻阅的藏书。常用书放在黄金位置，是让分类真正 “好用” 的最后一环。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "19. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "书架层的分配要遵循 “上常下备” 的思路：视线与伸手可及的高度，留给最常读的书；顶层与底层，留给厚重画册或较少翻阅的藏书。常用书放在黄金位置，是让分类真正 “好用” 的最后一环。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "每层书架最好只放一个主题，并在书架侧面贴标签。标签不必精美，手写即可，如 “历史”“科幻”“工具书”。它的作用是给你一个明确的归位坐标：还书时只要瞄一眼标签，就能在两秒内放回正确的位置。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "20. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "每层书架最好只放一个主题，并在书架侧面贴标签。标签不必精美，手写即可，如 “历史”“科幻”“工具书”。它的作用是给你一个明确的归位坐标：还书时只要瞄一眼标签，就能在两秒内放回正确的位置。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "如果藏书量较大，可以把书架分为常读区与存储区。常读区放在书房最方便的位置，容纳近两年会使用的书；存储区可以放在次卧、阁楼或柜顶，收纳读过的、暂不使用的书。两区之间定期流转，保持常读区始终精干。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "21. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "如果藏书量较大，可以把书架分为常读区与存储区。常读区放在书房最方便的位置，容纳近两年会使用的书；存储区可以放在次卧、阁楼或柜顶，收纳读过的、暂不使用的书。两区之间定期流转，保持常读区始终精干。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "电子书的分类同样值得认真对待。阅读器或阅读 App 的书架，应建立与纸质书一致的体系：按主题建文件夹或收藏夹，按阅读状态区分在读与未读。电子书最大的风险是 “买书如山倒，读书如抽丝”，分类恰好能帮你看见库存，倒逼阅读。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "22. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "电子书的分类同样值得认真对待。阅读器或阅读 App 的书架，应建立与纸质书一致的体系：按主题建文件夹或收藏夹，按阅读状态区分在读与未读。电子书最大的风险是 “买书如山倒，读书如抽丝”，分类恰好能帮你看见库存，倒逼阅读。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "数字书架的标签系统可以比物理书架更灵活。一本跨学科的著作可以同时贴上 “历史”“政治”“经典” 多个标签，而物理书架上它只能占一个位置。善用标签，等于在不增加书架的前提下扩展了检索维度。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "23. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "数字书架的标签系统可以比物理书架更灵活。一本跨学科的著作可以同时贴上 “历史”“政治”“经典” 多个标签，而物理书架上它只能占一个位置。善用标签，等于在不增加书架的前提下扩展了检索维度。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "纸质与电子藏书最好建立同步。同一本书的纸质版与电子版，可以在目录软件中合并为一条记录，注明版本与位置。这样你在查找 “我有没有这本书” 时，无论先打开书架还是先打开电脑，都能得到完整的答案。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "24. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "纸质与电子藏书最好建立同步。同一本书的纸质版与电子版，可以在目录软件中合并为一条记录，注明版本与位置。这样你在查找 “我有没有这本书” 时，无论先打开书架还是先打开电脑，都能得到完整的答案。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "登记工具并不复杂。一个电子表格，或一款图书管理软件，记录每本书的书名、作者、分类、位置与状态即可。扫描条形码录入是偷懒的好办法；登记的价值在于，藏书一旦超过两三百本，人的记忆就不再可靠，目录就成了唯一的权威。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "25. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "登记工具并不复杂。一个电子表格，或一款图书管理软件，记录每本书的书名、作者、分类、位置与状态即可。扫描条形码录入是偷懒的好办法；登记的价值在于，藏书一旦超过两三百本，人的记忆就不再可靠，目录就成了唯一的权威。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "ISBN 是图书的身份证，也是分类与检索的天然索引。录入时保留 ISBN，日后想按版本、出版社或出版年份筛选，都能一键完成。对经常买书、转卖或赠送书籍的人来说，ISBN 记录还能帮助你随时掌握每本书的去向。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "26. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "ISBN 是图书的身份证，也是分类与检索的天然索引。录入时保留 ISBN，日后想按版本、出版社或出版年份筛选，都能一键完成。对经常买书、转卖或赠送书籍的人来说，ISBN 记录还能帮助你随时掌握每本书的去向。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "分类不是一次性工程，而是一项需要定期维护的日常制度。建议每半年做一次 “书架体检”：把常读区与存储区重新过一遍，处理新晋的闲置书，调整已经失效的分类。维护的目的是让分类系统始终反映当下的真实使用，而不是停留在三年前的设想。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "27. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "分类不是一次性工程，而是一项需要定期维护的日常制度。建议每半年做一次 “书架体检”：把常读区与存储区重新过一遍，处理新晋的闲置书，调整已经失效的分类。维护的目的是让分类系统始终反映当下的真实使用，而不是停留在三年前的设想。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "新书进门的流程应当固定。买回或收到新书后，先决定去留：立即要读的放进 “在读” 位；确定保留的，按分类找到位置当场归位；犹豫的放入待定区，限期一个月内做出决定。最忌讳的是把新书随手放在桌面上，让 “待分类” 的书慢慢长成一座小山。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "28. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "新书进门的流程应当固定。买回或收到新书后，先决定去留：立即要读的放进 “在读” 位；确定保留的，按分类找到位置当场归位；犹豫的放入待定区，限期一个月内做出决定。最忌讳的是把新书随手放在桌面上，让 “待分类” 的书慢慢长成一座小山。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "借出与归还的追踪是藏书者常忽略的一环。借出的书在目录中标注借出对象与日期；归还后及时销账。若书常被借出，不妨在扉页贴一张小卡片，记录借还历史。书一旦离开书架，分类系统就出现缺口，补齐这一环，你的书架秩序才真正闭环。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "29. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "借出与归还的追踪是藏书者常忽略的一环。借出的书在目录中标注借出对象与日期；归还后及时销账。若书常被借出，不妨在扉页贴一张小卡片，记录借还历史。书一旦离开书架，分类系统就出现缺口，补齐这一环，你的书架秩序才真正闭环。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "归根结底，图书分类的终极目的，不是把书架摆成图书馆的标本，而是让藏书成为随时可用的知识。一个好的分类系统，应当让你在三步之内找到任何一本书，也让你在放回时毫无犹豫。当你不再需要为找书而烦恼，书才真正回到它本来的角色 —— 为你的思考与生活服务。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "30. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "归根结底，图书分类的终极目的，不是把书架摆成图书馆的标本，而是让藏书成为随时可用的知识。一个好的分类系统，应当让你在三步之内找到任何一本书，也让你在放回时毫无犹豫。当你不再需要为找书而烦恼，书才真正回到它本来的角色 —— 为你的思考与生活服务。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "SeparatorControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "P03 如何整理旅行行李（25 段）",
+      "id": "",
+      "kind": "TextControl",
+      "class": "container-KCOKpE"
+    },
+    {
+      "depth": 25,
+      "name": "P03 如何整理旅行行李（25 段）",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ListControl",
+      "class": "container-RLBpOb"
+    },
+    {
+      "depth": 25,
+      "name": "整理行李的功夫，有一半在下手打包之前。出发前先花十分钟想清楚行程：几天、什么季节、什么场合、有没有徒步或正式晚宴。把行程写下来，所有物品的取舍就有了依据，而不是凭感觉把衣柜搬进行李箱。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "1. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "整理行李的功夫，有一半在下手打包之前。出发前先花十分钟想清楚行程：几天、什么季节、什么场合、有没有徒步或正式晚宴。把行程写下来，所有物品的取舍就有了依据，而不是凭感觉把衣柜搬进行李箱。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "一张清单是打包最可靠的锚点。把衣物、洗漱、电子、证件、药品逐项列出，装好一项划掉一项。清单的意义在于对抗遗忘与冗余：既不让你落下必需的物品，也防止你顺手塞进一堆根本用不上的东西。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "2. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "一张清单是打包最可靠的锚点。把衣物、洗漱、电子、证件、药品逐项列出，装好一项划掉一项。清单的意义在于对抗遗忘与冗余：既不让你落下必需的物品，也防止你顺手塞进一堆根本用不上的东西。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "选箱包要匹配行程。短途出差一个登机箱足够，长途多站则宜用托运大箱加随身背包的组合。轮子、拉杆、锁具的可靠性比品牌更重要；拉链箱比铝框箱轻便，软壳箱比硬壳箱更能 “装”，取舍全看你的旅行方式。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "3. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "选箱包要匹配行程。短途出差一个登机箱足够，长途多站则宜用托运大箱加随身背包的组合。轮子、拉杆、锁具的可靠性比品牌更重要；拉链箱比铝框箱轻便，软壳箱比硬壳箱更能 “装”，取舍全看你的旅行方式。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "分清托运与登机的边界，能避免大量麻烦。托运箱装液体、工具和重物；随身行李只放证件、电子设备、贵重物品与当日必需品。一旦航班延误或行李丢失，随身包就是你全部的家当，所以它必须自成一个完整的应急系统。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "4. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "分清托运与登机的边界，能避免大量麻烦。托运箱装液体、工具和重物；随身行李只放证件、电子设备、贵重物品与当日必需品。一旦航班延误或行李丢失，随身包就是你全部的家当，所以它必须自成一个完整的应急系统。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "卷衣法是节省空间的第一技巧。将 T 恤、长裤、衬衫沿纵向卷成紧实的圆筒，比平铺叠放至少节省三成空间，还能减少褶皱。卷之前把衣物抚平，卷得越紧实，行李箱的缝隙就填得越满。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "5. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "卷衣法是节省空间的第一技巧。将 T 恤、长裤、衬衫沿纵向卷成紧实的圆筒，比平铺叠放至少节省三成空间，还能减少褶皱。卷之前把衣物抚平，卷得越紧实，行李箱的缝隙就填得越满。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "分类打包袋是行李的隐形骨架。内衣一袋、袜子一袋、上衣一袋、洗漱一袋，每袋封口后码放。分类袋让翻找变得优雅：需要什么抽哪一袋，不必把整个行李箱翻个底朝天，回程时也更容易原样收回。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "6. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "分类打包袋是行李的隐形骨架。内衣一袋、袜子一袋、上衣一袋、洗漱一袋，每袋封口后码放。分类袋让翻找变得优雅：需要什么抽哪一袋，不必把整个行李箱翻个底朝天，回程时也更容易原样收回。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "鞋子要单独处理。每只鞋先塞入旧袜子或鞋撑保持形状，再装入鞋袋或浴帽，与衣物隔离。鞋子重且形状不规则，应贴着行李箱底部或侧壁码放，既不压衣物，也能利用一般衣物填不满的边角空间。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "7. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "鞋子要单独处理。每只鞋先塞入旧袜子或鞋撑保持形状，再装入鞋袋或浴帽，与衣物隔离。鞋子重且形状不规则，应贴着行李箱底部或侧壁码放，既不压衣物，也能利用一般衣物填不满的边角空间。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "洗漱用品走 “小瓶化” 路线。洗发水、沐浴露、护肤品分装进旅行小瓶，总量按天数估算，宁可少带不可多灌。液体一律装进防水收纳袋，防止托运途中的挤压泄漏毁掉整箱衣物。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "8. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "洗漱用品走 “小瓶化” 路线。洗发水、沐浴露、护肤品分装进旅行小瓶，总量按天数估算，宁可少带不可多灌。液体一律装进防水收纳袋，防止托运途中的挤压泄漏毁掉整箱衣物。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "电子设备的打包顺序是 “先线后机”。把所有充电线、充电头、耳机装进一个电子收纳包，再按设备分类。线材打结是行李混乱的头号来源，用魔术贴或橡皮筋把每根线单独束好，充电时才能不抓狂。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "9. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "电子设备的打包顺序是 “先线后机”。把所有充电线、充电头、耳机装进一个电子收纳包，再按设备分类。线材打结是行李混乱的头号来源，用魔术贴或橡皮筋把每根线单独束好，充电时才能不抓狂。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "证件与贵重物品永远放随身，且位置固定。护照、身份证、机票、银行卡、现金集中在一个贴身证件包里，每次使用后放回同一位置。这个 “固定位置” 的习惯，比任何防盗技巧都更能防止丢失。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "10. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "证件与贵重物品永远放随身，且位置固定。护照、身份证、机票、银行卡、现金集中在一个贴身证件包里，每次使用后放回同一位置。这个 “固定位置” 的习惯，比任何防盗技巧都更能防止丢失。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "药品按天数配好，并保留原包装与说明书。常用药、晕车药、肠胃药、创可贴分装小袋；有慢性病的旅行者应带足药量并随身一份、托运一份。跨境的特殊药品，提前确认目的地海关的规定。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "11. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "药品按天数配好，并保留原包装与说明书。常用药、晕车药、肠胃药、创可贴分装小袋；有慢性病的旅行者应带足药量并随身一份、托运一份。跨境的特殊药品，提前确认目的地海关的规定。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "衣物的数量遵循 “少而够用” 原则：上衣按天数减一、下装按行程减半、袜子内衣按天数加一备用。多数人旅行结束时的懊悔，不是带少了，而是带多了。两件可混搭的基本款，胜过五件只能单穿的花哨款。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "12. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "衣物的数量遵循 “少而够用” 原则：上衣按天数减一、下装按行程减半、袜子内衣按天数加一备用。多数人旅行结束时的懊悔，不是带少了，而是带多了。两件可混搭的基本款，胜过五件只能单穿的花哨款。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "叠穿是减少衣物的核心策略。基础层、中间层、外套三层结构，可以应对十度以上的温差变化。同一件外套配不同的内搭，视觉上就是不同的造型，行李却只多占一份空间。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "13. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "叠穿是减少衣物的核心策略。基础层、中间层、外套三层结构，可以应对十度以上的温差变化。同一件外套配不同的内搭，视觉上就是不同的造型，行李却只多占一份空间。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "内衣与袜子放在行李箱最容易拿到的地方，比如顶层或外侧袋。长途飞行或转机间隙想换一双袜子，不必掀开整箱衣物。小物件的大原则：越常取用，放得越浅。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "14. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "内衣与袜子放在行李箱最容易拿到的地方，比如顶层或外侧袋。长途飞行或转机间隙想换一双袜子，不必掀开整箱衣物。小物件的大原则：越常取用，放得越浅。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "打包的顺序是 “重下轻上”。书籍、鞋、洗漱包等重物贴着箱底和轮子一侧，衣物与轻软物件在上层。重心低，行李箱推行更稳，也不会在打开时因为头重脚轻而洒落一地。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "15. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "打包的顺序是 “重下轻上”。书籍、鞋、洗漱包等重物贴着箱底和轮子一侧，衣物与轻软物件在上层。重心低，行李箱推行更稳，也不会在打开时因为头重脚轻而洒落一地。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "外套和易皱衣物最后处理。厚外套可平铺在衣物最上层，利用箱盖的弧度盖住下方物品；西装或礼服则折叠放入干洗袋或防皱袋，尽量减少折叠次数。到达酒店后第一时间挂起，褶皱大多能自然恢复。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "16. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "外套和易皱衣物最后处理。厚外套可平铺在衣物最上层，利用箱盖的弧度盖住下方物品；西装或礼服则折叠放入干洗袋或防皱袋，尽量减少折叠次数。到达酒店后第一时间挂起，褶皱大多能自然恢复。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "雨具与应急物品放边袋。折叠伞、一次性雨衣、纸巾、湿巾、口罩放在行李箱外侧袋或随身包夹层，保证突发状况下不用开箱就能取到。应急物品的定位原则：不是为了常用，而是为了 “用时立刻有”。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "17. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "雨具与应急物品放边袋。折叠伞、一次性雨衣、纸巾、湿巾、口罩放在行李箱外侧袋或随身包夹层，保证突发状况下不用开箱就能取到。应急物品的定位原则：不是为了常用，而是为了 “用时立刻有”。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "随身登机包要遵守液体规则。单件液体不超过一百毫升，总量装入一个透明袋中，安检时单独取出。提前按规则打包，能让你在安检口免去现场翻箱倒柜的狼狈。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "18. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "随身登机包要遵守液体规则。单件液体不超过一百毫升，总量装入一个透明袋中，安检时单独取出。提前按规则打包，能让你在安检口免去现场翻箱倒柜的狼狈。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "压缩袋是厚衣物与羽绒的救星。将羽绒服、毛衣装入压缩袋抽掉空气，体积能减少一半以上。但压缩会加重褶皱，所以衬衫与易皱面料不宜压缩，只对蓬松的保暖衣物使用。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "19. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "压缩袋是厚衣物与羽绒的救星。将羽绒服、毛衣装入压缩袋抽掉空气，体积能减少一半以上。但压缩会加重褶皱，所以衬衫与易皱面料不宜压缩，只对蓬松的保暖衣物使用。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "行李箱不必塞到爆满，留出一成空余。空余空间既为旅途中的采购留位，也为回程收纳留出余地。塞得过满的箱子拉链容易爆开，而且回程时你多半会发现，东西只会比去时多，不会比去时少。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "20. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "行李箱不必塞到爆满，留出一成空余。空余空间既为旅途中的采购留位，也为回程收纳留出余地。塞得过满的箱子拉链容易爆开，而且回程时你多半会发现，东西只会比去时多，不会比去时少。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "随身包里要有 “当日生存层”：护照、手机、充电宝、水杯、一件薄外套、一点零食与纸巾。这六样东西构成旅行中最常用的小生态，无论飞机延误还是临时转场，你都不会陷入缺东少西的窘境。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "21. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "随身包里要有 “当日生存层”：护照、手机、充电宝、水杯、一件薄外套、一点零食与纸巾。这六样东西构成旅行中最常用的小生态，无论飞机延误还是临时转场，你都不会陷入缺东少西的窘境。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "贵重物品分散放置。现金分两处，信用卡与证件分开放，相机与电脑不集中在一个包里。分散放置不是不信任，而是降低单点损失的风险 —— 即便某个包被偷或丢失，你仍保有继续行程的基本能力。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "22. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "贵重物品分散放置。现金分两处，信用卡与证件分开放，相机与电脑不集中在一个包里。分散放置不是不信任，而是降低单点损失的风险 —— 即便某个包被偷或丢失，你仍保有继续行程的基本能力。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "回程打包时先处理 “新增物”。购物所得与纪念品单独装一袋，必要时用衣物包裹防磕碰；液体类如有新增，记得重新核对托运规则。回程最大的敌人是 “什么都想带回去”，出发前的清单在此刻再次派上用场。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "23. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "回程打包时先处理 “新增物”。购物所得与纪念品单独装一袋，必要时用衣物包裹防磕碰；液体类如有新增，记得重新核对托运规则。回程最大的敌人是 “什么都想带回去”，出发前的清单在此刻再次派上用场。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "给行李箱做一点身份标记。箱体挂上写有姓名与联系方式的行李牌，箱内也放一张同样的信息卡。行李牌被扯掉时，箱内信息卡就是找回的最后机会；颜色醒目的行李箱贴纸，也能让你在传送带上三秒认出自己的箱子。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "24. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "给行李箱做一点身份标记。箱体挂上写有姓名与联系方式的行李牌，箱内也放一张同样的信息卡。行李牌被扯掉时，箱内信息卡就是找回的最后机会；颜色醒目的行李箱贴纸，也能让你在传送带上三秒认出自己的箱子。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 25,
+      "name": "最后，出发前对着清单做一次最终检查：证件、机票、手机、充电器、钥匙、钱包这六样 “命根子” 逐一确认在手边。行李整理的终点不是箱子合上的那一刻，而是你站在门口、手里握着钥匙、心里确信 “该带的都带了” 的那份从容。此后旅途中的一切，都可以从容应对。",
+      "id": "",
+      "kind": "ListItemControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "25. ",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 27,
+      "name": "最后，出发前对着清单做一次最终检查：证件、机票、手机、充电器、钥匙、钱包这六样 “命根子” 逐一确认在手边。行李整理的终点不是箱子合上的那一刻，而是你站在门口、手里握着钥匙、心里确信 “该带的都带了” 的那份从容。此后旅途中的一切，都可以从容应对。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "SeparatorControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 25,
+      "name": "以上为 P02 与 P03 两篇短文全文，均在本次会话内直接生成，未调用任何工具，也未创建或修改任何文件。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "朗读",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": "size-18"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "消耗 0.01%",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "min-w-0 truncate"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "消耗 0.01%",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "radix-:r1qa:",
+      "kind": "ButtonControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "TextControl",
+      "class": "\n        shrink-0 self-center text-14 leading-20 whitespace-nowrap\n        text-dbx-text-secondary\n        ml-14\n      "
+    },
+    {
+      "depth": 23,
+      "name": "今天 00:32",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 21,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": " v_list_row"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative min-w-0 max-w-full container-AsfIjW"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 24,
+      "name": "BORING 状态采集实验 P04。请仅写一篇约 2500 字、20 段的中文短文，主题为整理照片的方法；仅本会话生成文字，不使用工具、不创建或修改文件、不访问网站。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "message-action-bar-raqbg0 flex flex-row w-full group relative justify-end -right-10"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "TextControl",
+      "class": "\n        shrink-0 self-center text-14 leading-20 whitespace-nowrap\n        text-dbx-text-secondary\n        mr-14\n      "
+    },
+    {
+      "depth": 24,
+      "name": "今天 01:22",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 21,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": " v_list_row"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative grid w-full grid-cols-[minmax(0,1fr)_auto]"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative z-0 max-w-full min-w-0"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative"
+    },
+    {
+      "depth": 25,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative overflow-hidden [overflow-x:clip] [overflow-y:clip] rounded-s-radius-s transition-colors iconOverflow-fy2D8x [border-radius:0px]"
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "pointer-events-none absolute inset-0 z-[10] box-border rounded-s-radius-s border-[1px] border-solid transition-all duration-300 ease-out border-transparent"
+    },
+    {
+      "depth": 26,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative"
+    },
+    {
+      "depth": 27,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative flex-row flex min-w-0 !items-start justify-between gap-[20px]"
+    },
+    {
+      "depth": 28,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "\n              relative grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)] items-start\n            "
+    },
+    {
+      "depth": 29,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "col-start-1 row-start-1 grid w-full grid-cols-[auto_minmax(0,1fr)] items-center [--thinking-icon-color:var(--dbx-text-40)] text-[color:var(--thinking-sweep-base,var(--dbx-text-60))]"
+    },
+    {
+      "depth": 30,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative col-start-2 row-start-1 w-full min-w-0"
+    },
+    {
+      "depth": 31,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "w-fit max-w-full min-w-0 truncate text-[14px] leading-[21px] font-[400]"
+    },
+    {
+      "depth": 32,
+      "name": "正在准备任务上下文",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 27,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute right-0 bottom-0 left-0 h-0"
+    },
+    {
+      "depth": 28,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute top-0 right-0 left-0"
+    },
+    {
+      "depth": 21,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "v_list_row"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "v_list_bottom_indicator-nnTzdE"
+    },
+    {
+      "depth": 18,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "bottom-center-button-dVN2oK max-dbx-xs:!bottom-0"
+    },
+    {
+      "depth": 19,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "bottom-primary-actions-b1uY6K"
+    },
+    {
+      "depth": 20,
+      "name": "",
+      "id": "to-bottom-button",
+      "kind": "GroupControl",
+      "class": "container-t76uxW to-bottom-button-ANxzJd hidden-cdwmlP loading-i3Fu5w"
+    },
+    {
+      "depth": 21,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": "loading-border-AcFju9"
+    },
+    {
+      "depth": 21,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": "icon-CZ9clO"
+    },
+    {
+      "depth": 17,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-y-0 left-12 z-10 gutter-v8GxSc"
+    },
+    {
+      "depth": 18,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative flex h-full w-316 items-center root-MSn2si"
+    },
+    {
+      "depth": 19,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative flex shrink-0 flex-col gap-8"
+    },
+    {
+      "depth": 20,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "relative h-2 shrink-0 cursor-pointer rounded-full transition-[width,background-color] duration-[80ms,80ms] ease-[cubic-bezier(0.4,0,0.2,1),ease] after:absolute after:-inset-y-4 after:left-0 after:w-32 bg-dbx-text-disable"
+    },
+    {
+      "depth": 20,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "relative h-2 shrink-0 cursor-pointer rounded-full transition-[width,background-color] duration-[80ms,80ms] ease-[cubic-bezier(0.4,0,0.2,1),ease] after:absolute after:-inset-y-4 after:left-0 after:w-32 bg-dbx-text-disable"
+    },
+    {
+      "depth": 20,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "relative h-2 shrink-0 cursor-pointer rounded-full transition-[width,background-color] duration-[80ms,80ms] ease-[cubic-bezier(0.4,0,0.2,1),ease] after:absolute after:-inset-y-4 after:left-0 after:w-32 bg-dbx-text-disable"
+    },
+    {
+      "depth": 20,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "relative h-2 shrink-0 cursor-pointer rounded-full transition-[width,background-color] duration-[80ms,80ms] ease-[cubic-bezier(0.4,0,0.2,1),ease] after:absolute after:-inset-y-4 after:left-0 after:w-32 bg-dbx-text-primary"
+    },
+    {
+      "depth": 20,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "relative h-2 shrink-0 cursor-pointer rounded-full transition-[width,background-color] duration-[80ms,80ms] ease-[cubic-bezier(0.4,0,0.2,1),ease] after:absolute after:-inset-y-4 after:left-0 after:w-32 bg-dbx-text-primary"
+    }
+  ]
+}

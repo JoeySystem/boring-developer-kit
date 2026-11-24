@@ -23,6 +23,30 @@ from controller_config.workflows import (
 )
 
 
+@pytest.fixture(autouse=True)
+def keep_hosts_until_deferred_deletes(monkeypatch):
+    """Keep each WorkflowHost alive until its finished jobs are deleted.
+
+    A finished HostActionJob calls deleteLater(). In the app the WorkflowHost
+    (its parent) lives as long as the window; here a host is a local and is
+    destroyed when the test returns, while that deferred delete is still queued.
+    The next event loop then deletes a job whose parent is gone and the process
+    segfaults (seen in full runs under load). Flush deferred deletes first.
+    """
+    from PySide6.QtCore import QCoreApplication, QEvent
+    hosts = []
+    original = WorkflowHost.__init__
+
+    def keep(self, *args, **kwargs):
+        original(self, *args, **kwargs)
+        hosts.append(self)
+
+    monkeypatch.setattr(WorkflowHost, "__init__", keep)
+    yield
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    hosts.clear()
+
+
 class FakeHostServices:
     platform = "darwin"
 

@@ -166,7 +166,12 @@ class FirmwarePackage:
                 f"固件包目标为 {self.hardware_id}，当前设备为 "
                 f"{snapshot.identity.get('hardware_id', 'unknown')}"
             )
-        if snapshot.compatibility.get("write") is not True:
+        if snapshot.maintenance_only:
+            if not snapshot.trust.is_authenticated or snapshot.connection_kind != "usb":
+                raise FirmwarePackageError("固件维护需要已认证的 USB 设备")
+            if self.source_kind != "official":
+                raise FirmwarePackageError("受限固件维护仅支持官方签名固件")
+        elif snapshot.compatibility.get("write") is not True:
             raise FirmwarePackageError("设备当前处于只读兼容状态，不能执行固件维护")
         features = snapshot.capabilities.get("features")
         limits = snapshot.capabilities.get("limits")

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from controller_config import __version__
-from controller_config.models import DeviceSnapshot
+from controller_config.models import DeviceSnapshot, _generation_digest
 from controller_config.protocol.contract import Contract, ContractError
 from controller_config.protocol.device_auth import (
     AUTH_CHALLENGE,
@@ -18,6 +18,9 @@ from controller_config.protocol.device_auth import (
     VerifiedDeviceCertificate,
 )
 from controller_config.protocol.framing import ERROR_FLAG, RESPONSE_FLAG, Frame, FrameError
+
+if TYPE_CHECKING:
+    from controller_config.config_cache import DeviceConfigCache
 
 
 ACK = 0x7E
@@ -53,6 +56,22 @@ class BootstrapError(RuntimeError):
     def from_connection(cls, technical: str) -> "BootstrapError":
         return cls(BootstrapKind.READ_FAILED, "设备连接已中断", technical)
 
+    @classmethod
+    def command_dropped(cls, command_name: str, reason: str) -> "BootstrapError":
+        """A queued command that was discarded without being sent (A-04)."""
+        return cls(
+            BootstrapKind.READ_FAILED,
+            "命令未执行：设备连接已关闭",
+            f"{command_name} 在发送前被丢弃：{reason}",
+            error_name=COMMAND_DROPPED,
+        )
+
+
+# error_name for commands discarded before they reached the device. Their
+# callers learn the command did not run; configuration writes, firmware and
+# calibration keep being reconciled by the connection-loss handler instead.
+COMMAND_DROPPED = "CONNECTION_CLOSED"
+
 
 @dataclass(frozen=True)
 class Command:
@@ -77,8 +96,17 @@ class BootstrapSession:
         authenticator: DeviceAuthenticator | None = None,
         usb_serial: str = "",
         next_request_id: Callable[[], int] | None = None,
+        config_cache: "DeviceConfigCache | None" = None,
+        step_completed: Callable[[str, str], None] | None = None,
+        command_started: Callable[[str], None] | None = None,
     ) -> None:
         self._contract = contract
+        self._config_cache = config_cache
+        # (step, detail) after each accepted response, for connection timing.
+        self._step_completed = step_completed
+        # The name of each command as it is sent, for the connecting steps (design decision).
+        self._command_started = command_started
+        self._allow_config_maintenance = authenticator is not None and not port_name.startswith("ble:")
         self._port_name = port_name
         self._send = send
         self._completed = completed
@@ -112,6 +140,11 @@ class BootstrapSession:
         self._nonce = ""
         self._certificate: VerifiedDeviceCertificate | None = None
         self._trust: DeviceTrust | None = None
+        self._config_compatibility_error: BootstrapError | None = None
+        self._maintenance_error: BootstrapError | None = None
+        # "device" after a GET_CONFIG read, "cache" when HELLO's digest
+        # matched the configuration saved on this computer (SH-005).
+        self.config_source = ""
         self.finished = False
 
     @property
@@ -139,7 +172,9 @@ class BootstrapSession:
             payload = frame.json_payload()
             _validate_response(command, frame, payload)
             if command.name == "HELLO":
-                self._contract.validate_hello(payload)
+                self._contract.validate_hello(
+                    payload, allow_config_incompatible=self._allow_config_maintenance
+                )
                 result = payload["result"]
                 build = str(result["versions"].get("build_id", ""))
                 # These archived builds have a confirmed BTC authentication stack overflow.
@@ -156,12 +191,21 @@ class BootstrapSession:
                         error_name="ble_auth_stack_overflow",
                     )
                 compatibility = result["compatibility"]
-                if compatibility.get("read") is not True:
+                schema_incompatible = result["versions"]["schema_version"] != self._contract.schema_version
+                if schema_incompatible or compatibility.get("read") is not True:
                     reason = str(compatibility.get("reason", "device_read_not_supported"))
-                    raise BootstrapError(
+                    error = BootstrapError(
                         BootstrapKind.INCOMPATIBLE,
                         "这台设备与当前 BORING 控制台不兼容",
-                        reason,
+                        ("设备配置 schema 与客户端不兼容；" if schema_incompatible else "") + reason,
+                    )
+                    if not self._allow_config_maintenance:
+                        raise error
+                    self._config_compatibility_error = error
+                elif self._allow_config_maintenance and compatibility.get("write") is not True:
+                    self._config_compatibility_error = BootstrapError(
+                        BootstrapKind.READ_FAILED, "设备配置只读",
+                        str(compatibility.get("reason", "device_write_not_supported")),
                     )
             elif command.name == "GET_STATUS":
                 self._contract.validate_status(payload)
@@ -188,13 +232,39 @@ class BootstrapSession:
                     certificate=self._certificate,
                     nonce=self._nonce,
                 )
+            elif command.name == "FW_STATUS":
+                from controller_config.firmware_update import FirmwareStatus
+
+                status = FirmwareStatus.from_payload(payload)
+                hello_version = self._responses["HELLO"]["result"]["versions"]["firmware"]
+                if status.running_partition not in {"ota_0", "ota_1"}:
+                    raise ValueError("FW_STATUS running_partition 必须是 ota_0 或 ota_1")
+                if status.running_version != hello_version:
+                    raise ValueError("FW_STATUS running_version 与已认证 HELLO 版本不一致")
+                if status.rollback_pending is None:
+                    raise ValueError("FW_STATUS rollback_pending 必须是布尔值")
+                self._complete_maintenance()
+                return
             self._responses[command.name] = payload
+            if command.name == "GET_CONFIG":
+                self.config_source = "device"
+            self._report_step(command.name, f"{len(frame.payload_bytes)} bytes")
+            if command.name == "GET_STATUS" and self._use_cached_config():
+                self._report_step("GET_CONFIG", "skipped: cached config matches HELLO digest")
+                self._index += 1
+            if command.name == "AUTH_CHALLENGE" and self._config_compatibility_error is not None:
+                if self._begin_maintenance(self._config_compatibility_error):
+                    return
+                if self._config_compatibility_error.kind is BootstrapKind.INCOMPATIBLE:
+                    raise self._config_compatibility_error
             self._advance()
         except DeviceAuthenticationError as exc:
             self._finish_error(
                 BootstrapError(
                     BootstrapKind.AUTHENTICITY_FAILED,
-                    "无法确认这是 BORING 设备",
+                    ("当前固件未提供设备认证能力，请先恢复官方固件。"
+                     if exc.reason == "authentication_required"
+                     else "无法确认这是 BORING 设备"),
                     f"{exc.reason}: {exc}",
                     error_name=exc.reason,
                 )
@@ -204,6 +274,68 @@ class BootstrapSession:
         except (ContractError, FrameError, KeyError, TypeError, ValueError) as exc:
             kind = BootstrapKind.INCOMPATIBLE if command.name == "HELLO" else BootstrapKind.READ_FAILED
             self._finish_error(BootstrapError(kind, _message_for(kind), str(exc)))
+
+    def _report_step(self, step: str, detail: str) -> None:
+        if self._step_completed is not None:
+            self._step_completed(step, detail)
+
+    def _use_cached_config(self) -> bool:
+        """Answer GET_CONFIG from the local cache when the device's active
+        configuration is the one saved here. Only for an authenticated device
+        whose HELLO and GET_STATUS agree on the same generation and digest."""
+
+        following = self._index + 1
+        if (self._config_cache is None
+                or self._trust is None or not self._trust.is_authenticated
+                or not self._trust.serial
+                or self._config_compatibility_error is not None
+                or following >= len(self._commands)
+                or self._commands[following].name != "GET_CONFIG"):
+            return False
+        hello = self._responses["HELLO"]["result"]
+        revision = _generation_digest(hello.get("config"))
+        status = self._responses["GET_STATUS"].get("result", {})
+        if revision is None or _generation_digest(status.get("active")) != revision:
+            return False
+        result = self._config_cache.lookup(self._trust.serial, *revision)
+        if result is None:
+            return False
+        payload = {"command": "GET_CONFIG", "result": result}
+        try:
+            self._contract.validate_config_response(payload)
+            DeviceSnapshot.from_protocol(
+                hello=self._responses["HELLO"],
+                status=self._responses["GET_STATUS"],
+                config=payload,
+                capabilities=self._responses["CAPABILITIES"],
+                port_name=self._port_name,
+                trust=self._trust,
+            )
+        except (ContractError, KeyError, TypeError, ValueError):
+            return False
+        self._responses["GET_CONFIG"] = payload
+        self.config_source = "cache"
+        return True
+
+    def expects_config_read(self) -> bool:
+        """Right after HELLO: will the configuration be read over the link this time?
+
+        The cache is keyed by the authenticated serial, and authentication only
+        passes when the certificate's serial is HELLO's (device_auth
+        _validate_identity), so HELLO's serial and config generation / digest
+        already say whether a saved copy exists. No copy: the read will happen.
+        A copy: it is skipped, unless GET_STATUS reports another revision in the
+        few seconds between (or the copy fails its checks); the worker then says
+        so when GET_CONFIG is sent (design decision, 单 design ticket)."""
+        if self._config_cache is None:
+            return True
+        hello = self._responses.get("HELLO", {}).get("result", {})
+        identity = hello.get("identity") if isinstance(hello, dict) else None
+        serial = identity.get("serial") if isinstance(identity, dict) else None
+        revision = _generation_digest(hello.get("config")) if isinstance(hello, dict) else None
+        if not isinstance(serial, str) or not serial or revision is None:
+            return True
+        return self._config_cache.lookup(serial, *revision) is None
 
     @property
     def authenticating_over_ble(self) -> bool:
@@ -238,7 +370,6 @@ class BootstrapSession:
     def _advance(self) -> None:
         self._index += 1
         if self._index >= len(self._commands):
-            self.finished = True
             try:
                 if self._trust is None:
                     raise ValueError("设备信任状态缺失")
@@ -251,13 +382,16 @@ class BootstrapSession:
                     trust=self._trust,
                 )
             except (KeyError, TypeError, ValueError) as exc:
-                self._failed(
-                    BootstrapError(BootstrapKind.READ_FAILED, "设备返回的配置不完整", str(exc))
-                )
+                error = BootstrapError(BootstrapKind.READ_FAILED, "设备返回的配置不完整", str(exc))
+                if not self._begin_maintenance(error):
+                    self._finish_error(error)
                 return
+            self.finished = True
             self._completed(snapshot)
             return
         self._request_id = self._next_request_id()
+        if self._command_started is not None:
+            self._command_started(self._commands[self._index].name)
         self._send(self._commands[self._index], self._request_id)
 
     def _prepare_authentication(self, payload: dict[str, Any]) -> None:
@@ -286,6 +420,9 @@ class BootstrapSession:
             self._trust = self._authenticator.trust_without_device_identity(
                 "CAPABILITIES.features.device_authentication is not true"
             )
+            if (self._config_compatibility_error is not None
+                    and self._config_compatibility_error.kind is BootstrapKind.INCOMPATIBLE):
+                raise self._config_compatibility_error
         self._commands.extend(
             (
                 Command("GET_STATUS", 0x13, {}),
@@ -297,8 +434,51 @@ class BootstrapSession:
         return (self._request_id % 0xFFFFFFFF) + 1
 
     def _finish_error(self, error: BootstrapError) -> None:
+        command = self.current_command
+        if command is not None and command.name in {"GET_STATUS", "GET_CONFIG"}:
+            if self._begin_maintenance(error):
+                return
+        if self._maintenance_error is not None:
+            error = BootstrapError(
+                error.kind, "设备固件维护协议不可用",
+                f"{self._maintenance_error}：{self._maintenance_error.technical}\n"
+                f"FW_STATUS 验证失败：{error.technical}",
+                error_name=error.error_name, details=error.details,
+            )
         self.finished = True
         self._failed(error)
+
+    def _begin_maintenance(self, error: BootstrapError) -> bool:
+        if (self._maintenance_error is not None or self._port_name.startswith("ble:")
+                or self._trust is None or not self._trust.is_authenticated):
+            return False
+        capabilities = self._responses.get("CAPABILITIES", {}).get("result", {})
+        features = capabilities.get("features", {})
+        limits = capabilities.get("limits", {})
+        if (features.get("firmware_update") is not True
+                or any(type(limits.get(key)) is not int or limits[key] <= 0
+                       for key in ("firmware_chunk_bytes", "firmware_image_bytes"))):
+            return False
+        self._maintenance_error = error
+        self._commands = [Command("FW_STATUS", 0x42, {}, timeout_ms=4000)]
+        self._index = -1
+        self._advance()
+        return True
+
+    def _complete_maintenance(self) -> None:
+        hello = self._responses["HELLO"]["result"]
+        assert self._trust is not None and self._maintenance_error is not None
+        error = self._maintenance_error
+        snapshot = DeviceSnapshot(
+            identity=dict(hello["identity"]), versions=dict(hello["versions"]),
+            compatibility=dict(hello["compatibility"]), hello_config=dict(hello["config"]),
+            status=dict(self._responses.get("GET_STATUS", {}).get("result", {})),
+            config_result={}, capabilities=dict(self._responses["CAPABILITIES"]["result"]),
+            port_name=self._port_name, trust=self._trust,
+            maintenance_reason=f"{error}：{error.technical}",
+        )
+        self.finished = True
+        self._completed(snapshot)
 
 
 class CommandSession:

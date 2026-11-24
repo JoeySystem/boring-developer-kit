@@ -1,6 +1,8 @@
 from PySide6.QtCore import QSettings
 
-from controller_config.voice_setup import save_voice_trial, voice_trial
+from controller_config.voice_setup import (
+    remove_voice_trial, save_voice_trial, voice_trial, voice_trial_state,
+)
 
 
 ACTION = {"type": "key_gesture", "usage": 104, "double_usage": 40}
@@ -21,3 +23,18 @@ def test_trial_is_retained_only_for_the_mapping_and_software_tried(tmp_path):
         assert voice_trial(reopened, serial, profile, control, action) is None
     reopened.setValue("ui/voice_input_software", "other")
     assert voice_trial(reopened, "device", 1, "key.8", ACTION) is None
+
+
+def test_trial_state_retains_stale_history_and_removes_only_exact_failure(tmp_path):
+    settings = QSettings(str(tmp_path / "voice.ini"), QSettings.IniFormat)
+    settings.setValue("ui/voice_input_software", "doubao")
+    save_voice_trial(settings, "device", 1, "key.8", ACTION, "doubao", "codex")
+
+    assert voice_trial_state(settings, "device", 1, "key.8", ACTION) == "valid"
+    changed = {**ACTION, "usage": 228}
+    assert voice_trial_state(settings, "device", 1, "key.8", changed) == "stale"
+    assert not remove_voice_trial(settings, "device", 1, "key.8", changed, "doubao")
+    assert voice_trial_state(settings, "device", 1, "key.8", ACTION) == "valid"
+
+    assert remove_voice_trial(settings, "device", 1, "key.8", ACTION, "doubao")
+    assert voice_trial_state(settings, "device", 1, "key.8", ACTION) == "none"

@@ -15,7 +15,7 @@ from controller_config.firmware_signature import sign_manifest, verify_manifest_
 import pytest
 from PySide6.QtCore import QObject, QTimer, QUrl
 from PySide6.QtNetwork import QNetworkReply
-from PySide6.QtWidgets import QApplication, QMessageBox, QProgressBar, QPushButton
+from PySide6.QtWidgets import QApplication, QFrame, QMessageBox, QPushButton
 
 from controller_config.firmware_release import (
     FirmwareReleaseError,
@@ -42,6 +42,8 @@ from controller_config.firmware_update import (
 from controller_config.transport.demo import DemoGateway, _power_v2_snapshot
 from controller_config.viewmodels.main import MainViewModel
 from controller_config.views.main_window import MainWindow
+from controller_config.views.ui import ProgressRingRow
+from notice_helpers import answer_dialogs
 
 
 # Test-only ephemeral authority; no production signing key is loaded by these tests.
@@ -291,7 +293,7 @@ def test_remote_auto_check_then_explicit_download_never_starts_device_update(
     assert "尚未向设备发送" in view_model.firmware_update.message
     assert not any(command.name.startswith("FW_") for command in gateway.commands)
 
-    view_model._finish_firmware_update(FirmwareUpdateState.COMPLETED, "verified")
+    view_model._firmware.finish(FirmwareUpdateState.COMPLETED, "verified")
     assert view_model.remote_firmware.state is RemoteFirmwareState.CURRENT
 
 
@@ -344,6 +346,7 @@ def test_remote_download_failure_keeps_release_for_explicit_retry(qtbot, contrac
 def test_firmware_page_offers_one_install_action_and_confirms_after_download(
     qtbot,
     contract,
+    monkeypatch,
 ) -> None:
     source = FakeReleaseSource()
     gateway = RecordingDemoGateway(contract, "ready")
@@ -365,23 +368,24 @@ def test_firmware_page_offers_one_install_action_and_confirms_after_download(
     assert window.findChild(QPushButton, "checkRemoteFirmware") is None
     install.click()
     source.download_progress.emit(512, 1024)
-    progress = window.findChild(QProgressBar, "remoteFirmwareProgress")
-    assert progress is not None and progress.value() == 50
+    progress = window.findChild(ProgressRingRow, "remoteFirmwareProgress")
+    assert progress is not None and progress.ring.value() == 50
 
-    def cancel_install() -> None:
-        dialog = QApplication.activeModalWidget()
-        assert isinstance(dialog, QMessageBox)
-        dialog.button(QMessageBox.Cancel).click()
+    def cancel_install(info) -> str:
+        assert set(info["buttons"].values()) == {"安装官方固件", "取消"}
+        return "cancel"
 
-    QTimer.singleShot(0, cancel_install)
+    answer_dialogs(monkeypatch, cancel_install)
     source.download_completed.emit(bundle)
-    window._confirm_downloaded_remote_firmware()
+    window._firmware_page.confirm_downloaded_remote_firmware()
     install = window.findChild(QPushButton, "startFirmwareUpdate")
     assert install is not None and install.text() == "安装最新版固件…"
+    assert not window.findChild(QPushButton, "firmwarePackageToggle").isChecked()
+    assert window.findChild(QFrame, "firmwarePackageCard").isHidden()
     assert not any(command.name.startswith("FW_") for command in gateway.commands)
 
 
-def test_remote_install_waits_for_usb_after_bluetooth_download(qtbot, contract) -> None:
+def test_remote_install_waits_for_usb_after_bluetooth_download(qtbot, contract, monkeypatch) -> None:
     source = FakeReleaseSource()
     gateway = RecordingDemoGateway(contract, "ready")
     view_model = MainViewModel(gateway, contract, firmware_release_source=source)
@@ -412,17 +416,12 @@ def test_remote_install_waits_for_usb_after_bluetooth_download(qtbot, contract) 
     assert not any(command.name.startswith("FW_") for command in gateway.commands)
     downloaded_package = view_model.firmware_update.package
 
-    def cancel_install() -> None:
-        dialog = QApplication.activeModalWidget()
-        assert isinstance(dialog, QMessageBox)
-        dialog.button(QMessageBox.Cancel).click()
-
-    QTimer.singleShot(0, cancel_install)
+    answer_dialogs(monkeypatch, lambda _info: "cancel")
     gateway.snapshot_ready.emit(replace(
         bluetooth_snapshot,
         port_name="/dev/cu.usbmodem-test",
     ))
-    window._confirm_downloaded_remote_firmware()
+    window._firmware_page.confirm_downloaded_remote_firmware()
     assert window.findChild(QPushButton, "startFirmwareUpdate").text() == "安装最新版固件…"
     assert window.findChild(QPushButton, "startFirmwareUpdate").isEnabled()
     assert view_model.firmware_update.package is downloaded_package
@@ -440,7 +439,7 @@ def test_remote_check_requires_a_write_compatible_device(qtbot, contract) -> Non
     view_model.start()
     qtbot.waitUntil(lambda: view_model.model.snapshot is not None, timeout=1000)
 
-    with pytest.raises(ValueError, match="可写兼容"):
+    with pytest.raises(ValueError, match="USB 固件维护"):
         view_model.check_remote_firmware()
     assert source.snapshots == []
 
@@ -484,6 +483,21 @@ def test_sample_channel_preserves_real_package_state_and_cannot_enter_stable(con
         _validate_release_manifest(bundle.manifest, snapshot)
     with pytest.raises(FirmwareReleaseError, match="渠道"):
         load_remote_firmware_bundle(bundle, contract)
+
+
+def test_sample_channel_does_not_offer_built_only_firmware_to_users(contract):
+    bundle = _bundle(contract, validation_state="built", git_dirty=True)
+    bundle.manifest.update(channel="sample", minimum_app_version="0.1.16")
+    _resign(bundle)
+
+    with pytest.raises(FirmwareReleaseError, match="实机验收") as failure:
+        _validate_release_manifest(
+            bundle.manifest,
+            _power_v2_snapshot(contract, read_only=False),
+            channel="sample",
+        )
+
+    assert failure.value.kind == "unpublished"
 
 
 @pytest.mark.parametrize(("field", "value", "error"), [
@@ -648,11 +662,15 @@ def test_signing_is_stable_across_json_formatting_and_does_not_mutate_input(cont
     verify_manifest_signature(roundtrip)
 
 
-def test_prepared_release_passes_real_online_validation_and_package_loader(contract, tmp_path, monkeypatch):
+@pytest.mark.skip(reason="依赖未公开的固件发布工具 prepare_online_firmware")
+def test_built_sample_cannot_be_prepared_online_but_remains_local_package(contract, tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "firmware" / "tools"))
     from prepare_online_firmware import prepare_online_firmware
+    from firmware_manifest import ManifestError
 
     bundle = _bundle(contract, validation_state="built", git_dirty=True)
+    bundle.manifest.update(channel="sample", minimum_app_version="0.1.16")
+    _resign(bundle)
     local_manifest = {key: value for key, value in bundle.manifest.items() if key != "signature"}
     source = tmp_path / "local-maintenance"
     source.mkdir()
@@ -664,24 +682,21 @@ def test_prepared_release_passes_real_online_validation_and_package_loader(contr
         serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
         serialization.NoEncryption(),
     ))
-    online_path = prepare_online_firmware(
-        local_path, tmp_path / "online", base_url="https://updates.example.test",
-        channel="sample", release_notes="签名发布工具到控制台集成",
-        private_key_file=key_path,
-    )
-    online = json.loads(online_path.read_text(encoding="utf-8"))
-    checked = _validate_release_manifest(
-        online, _power_v2_snapshot(contract, read_only=False), channel="sample",
-    )
-    package = load_remote_firmware_bundle(RemoteFirmwareBundle(
-        manifest=checked, image_data=(online_path.parent / checked["image"]).read_bytes(),
-        manifest_url="https://updates.example.test/firmware-manifest.json", channel="sample",
-    ), contract)
-    assert package.build_id == local_manifest["build_id"]
-    assert package.validation_state == "built"
-    # Manual local maintenance continues accepting pre-signature local packages.
+    with pytest.raises(ManifestError, match="sample requires validation_state=sample-verified"):
+        prepare_online_firmware(
+            local_path, tmp_path / "online", base_url="https://updates.example.test",
+            channel="sample", release_notes="签名发布工具到控制台集成",
+            private_key_file=key_path,
+        )
+    assert not (tmp_path / "online").exists()
+    with pytest.raises(FirmwareReleaseError, match="实机验收") as failure:
+        _validate_release_manifest(
+            bundle.manifest, _power_v2_snapshot(contract, read_only=False), channel="sample",
+        )
+    assert failure.value.kind == "unpublished"
+    # Developer-side local maintenance remains available for pre-acceptance packages.
     from controller_config.firmware_update import FirmwarePackage
-    assert FirmwarePackage.load(local_path, contract).build_id == package.build_id
+    assert FirmwarePackage.load(local_path, contract).build_id == local_manifest["build_id"]
 
 
 def remember_test_snapshot(vm, snapshot):

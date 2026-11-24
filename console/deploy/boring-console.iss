@@ -20,6 +20,8 @@ Compression=lzma2
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+; Qt 6.11 supports Windows 10 1809 (build 17763) or later, x86_64 only.
+MinVersion=10.0.17763
 PrivilegesRequired=lowest
 UsePreviousAppDir=yes
 UsePreviousTasks=yes

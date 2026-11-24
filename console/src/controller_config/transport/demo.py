@@ -4,6 +4,8 @@ import base64
 import copy
 import hashlib
 import json
+import os
+import time
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -18,6 +20,7 @@ from controller_config.lighting_preview import (
 )
 from controller_config.models import DeviceSnapshot, PortCandidate
 from controller_config.agent_status import AGENT_COMMANDS, SET_AGENT_STATUS, validate_states
+from controller_config import desktop_status_wire as desktop
 from controller_config.protocol.bootstrap import BootstrapError, BootstrapKind, Command
 from controller_config.protocol.contract import Contract, ContractError
 from controller_config.protocol.device_auth import DeviceTrust, DeviceTrustState
@@ -36,10 +39,28 @@ class DemoGateway(QObject):
     failure = Signal(object, str, str)
     disconnected = Signal(str)
 
-    def __init__(self, contract: Contract, demo_state: str, parent: QObject | None = None) -> None:
+    def __init__(
+        self,
+        contract: Contract,
+        demo_state: str,
+        parent: QObject | None = None,
+        *,
+        desktop_agent: bool | None = None,
+        desktop_navigation: bool = True,
+        clock=time.monotonic,
+    ) -> None:
         super().__init__(parent)
         self._contract = contract
         self._demo_state = demo_state
+        # The desktop status source is off unless asked for, so the default
+        # demo keeps the shared Power V2 fixture. BORING_DEMO_DESKTOP_AGENT=1
+        # turns it on (with encoder navigation) for runs without hardware.
+        if desktop_agent is None:
+            desktop_agent = os.environ.get("BORING_DEMO_DESKTOP_AGENT") == "1"
+        self._desktop_agent = desktop_agent
+        self._desktop_navigation = desktop_agent and desktop_navigation
+        self._desktop = _DemoDesktopAgent(clock)
+        self._desktop_poll: QTimer | None = None
         self._candidate = PortCandidate(
             port_name="demo://power-v2",
             description="BORING Power V2 fixture",
@@ -106,10 +127,108 @@ class DemoGateway(QObject):
                 self._snapshot,
                 versions={**self._snapshot.versions, **self._installed_firmware},
             )
+        if self._desktop_agent:
+            self._enable_desktop_agent()
         QTimer.singleShot(100, lambda: self.snapshot_ready.emit(self._snapshot))
+
+    # --- desktop Agent status source (protocol.md "Desktop Agent status source")
+
+    def _enable_desktop_agent(self) -> None:
+        """A NORMAL-mode device advertising the desktop source, polled like USB."""
+
+        snapshot = self._snapshot
+        features = {**snapshot.capabilities.get("features", {}),
+                    desktop.FEATURE_STATUS: True,
+                    desktop.FEATURE_NAVIGATION: self._desktop_navigation}
+        codex_micro = {**snapshot.status.get("codex_micro", {}), "status_age_ms": None}
+        # A new protocol session releases any lease; boot counters survive.
+        self._desktop.clear()
+        self._snapshot = replace(
+            snapshot,
+            capabilities={**snapshot.capabilities, "features": features},
+            status={**snapshot.status, "operating_mode": "normal", "codex_micro": codex_micro},
+        )
+        self._snapshot = replace(self._snapshot, status=self.desktop_status())
+        if self._desktop_poll is None:
+            self._desktop_poll = QTimer(self)
+            self._desktop_poll.setInterval(desktop.POLL_INTERVAL_MS)
+            self._desktop_poll.timeout.connect(self.poll_status)
+        self._desktop_poll.start()
+
+    def desktop_status(self, *, transport: str = "usb") -> dict[str, Any]:
+        """The GET_STATUS result as read now from `transport` (the demo is USB)."""
+
+        status = dict(self._snapshot.status) if self._snapshot is not None else {}
+        normal = status.get("operating_mode") == "normal"
+        status.update(self._desktop.readback(transport, normal=normal))
+        return status
+
+    def poll_status(self) -> None:
+        if self._snapshot is not None and self._desktop_agent:
+            self.status_updated.emit(self.desktop_status())
+
+    def simulate_desktop_press(self, agent: int) -> bool:
+        """A new down edge of Agent slot `agent` (0..5); False when not routed."""
+
+        return self._desktop.press(agent, normal=self._is_normal())
+
+    def simulate_desktop_rotation(self, direction: int) -> bool:
+        """One encoder step, +1 clockwise or -1; False when not consumed."""
+
+        return self._desktop.rotate(direction, normal=self._is_normal())
+
+    def simulate_operating_mode(self, mode: str) -> None:
+        if self._snapshot is None:
+            return
+        if mode != self._snapshot.status.get("operating_mode"):
+            self._desktop.release_keys()
+        self._snapshot = replace(self._snapshot, status={**self._snapshot.status, "operating_mode": mode})
+
+    def _is_normal(self) -> bool:
+        return self._snapshot is not None and self._snapshot.status.get("operating_mode") == "normal"
+
+    def _execute_desktop_command(self, command: Command) -> None:
+        snapshot = self._snapshot
+        is_set = command.name == SET_AGENT_STATUS
+
+        def reject(name: str, detail: str) -> None:
+            self.agent_status_failed.emit(command, BootstrapError(
+                BootstrapKind.READ_FAILED, "设备命令执行失败", f"{name}: {detail}", error_name=name))
+
+        if (snapshot is None or snapshot.is_read_only
+                or snapshot.capabilities.get("features", {}).get(desktop.FEATURE_STATUS) is not True):
+            reject("READ_ONLY", "desktop status requires a supported HELLO session")
+            return
+        try:
+            if is_set:
+                desktop.validate_set_request(command.payload)
+                if (command.payload.get(desktop.ENCODER_NAVIGATION)
+                        and snapshot.capabilities["features"].get(desktop.FEATURE_NAVIGATION) is not True):
+                    raise ValueError("encoder_navigation requires desktop_task_navigation")
+            else:
+                desktop.validate_clear_request(command.payload)
+        except ValueError as exc:
+            reject("VALIDATION_FAILED", str(exc))
+            return
+        if is_set and not self._is_normal():
+            reject("READ_ONLY", "desktop status requires Normal mode")
+            return
+        if is_set:
+            self._desktop.set(command.payload["states"], command.payload["completion_seq"],
+                              encoder_navigation=command.payload.get(desktop.ENCODER_NAVIGATION, False),
+                              transport="usb")
+        else:
+            self._desktop.clear()
+        QTimer.singleShot(20, self, lambda: self.agent_status_completed.emit(command, {
+            "command": command.name,
+            "result": {"source": desktop.SOURCE, "active": is_set, "lease_ms": desktop.LEASE_MS},
+        }))
 
     def execute_command(self, command: Command) -> None:
         snapshot = self._snapshot
+        if command.name in AGENT_COMMANDS and desktop.is_desktop(command):
+            self._execute_desktop_command(command)
+            return
         if command.name in AGENT_COMMANDS:
             try:
                 if snapshot is None or snapshot.is_read_only or snapshot.capabilities.get("features", {}).get("claude_code_status") is not True:
@@ -451,7 +570,7 @@ class DemoGateway(QObject):
             status = copy.deepcopy(snapshot.status)
             status["action_engine"] = {
                 **status.get("action_engine", {}),
-                "host_output_state": "local_ui",
+                "host_output_state": "diagnostic_capture",
             }
             capture = status.setdefault("diagnostic_capture", {})
             capture.update(
@@ -807,8 +926,9 @@ class DemoGateway(QObject):
             )
             return
 
-    def set_status_poll_interval(self, _interval_ms: int) -> None:
-        pass
+    def set_status_poll_interval(self, interval_ms: int) -> None:
+        if self._desktop_poll is not None:
+            self._desktop_poll.setInterval(max(100, interval_ms))
 
     def _emit_calibration_not_found(self, command_name: str) -> None:
         self.command_failed.emit(
@@ -828,6 +948,115 @@ class DemoGateway(QObject):
 
     def shutdown(self) -> None:
         self._lighting_preview = None
+        if self._desktop_poll is not None:
+            self._desktop_poll.stop()
+
+
+class _DemoDesktopAgent:
+    """Firmware-side model of the desktop source: lease, readback and input.
+
+    Mirrors protocol.md: a 5 s lease that only SET renews, `unknown` slots after
+    expiry or CLEAR, one latest key event kept for 2 s, an encoder snapshot,
+    and agent/transport hidden from readers on another transport.
+    """
+
+    def __init__(self, clock) -> None:
+        self._clock = clock
+        self._press_sequence = 0
+        self._nav_sequence = 0
+        self.clear()
+
+    def clear(self) -> None:
+        self._active = False
+        self._updated_at = 0.0
+        self._states = ["unknown"] * desktop.SLOTS
+        self._completion_seq = [0] * desktop.SLOTS
+        self._encoder_navigation = False
+        self._transport = "usb"
+        self.release_keys()
+
+    def release_keys(self) -> None:
+        self._press_agent: int | None = None
+        self._press_at = 0.0
+        self._nav_anchor_sequence = self._nav_sequence
+        self._nav_agent: int | None = None
+        self._nav_offset = 0
+        self._nav_at = 0.0
+        self._nav_valid = False
+
+    def _expire(self) -> float:
+        now = self._clock()
+        if self._active and (now - self._updated_at) * 1000 >= desktop.LEASE_MS:
+            self._active = False
+            self._states = ["unknown"] * desktop.SLOTS
+            self.release_keys()
+        return now
+
+    @staticmethod
+    def _next(sequence: int) -> int:
+        return sequence % desktop.UINT32_MAX + 1
+
+    def set(self, states, completion_seq, *, encoder_navigation: bool, transport: str) -> None:
+        now = self._expire()
+        if encoder_navigation != self._encoder_navigation:
+            self.release_keys()
+        self._completion_seq = [new if not self._active else max(old, new)
+                                for old, new in zip(self._completion_seq, completion_seq)]
+        self._states = list(states)
+        self._encoder_navigation = encoder_navigation
+        self._transport = transport
+        self._active = True
+        self._updated_at = now
+
+    def press(self, agent: int, *, normal: bool) -> bool:
+        now = self._expire()
+        if (not normal or not self._active or type(agent) is not int
+                or not 0 <= agent < desktop.SLOTS or self._states[agent] == "codex"):
+            return False
+        self._press_sequence = self._next(self._press_sequence)
+        self._press_agent, self._press_at = agent, now
+        if self._encoder_navigation:
+            self._nav_sequence = self._next(self._nav_sequence)
+            self._nav_anchor_sequence = self._nav_sequence
+            self._nav_agent, self._nav_offset, self._nav_at = agent, 0, now
+            self._nav_valid = True
+        return True
+
+    def rotate(self, direction: int, *, normal: bool) -> bool:
+        now = self._expire()
+        if not normal or not self._active or not self._encoder_navigation or direction not in (1, -1):
+            return False
+        self._nav_sequence = self._next(self._nav_sequence)
+        self._nav_offset = (self._nav_offset + direction) % desktop.SLOTS
+        self._nav_at = now
+        self._nav_valid = True
+        return True
+
+    def readback(self, reader: str, *, normal: bool) -> dict[str, Any]:
+        now = self._expire()
+        fresh = lambda at: (now - at) * 1000 < desktop.EVENT_LIFETIME_MS
+        owner = reader == self._transport
+        press_live = self._press_agent is not None and owner and fresh(self._press_at)
+        nav_live = self._nav_valid and owner and fresh(self._nav_at)
+        return {
+            desktop.STATUS_FIELD: {
+                "source": desktop.SOURCE, "active": self._active,
+                "selected": self._active and normal, "lease_ms": desktop.LEASE_MS,
+                "states": list(self._states), "completion_seq": list(self._completion_seq),
+                desktop.ENCODER_NAVIGATION: self._encoder_navigation,
+            },
+            desktop.PRESS_FIELD: {
+                "source": desktop.SOURCE, "sequence": self._press_sequence,
+                "agent": self._press_agent if press_live else None,
+                "transport": self._transport if press_live else None,
+            },
+            desktop.NAVIGATION_FIELD: {
+                "source": desktop.SOURCE, "sequence": self._nav_sequence,
+                "anchor_sequence": self._nav_anchor_sequence, "offset": self._nav_offset,
+                "agent": self._nav_agent if nav_live else None,
+                "transport": self._transport if nav_live else None,
+            },
+        }
 
 
 def _power_v2_snapshot(contract: Contract, *, read_only: bool) -> DeviceSnapshot:

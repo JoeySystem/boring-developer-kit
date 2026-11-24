@@ -1,8 +1,30 @@
 {
   "rules": [
     {
+      "message": "voice.verified_history",
+      "match": "上次已在 (.*?) 验证。这是上次成功的记录，不代表豆包的实时系统状态。"
+    },
+    {
+      "message": "voice.verified_target",
+      "match": "上次已在 (.*?) 验证"
+    },
+    {
       "message": "shortcut.pending_description",
       "match": "准备修改为 (.+)",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "shortcut.modifier_only_maybe_taken",
+      "match": "只录到了 (.+?)。另一个键可能被别的应用（比如豆包、输入法）占用了，先退出它再录。",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "shortcut.voice_key_modifier_only",
+      "match": "已录到 (.+?)。语音键单独用这个键就行；要是还按了别的键，可能被语音软件（比如豆包）先收走了，先退出它再录。",
       "translate": [
         1
       ]
@@ -440,6 +462,10 @@
     {
       "message": "status.010",
       "match": "^下一步：按下并松开按键 (\\d+)。$"
+    },
+    {
+      "message": "diagnostic.release_key",
+      "match": "^请松开按键 (\\d+)。$"
     },
     {
       "message": "status.011",
@@ -1650,6 +1676,43 @@
     {
       "match": "蓝牙名称需要 1–(\\d+) 个 UTF-8 字节",
       "message": "ble_name_byte_limit"
+    },
+    {
+      "message": "desktop_agents.active",
+      "match": "工作中，占用 (\\d+) 颗灯"
+    },
+    {
+      "message": "desktop_agents.press_problem",
+      "match": "上次按灯没有跳到对话：(.+)",
+      "translate": [
+        1
+      ]
+    },
+    {
+      "message": "desktop_agents.open_fallback",
+      "match": "没能自动打开这个对话，请在豆包里手动点开（([A-Za-z_]+)）"
+    },
+    {
+      "message": "desktop_agents.active_needs_accessibility",
+      "match": "工作中，占用 (\\d+) 颗灯；需要辅助功能权限才能按灯跳到对话"
+    },
+    {
+      "message": "build.dev_version",
+      "match": "(\\S+) 开发版（([^）]+)）· (\\d{8})",
+      "translate": [
+        2
+      ]
+    },
+    {
+      "message": "build.dev_version_undated",
+      "match": "(\\S+) 开发版（([^）]+)）",
+      "translate": [
+        2
+      ]
+    },
+    {
+      "message": "desktop_agents.detail",
+      "match": "技术信息：(.*)"
     }
   ]
 }

@@ -12,10 +12,13 @@ import plistlib
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
 from typing import Any, Callable
+
+from controller_config.program_path import program_executable
 
 
 BASE_EVENTS = (
@@ -29,6 +32,21 @@ MINIMUM_VERSION = (2, 1, 63)
 STOP_FAILURE_VERSION = (2, 1, 78)
 EXEC_ARGS_VERSION = (2, 1, 139)
 OWNER_AWARE_CONSOLE_VERSION = (0, 1, 52)
+# Claude desktop runs hooks from the same settings file with its own bundled,
+# auto-updated Claude Code; no CLI is needed (code.claude.com/docs/en/desktop).
+# Without a readable CLI version, write for that current copy: exec form and
+# StopFailure (BORING research task §2.2, §4 a).
+NO_CLI_NOTE = "未检测到 Claude Code 命令行；按 Claude 桌面端内置版本写入 Hooks。"
+UNKNOWN_VERSION_NOTE = "未能确认命令行版本；按 Claude 桌面端内置版本写入 Hooks。"
+DANGLING_LINK_PROBLEM = "Claude 设置文件是失效的链接（指向的文件不存在）；未修改原设置。"
+MISSING_TARGET_WARNING = (
+    "状态灯失效：Claude 设置里记录的 BORING Console 位置已不存在（可能移动或删除过），"
+    "灯不会亮。点「修复状态灯」改为当前位置。"
+)
+ELSEWHERE_NOTE = (
+    "Claude 设置里的状态灯指向另一份 BORING Console；"
+    "那份被移走或删除后灯会失效。点「修复状态灯」改为当前这份。"
+)
 
 _DEFAULT_OWNER_ID = "com.boring.controller-config"
 _DEFAULT_ORIGIN = "official"
@@ -44,6 +62,14 @@ class ClaudeHookInspection:
     events: tuple[str, ...]
     problem: str = ""
     note: str = ""
+    # H20: installed Hooks whose program no longer exists (Console moved or
+    # deleted), or that start another copy of Console than this one.
+    missing_targets: tuple[str, ...] = ()
+    points_elsewhere: bool = False
+
+    @property
+    def needs_repair(self) -> bool:
+        return self.installed and (bool(self.missing_targets) or self.points_elsewhere)
 
 
 def default_endpoint_path() -> Path:
@@ -84,22 +110,70 @@ def _host_platform() -> str:
     return "linux"
 
 
+def _node_version_key(path: Path) -> tuple[int, ...]:
+    # .../node/v22.11.0/bin/claude -> (22, 11, 0); unknown names sort last.
+    match = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", path.parent.parent.name)
+    return tuple(int(part) for part in match.groups()) if match else ()
+
+
+def _cli_candidates() -> list[Path]:
+    """Usual CLI locations, for apps started outside a login shell.
+
+    Finder (and the Start menu) do not load the shell profile, so npm, nvm,
+    Volta or Bun installs are not on PATH there (Console review M25).
+    """
+
+    home = Path.home()
+    if sys.platform == "win32":
+        appdata = Path(os.environ.get("APPDATA", str(home / "AppData/Roaming")))
+        candidates = [home / ".local/bin/claude.exe", appdata / "npm/claude.cmd"]
+        for variable in ("NVM_SYMLINK", "VOLTA_HOME"):
+            if os.environ.get(variable):
+                base = Path(os.environ[variable])
+                candidates.append(base / ("bin/claude.cmd" if variable == "VOLTA_HOME"
+                                          else "claude.cmd"))
+        candidates.append(Path(os.environ.get("ProgramFiles", "C:/Program Files"))
+                          / "nodejs/claude.cmd")
+        return candidates
+    nvm_dir = Path(os.environ.get("NVM_DIR", str(home / ".nvm")))
+    nvm = sorted(nvm_dir.glob("versions/node/*/bin/claude"), key=_node_version_key,
+                 reverse=True)
+    return [
+        home / ".local/bin/claude",
+        home / ".claude/local/claude",
+        *nvm,
+        home / ".volta/bin/claude",
+        home / ".npm-global/bin/claude",
+        home / ".bun/bin/claude",
+        home / "Library/pnpm/claude",
+        home / ".local/share/pnpm/claude",
+        Path("/opt/homebrew/bin/claude"),
+        Path("/usr/local/bin/claude"),
+    ]
+
+
+def _probe_environment(executable: str) -> dict[str, str]:
+    # npm/nvm installs are `#!/usr/bin/env node` scripts: let them find the
+    # node next to them (nvm, Volta) or in the usual Homebrew locations.
+    env = dict(os.environ)
+    extra = [str(Path(executable).parent)]
+    if sys.platform != "win32":
+        extra += ["/opt/homebrew/bin", "/usr/local/bin"]
+    env["PATH"] = os.pathsep.join([*extra, env.get("PATH", "")])
+    return env
+
+
 def _detect_claude() -> tuple[str | None, str | None, str]:
     executable = shutil.which("claude")
     if executable is None:
-        # Finder-launched apps do not inherit the user's interactive-shell PATH.
-        candidates = (Path.home() / ".local/bin/claude", Path("/opt/homebrew/bin/claude"),
-                      Path("/usr/local/bin/claude")) if sys.platform != "win32" else (
-            Path.home() / ".local/bin/claude.exe",
-            Path(os.environ.get("APPDATA", str(Path.home()))) / "npm/claude.cmd",
-        )
-        executable = next((str(path) for path in candidates if path.is_file()), None)
+        executable = next((str(path) for path in _cli_candidates() if path.is_file()), None)
     if executable is None:
-        return None, None, "未找到本机 Claude Code；请先安装并确认 claude --version 可运行。"
+        return None, None, NO_CLI_NOTE
     try:
         result = subprocess.run([executable, "--version"], stdin=subprocess.DEVNULL,
                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                timeout=2, check=False, text=True)
+                                timeout=2, check=False, text=True,
+                                env=_probe_environment(executable))
         match = re.search(r"(?<!\d)(\d+\.\d+\.\d+)(?!\d)", result.stdout)
         if result.returncode != 0 or match is None:
             return executable, None, "无法读取 Claude Code 版本。"
@@ -110,6 +184,10 @@ def _detect_claude() -> tuple[str | None, str | None, str]:
 
 def _version_tuple(version: str) -> tuple[int, ...]:
     return tuple(int(part) for part in version.split("."))
+
+
+def _supports(version: str | None, feature: tuple[int, ...]) -> bool:
+    return version is None or _version_tuple(version) >= feature
 
 
 def _installed_official_builds() -> tuple[tuple[str | None, str | None], ...]:
@@ -187,6 +265,7 @@ def _requires_owner_aware_official_upgrade(
 
 def _read_object(path: Path) -> dict[str, Any]:
     if not path.exists():
+        _write_target(path)  # refuses a dangling link before any write
         return {}
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
@@ -194,13 +273,29 @@ def _read_object(path: Path) -> dict[str, Any]:
     return data
 
 
+def _write_target(path: Path) -> Path:
+    # A symlinked settings.json (dotfiles repo) is written through: replacing
+    # the link itself would detach it from the user's real file (M25).
+    if not path.is_symlink():
+        return path
+    if not path.exists():
+        raise ValueError(DANGLING_LINK_PROBLEM)
+    return path.resolve()
+
+
 def _write_object(path: Path, data: dict[str, Any]) -> None:
+    path = _write_target(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             json.dump(data, handle, indent=2, ensure_ascii=False)
             handle.write("\n")
+        try:
+            # mkstemp creates 0600; keep the permissions the user had.
+            os.chmod(temporary, stat.S_IMODE(os.stat(path).st_mode))
+        except FileNotFoundError:
+            pass
         os.replace(temporary, path)
     finally:
         if os.path.exists(temporary):
@@ -218,17 +313,19 @@ def _launcher_args(endpoint: Path, *, frozen: bool | None = None) -> list[str]:
     if frozen is None:
         frozen = bool(getattr(sys, "frozen", False) or "__compiled__" in globals())
     if frozen:
-        return [sys.executable, "--claude-status-hook", str(endpoint)]
+        # Nuitka's sys.executable names a missing "python" next to the
+        # program; Claude must start the real binary (the firmware owner 11-16).
+        return [program_executable(), "--claude-status-hook", str(endpoint)]
     # Absolute script path also works when Claude's project cwd differs from the
     # source checkout. This module has no package-relative imports or Qt startup.
     return [sys.executable, str(Path(__file__).with_name("claude_hook.py")),
             "--endpoint", str(endpoint)]
 
 
-def _handler(endpoint: Path, version: str, host_platform: str) -> dict[str, Any]:
+def _handler(endpoint: Path, version: str | None, host_platform: str) -> dict[str, Any]:
     args = _launcher_args(endpoint)
     result: dict[str, Any] = {"type": "command", "timeout": 2}
-    if _version_tuple(version) >= EXEC_ARGS_VERSION:
+    if _supports(version, EXEC_ARGS_VERSION):
         result.update(command=args[0], args=args[1:])
     else:
         # <=2.1.138 command hooks run through sh / Git Bash (native Windows),
@@ -238,6 +335,35 @@ def _handler(endpoint: Path, version: str, host_platform: str) -> dict[str, Any]
             args = [value.replace("\\", "/") for value in args]
         result["command"] = shlex.join(args)
     return result
+
+
+def _handler_targets(handler: dict[str, Any]) -> tuple[str, ...]:
+    """Files a BORING handler must find to run: interpreter/app, hook script."""
+
+    command = handler.get("command")
+    if not isinstance(command, str) or not command:
+        return ()
+    if "args" in handler:
+        args = handler["args"] if isinstance(handler["args"], list) else []
+        parts = [command, *(str(item) for item in args)]
+    else:
+        try:
+            parts = shlex.split(command)
+        except ValueError:
+            return ()
+    if not parts:
+        return ()
+    targets = [parts[0]]
+    if len(parts) > 1 and parts[1].endswith("claude_hook.py"):
+        targets.append(parts[1])
+    # Old shell-form hooks store Windows paths with forward slashes.
+    return tuple(os.path.normcase(os.path.normpath(target)) for target in targets)
+
+
+def _target_exists(target: str) -> bool:
+    # Only absolute paths can be checked without guessing Claude's PATH.
+    path = Path(target)
+    return not path.is_absolute() or path.exists()
 
 
 def _remove_recorded(settings: dict[str, Any], recorded: dict[str, Any]) -> None:
@@ -380,14 +506,17 @@ class ClaudeHookInstallation:
         return hooks
 
     def inspect(self) -> ClaudeHookInspection:
-        executable, version, problem = _detect_claude()
+        executable, version, detection_note = _detect_claude()
         host_platform = _host_platform()
+        problem = ""
         events = BASE_EVENTS
-        if version and _version_tuple(version) >= STOP_FAILURE_VERSION:
+        if _supports(version, STOP_FAILURE_VERSION):
             events += ("StopFailure",)
         if version and _version_tuple(version) < MINIMUM_VERSION:
             problem = "需要 Claude Code 2.1.63 或更新版本；当前版本未安装 Hooks。"
         installed = False
+        missing_targets: tuple[str, ...] = ()
+        points_elsewhere = False
         try:
             settings = _read_object(self.settings_path)
             hooks = _hook_groups(settings)
@@ -412,11 +541,28 @@ class ClaudeHookInstallation:
                     for handler in item.get("hooks", [])) for group in hooks.get(event, []))
                 for event, items in recorded.items() for item in items
             )
+            if installed:
+                current = _handler_targets(_handler(self.endpoint_path, version, host_platform))
+                recorded_targets = {
+                    target for handler in _recorded_handlers(recorded)
+                    for target in _handler_targets(handler)
+                }
+                missing_targets = tuple(sorted(
+                    target for target in recorded_targets if not _target_exists(target)
+                ))
+                points_elsewhere = not missing_targets and any(
+                    _handler_targets(handler) != current
+                    for handler in _recorded_handlers(recorded)
+                )
             if settings.get("disableAllHooks") is True or settings.get("allowManagedHooksOnly") is True:
                 problem = "Claude Code 设置禁用了用户 Hooks；BORING 不会修改此策略。"
         except (OSError, ValueError, TypeError) as error:
             problem = str(error)
         notes = ["开发中，待真实 Hook → USB → 灯光/震动联合验收。"]
+        if detection_note:
+            notes.append(detection_note)
+        if executable and not version:
+            notes.append(UNKNOWN_VERSION_NOTE)
         if version and _version_tuple(version) < STOP_FAILURE_VERSION:
             notes.append("此版本不支持 StopFailure；不会把普通工具失败误报为终止错误。")
         if host_platform == "windows-native":
@@ -425,13 +571,18 @@ class ClaudeHookInstallation:
             notes.append("WSL 链路未验证；仅连接本 WSL 的本地接收端，不转发到 Windows 控制台。")
         elif host_platform == "linux":
             notes.append("Linux 链路未验证。")
+        if missing_targets:
+            notes.append(MISSING_TARGET_WARNING)
+        elif points_elsewhere:
+            notes.append(ELSEWHERE_NOTE)
         return ClaudeHookInspection(executable, version, host_platform, installed, events,
-                                    problem, "\n".join(notes))
+                                    problem, "\n".join(notes), missing_targets,
+                                    points_elsewhere)
 
     def install(self) -> ClaudeHookInspection:
         inspection = self.inspect()
-        if inspection.problem or not inspection.version:
-            raise ValueError(inspection.problem or "无法确认 Claude Code 版本。")
+        if inspection.problem:
+            raise ValueError(inspection.problem)
         settings = _read_object(self.settings_path)
         previous = self._recorded()
         _remove_recorded(settings, previous)

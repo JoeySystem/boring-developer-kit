@@ -14,7 +14,8 @@ from controller_config.transport.demo import _power_v2_snapshot
 from controller_config.viewmodels.main import MainViewModel
 from controller_config.views.preferences_editor import PreferencesEditor
 from controller_config.i18n import LanguageManager
-from controller_config.appearance import V4_STYLE
+from controller_config.style.sheets import application_stylesheet
+from controller_config.views.settings_wall import WALL_STYLE
 from test_session_recovery import session
 from test_write_transaction import FakeWriteGateway, _ack, _active_status
 
@@ -50,7 +51,8 @@ def test_capability_selects_four_channels_or_legacy_without_creating_edits(qtbot
     if capability is True:
         assert all(widget.isChecked() for widget in editor._haptic_channels.values())
     else:
-        assert any("固件不支持" in label.text() for label in editor.findChildren(QLabel))
+        # The note moved into the read-only 震动说明 dialog (灯光页 v0.2 第 6 张).
+        assert any("固件不支持" in text for text in editor._haptic_help)
 
 
 def test_master_preserves_channels_and_encoder_edit_only_changes_encoder(qtbot, contract):
@@ -210,7 +212,10 @@ def test_channel_edits_use_existing_page_leave_save_flow(session, monkeypatch):
     vm.navigate("lighting")
     editor = window._content.findChild(PreferencesEditor)
     editor._haptic_channels["on_task"].setChecked(False)
-    monkeypatch.setattr(QMessageBox, "warning", lambda *_: QMessageBox.Save)
+    monkeypatch.setattr(
+        "controller_config.views.main_window.confirm_local_draft",
+        lambda *_: QMessageBox.Save,
+    )
     window._nav_buttons["settings"].click()
     assert vm.draft.config["haptic"]["on_task"] is False
     vm.navigate("lighting")
@@ -219,28 +224,32 @@ def test_channel_edits_use_existing_page_leave_save_flow(session, monkeypatch):
     assert not any(command.name in {"VALIDATE_CONFIG", "SET_CONFIG"} for command in gateway.commands)
 
 
-@pytest.mark.parametrize("language", ["zh_CN", "en_US"])
-@pytest.mark.parametrize("width", [320, 460])
-def test_haptic_card_translates_and_fits(qtbot, qapp, contract, tmp_path, language, width):
+@pytest.mark.parametrize("language", ["zh_CN", "en_US", "ja_JP"])
+def test_opened_haptic_tile_translates_and_fits(qtbot, qapp, contract, tmp_path, language):
+    """震动 opened two cells wide holds every switch (灯光页 v0.2 第 2 张)."""
     manager = LanguageManager(qapp, initial_language=language, persist=False)
     editor = editor_for(qtbot, contract, snapshot_for(contract))
+    editor.setStyleSheet(application_stylesheet() + WALL_STYLE)
+    manager.retranslate_widget_tree(editor)
+    editor.show()
+    editor.open_tile(editor._haptic_card)
     card = editor._haptic_card
-    editor.layout().removeWidget(card)
-    card.setParent(None)
-    qtbot.addWidget(card)
-    card.setStyleSheet(V4_STYLE)
-    manager.retranslate_widget_tree(card)
-    card.resize(width, 650)
-    card.show()
     qtbot.wait(20)
-    assert card.width() == width
-    assert card.rect().contains(card.childrenRect())
-    if language == "en_US":
-        assert editor._haptic_channels["on_encoder"].text() == "Knob Feedback"
-        assert all("固件" not in label.text() for label in card.findChildren(QLabel))
-    for checkbox in card.findChildren(QCheckBox):
-        assert checkbox.width() >= checkbox.sizeHint().width()
-    for label in card.findChildren(QLabel, "hapticHelp"):
-        assert label.height() >= label.heightForWidth(label.width())
-    assert card.grab().save(str(tmp_path / f"haptic-{language}-{width}.png"))
+    names = [label.text() for label, _checkbox in editor._haptic_switches]
+    assert names == (
+        ["Key feedback", "Knob feedback", "Joystick feedback", "Task & timer alerts"]
+        if language == "en_US"
+        else ["キーの振動", "ノブの振動", "スティックの振動", "タスク／タイマー通知"] if language == "ja_JP"
+        else ["按键反馈", "旋钮反馈", "摇杆反馈", "任务与计时提醒"]
+    )
+    for label, checkbox in editor._haptic_switches:
+        for widget in (label, checkbox):
+            assert widget.isVisible()
+            for corner in (widget.rect().topLeft(), widget.rect().bottomRight()):
+                assert card.rect().contains(widget.mapTo(card, corner))
+        assert label.width() >= label.sizeHint().width()
+    editor._show_haptic_help()
+    help_labels = editor.window().findChildren(QLabel, "hapticHelp")
+    assert len(help_labels) == 3
+    assert card.grab().save(str(tmp_path / f"haptic-{language}.png"))
     manager.set_language("zh_CN")

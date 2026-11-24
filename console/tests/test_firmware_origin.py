@@ -96,7 +96,7 @@ def test_restoration_retry_dismiss_switch_and_exact_readback(qtbot, contract):
     assert gateway.commands[-1].name == 'FW_STATUS'
     # Exercise the existing post-reboot reconciliation, with no simulated physical flash.
     package=vm.firmware_update.package
-    vm._firmware_update=replace(vm.firmware_update,state=FirmwareUpdateState.WAITING_RECONNECT,target_partition='ota_1')
+    vm._firmware.replace_silently(replace(vm.firmware_update,state=FirmwareUpdateState.WAITING_RECONNECT,target_partition='ota_1'))
     gateway.snapshot_ready.emit(replace(snapshot, versions={**snapshot.versions,'firmware':package.version,'build_id':package.build_id}))
     gateway.command_completed.emit('FW_STATUS',_booted_status(package,rollback_pending=True))
     assert vm.firmware_update.state is FirmwareUpdateState.VERIFYING

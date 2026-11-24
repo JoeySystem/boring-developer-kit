@@ -1,7 +1,7 @@
 from dataclasses import replace
 
 from PySide6.QtCore import QEvent, QObject
-from PySide6.QtWidgets import QCheckBox, QMessageBox, QPushButton, QScrollArea
+from PySide6.QtWidgets import QCheckBox, QDialog, QMessageBox, QPushButton, QScrollArea
 
 from controller_config.transactions import ConfigTransaction, ConfigTransactionState
 from controller_config.views.preferences_editor import PreferencesEditor
@@ -13,20 +13,21 @@ from test_session_recovery import session
 def test_appearance_navigation_retains_editor_values_and_scroll(session, qtbot):
     window, vm, _, _, _ = session
     window.show()
+    window.resize(1100, 640)
     vm.navigate('lighting')
     editor = window._content.findChild(PreferencesEditor)
     editor._display_brightness.setValue(42)
-    left = editor.findChild(QScrollArea, 'lightingLeftScroll')
+    scroll = window._content.findChild(QScrollArea, 'settingsScroll')
     qtbot.wait(20)
-    left.verticalScrollBar().setValue(left.verticalScrollBar().maximum())
-    position = left.verticalScrollBar().value()
+    scroll.verticalScrollBar().setValue(scroll.verticalScrollBar().maximum())
+    position = scroll.verticalScrollBar().value()
     vm.navigate('prompts')
     assert not editor.isVisible()
     vm.navigate('lighting')
     qtbot.wait(20)
     assert window._content.findChild(PreferencesEditor) is editor
     assert editor.values()[2]['brightness'] == 42
-    assert left.verticalScrollBar().value() == position
+    assert scroll.verticalScrollBar().value() == position
 
 
 def test_same_page_refresh_has_no_detach_hide_or_show(session):
@@ -91,10 +92,15 @@ def test_discarded_edits_do_not_return_from_cache(session, monkeypatch):
     editor = window._content.findChild(PreferencesEditor)
     original = editor.values()
     editor._display_brightness.setValue(42)
+    # Only quitting asks about these edits; leaving the page keeps them in the draft.
     monkeypatch.setattr('controller_config.views.main_window.confirm_local_draft', lambda *_: QMessageBox.Discard)
-    window._navigate('settings')
-    window._navigate('lighting')
-    assert window._content.findChild(PreferencesEditor).values() == original
+    assert window._confirm_leave_page(for_exit=True)
+    # If quitting stops at a later check, the page is rebuilt from the draft, not the cache.
+    vm.navigate('settings')
+    vm.navigate('lighting')
+    rebuilt = window._content.findChild(PreferencesEditor)
+    assert rebuilt is not editor
+    assert rebuilt.values() == original
 
 
 def test_local_save_keeps_cached_editor_and_leave_stops_preview(session, monkeypatch):
@@ -114,23 +120,45 @@ def test_local_save_keeps_cached_editor_and_leave_stops_preview(session, monkeyp
 
 
 def test_advanced_editors_created_once_when_opened(session):
+    """屏幕图标 opens a dialog (灯光页 v0.2 第 6 张); its editors are made once."""
     window, vm, _, _, _ = session
     vm.navigate('lighting')
     editor = window._content.findChild(PreferencesEditor)
-    assert editor.findChild(ScreenIconEditor) is None
-    assert editor.findChild(ScreenGlyphEditor) is None
+    assert window.findChild(ScreenIconEditor) is None
+    assert window.findChild(ScreenGlyphEditor) is None
     toggle = editor.findChild(QPushButton, 'expandScreenIcons')
     toggle.click()
-    icon = editor.findChild(ScreenIconEditor)
+    icon = window.findChild(ScreenIconEditor)
     assert icon._transfer is vm.screen_icon
-    assert editor.findChild(ScreenGlyphEditor) is None
-    glyph_toggle = editor.findChild(QPushButton, 'expandScreenGlyphs')
+    assert window.findChild(ScreenGlyphEditor) is None
+    glyph_toggle = window.findChild(QPushButton, 'expandScreenGlyphs')
     glyph_toggle.click()
-    glyph = editor.findChild(ScreenGlyphEditor)
+    glyph = window.findChild(ScreenGlyphEditor)
     assert glyph._transfer is vm.screen_glyphs
+    dialog = window.findChild(QDialog, 'screenIconDialog')
+    dialog.reject()
     toggle.click()
-    toggle.click()
+    dialog.reject()
     vm.navigate('settings')
     vm.navigate('lighting')
-    assert window._content.findChild(ScreenIconEditor) is icon
-    assert window._content.findChild(ScreenGlyphEditor) is glyph
+    assert window.findChildren(ScreenIconEditor) == [icon]
+    assert window.findChildren(ScreenGlyphEditor) == [glyph]
+
+
+def test_discard_on_exit_shows_the_draft_even_if_exit_is_stopped_later(session, monkeypatch):
+    # Quitting asks about the lighting edits; 丢弃 is chosen, then a later check
+    # (say, a screen icon still uploading) keeps the window open. The page must show
+    # the draft right away, and leaving it must not bring the discarded edits back.
+    window, vm, gateway, snapshot, _ = session
+    vm.navigate('lighting')
+    editor = window._content.findChild(PreferencesEditor)
+    original = editor.values()
+    editor._display_brightness.setValue(42)
+    monkeypatch.setattr('controller_config.views.main_window.confirm_local_draft', lambda *_: QMessageBox.Discard)
+    assert window._confirm_leave_page(for_exit=True)
+    shown = window._content.findChild(PreferencesEditor)
+    assert shown is not editor and shown.values() == original
+    window._navigate('settings')
+    assert vm.page == 'settings'
+    assert tuple(vm.draft.config[key] for key in ('lighting', 'haptic', 'display')) == original
+    assert not any(command.name == 'SET_CONFIG' for command in gateway.commands)

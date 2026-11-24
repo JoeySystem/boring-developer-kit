@@ -24,6 +24,7 @@ from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequ
 
 from . import __version__
 from .desktop_update import DESKTOP_UPDATE_CHECK_INTERVAL_SECONDS, UpdateStatus
+from .program_path import program_executable
 
 _UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\{7D499724-C0AE-438B-93C1-59E2D01785D7}_is1"
 
@@ -40,14 +41,14 @@ def _version(value: str) -> tuple[int, int, int]:
 
 
 def _installed_directory() -> Path | None:
-    if sys.platform != "win32" or Path(sys.executable).name.lower() != "boring console.exe":
+    if sys.platform != "win32" or Path(program_executable()).name.lower() != "boring console.exe":
         return None
     import winreg
     for view in (winreg.KEY_WOW64_64KEY, winreg.KEY_WOW64_32KEY):
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _UNINSTALL_KEY, 0, winreg.KEY_READ | view) as key:
                 directory = Path(winreg.QueryValueEx(key, "InstallLocation")[0])
-            if directory.resolve() == Path(sys.executable).resolve().parent:
+            if directory.resolve() == Path(program_executable()).resolve().parent:
                 return directory
         except OSError:
             continue

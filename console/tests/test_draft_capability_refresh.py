@@ -29,7 +29,13 @@ def capability_session(qapp, contract, tmp_path):
         workflow_store=WorkflowStore(tmp_path / "workflows"),
         automation_store=AutomationStore(tmp_path / "automations"),
     )
+    # These tests start from firmware older than key_gesture; the current Power V2
+    # fixture lists it, so take it out here and let _with_gesture() add it back.
     snapshot = _power_v2_snapshot(contract, read_only=False)
+    assert "key_gesture" in snapshot.capabilities["actions"]
+    capabilities = copy.deepcopy(snapshot.capabilities)
+    capabilities["actions"].remove("key_gesture")
+    snapshot = replace(snapshot, capabilities=capabilities)
     gateway.snapshot_ready.emit(snapshot)
     yield vm, gateway, snapshot
     vm.shutdown()
@@ -39,6 +45,13 @@ def _with_gesture(snapshot):
     capabilities = copy.deepcopy(snapshot.capabilities)
     capabilities["actions"].append("key_gesture")
     return replace(snapshot, capabilities=capabilities)
+
+
+def _assert_no_config_write(gateway) -> None:
+    assert not any(
+        command.name in {"VALIDATE_CONFIG", "SET_CONFIG"}
+        for command in gateway.commands
+    )
 
 
 @pytest.mark.parametrize("dirty", [False, True])
@@ -69,7 +82,7 @@ def test_upgrade_refreshes_cached_capabilities_without_replacing_edits(
     assert "key_gesture" in {item.action_type for item in action_definitions(contract, draft.actions)}
     draft.set_mapping(snapshot.active_profile_id, "key.8", "语音", GESTURE)
     assert draft.validate(contract) == ()
-    assert gateway.commands == []
+    _assert_no_config_write(gateway)
 
 
 def test_upgrade_keeps_dirty_write_base_when_device_generation_changed(capability_session):
@@ -94,7 +107,7 @@ def test_upgrade_keeps_dirty_write_base_when_device_generation_changed(capabilit
     assert draft.base_generation == snapshot.config_result["generation"]
     assert draft.base_digest == snapshot.config_result["digest"]
     assert "key_gesture" in draft.actions
-    assert gateway.commands == []
+    _assert_no_config_write(gateway)
 
 
 def test_downgrade_retains_gesture_draft_but_rejects_applying_it(capability_session, contract):
@@ -111,7 +124,7 @@ def test_downgrade_retains_gesture_draft_but_rejects_applying_it(capability_sess
     assert "设备不支持 key_gesture 动作" in draft.validate(contract)
     with pytest.raises(ValueError, match="不支持 key_gesture"):
         vm.prepare_device_write()
-    assert gateway.commands == []
+    _assert_no_config_write(gateway)
 
 
 def test_reselecting_cached_device_refreshes_its_capabilities(capability_session):
@@ -125,4 +138,4 @@ def test_reselecting_cached_device_refreshes_its_capabilities(capability_session
 
     assert vm.draft is original and "key_gesture" in original.actions
     assert not original.is_dirty
-    assert gateway.commands == []
+    _assert_no_config_write(gateway)

@@ -4,8 +4,9 @@ from dataclasses import replace
 
 import pytest
 from PySide6.QtCore import QSettings
+from PySide6.QtWidgets import QLineEdit, QPushButton
 
-from controller_config.voice_setup import adapted_voice_action, save_confirmed_voice_choice
+from controller_config.voice_setup import adapted_voice_action
 from controller_config.views.voice_guide import VoiceSetupDialog
 from controller_config.transactions import ConfigTransactionState
 from controller_config.protocol.bootstrap import BootstrapError, BootstrapKind
@@ -49,34 +50,33 @@ def test_apply_requires_readback_and_binding_confirmation(session, monkeypatch, 
     dialog.provider.setCurrentIndex(dialog.provider.findData(provider))
     assert gateway.commands == commands
     assert not dialog._next.isEnabled()
-    assert dialog._requested_action["usage"] == usage
-    assert dialog._shortcut_panel.isHidden()
-    assert dialog._adapt_button.isEnabled()
-    assert not dialog._toggle_supported.isVisible()
+    dialog._toggle_supported.setChecked(True)
+    assert not dialog._next.isEnabled()  # F13 cannot become compatible by ticking a box.
     if provider == "doubao":
-        assert not dialog._open_voice_button.isVisible()
+        assert dialog._adapt_button.isEnabled()
+        assert dialog._adapt_button.text() == "应用豆包推荐快捷键"
+    else:
+        assert not dialog._adapt_button.isEnabled()
+        confirm_shortcut(dialog, usage)
     dialog._adapt_button.click()
     assert dialog._adapting and not dialog.provider.isEnabled()
     assert dialog._context_notice.isHidden()  # Writing is not a disconnection.
     assert dialog.action["usage"] == 104
     assert not dialog._next.isEnabled()
     readback(vm, gateway, snapshot)
-    assert dialog.action == {**PRESET, "usage": usage, "modifiers": [], "double_modifiers": [227]}
+    expected = {**PRESET, "usage": usage, "double_modifiers": [227]}
+    if provider != "doubao":
+        expected["modifiers"] = []
+    assert dialog.action == expected
     assert not dialog._adapting and not vm.draft.is_dirty
     assert dialog._context_ready
-    assert not dialog._toggle_supported.isChecked()
-    assert dialog._toggle_supported.isVisible() and dialog._toggle_supported.isEnabled()
-    assert dialog._device_stage_status.text() == "✓ 设备快捷键 · 已保存并读回"
-    assert dialog._software_stage_status.text() == "2  输入软件绑定 · 待完成"
     if provider == "doubao":
-        assert dialog._open_voice_button.isVisible() and dialog._open_voice_button.isEnabled()
-    assert dialog._pages.currentIndex() == 0
-    dialog._toggle_supported.click()
-    assert dialog._software_stage_status.text() == "✓ 输入软件绑定 · 已确认"
-    assert dialog._next.isEnabled()
-    dialog._next.click()
-    assert dialog._pages.currentIndex() == 1
-    assert not dialog._next.isEnabled()
+        assert dialog._pages.currentIndex() == 0
+        assert dialog._next.isEnabled()
+        dialog._next.click()
+    else:
+        assert dialog._toggle_supported.isChecked()
+    assert dialog._pages.currentIndex() == 1 and not dialog._next.isEnabled()
     assert not dialog.practice.completed
     dialog.reject()
 
@@ -104,6 +104,113 @@ def test_failed_adaptation_can_retry_without_overwriting_other_drafts(session, m
     assert vm.draft.profile(vm.draft.config["active_profile"])["name"] == "保留这个修改"
     assert dialog.action["usage"] == 228 and not dialog._next.isEnabled()
     dialog.reject()
+
+
+def test_failed_adaptation_cancel_discards_only_the_guide_owned_draft(
+    session, monkeypatch, tmp_path,
+):
+    _, vm, gateway, snapshot, dialog = applied_guide(session, monkeypatch, tmp_path)
+    original = copy.deepcopy(vm.draft.config)
+    dialog.provider.setCurrentIndex(dialog.provider.findData("doubao"))
+    dialog._adapt_button.click()
+    gateway.command_failed.emit(
+        "VALIDATE_CONFIG",
+        BootstrapError(BootstrapKind.READ_FAILED, "验证失败", "test"),
+    )
+    assert vm.draft.is_dirty and vm.draft.config != original
+    dialog.reject()
+    assert not vm.draft.is_dirty
+    assert vm.draft.config == original
+
+
+def test_legacy_confirmed_doubao_name_change_keeps_its_verified_shortcut(
+    session, monkeypatch, tmp_path,
+):
+    from controller_config.voice_setup import save_voice_trial
+
+    window, vm, gateway, snapshot, first = applied_guide(
+        session, monkeypatch, tmp_path,
+    )
+    action = copy.deepcopy(first.action)
+    settings = window._onboarding_settings
+    settings.setValue(first._provider_key, "doubao")
+    save_voice_trial(
+        settings, vm.draft.serial, vm.model.snapshot.active_profile_id,
+        first._control_id, action, "doubao", "codex", mode=first._mode,
+    )
+    first.reject()
+    window._select_control("key.8")
+    window.findChild(QLineEdit, "mappingShortNameEditor").setText("我的豆包语音")
+    window.findChild(QPushButton, "voiceConnectApp").click()
+    dialog = window._voice_setup_dialog
+    assert dialog._history_panel.isVisible()
+    dialog._change_settings_button.click()
+    assert dialog._adapt_button.isVisible()
+    assert dialog._adapt_button.text() == "保存快捷键"
+    dialog._adapt_button.click()
+    assert gateway.commands[-1].name == "VALIDATE_CONFIG"
+    candidate = gateway.commands[-1].payload["config"]
+    profile = next(
+        item for item in candidate["profiles"]
+        if item["id"] == candidate["active_profile"]
+    )
+    mapping = next(
+        item for item in profile["mappings"] if item["control_id"] == "key.8"
+    )
+    assert mapping["action"] == action
+    readback(vm, gateway, vm.model.snapshot)
+    assert vm.model.snapshot.mappings["key.8"]["action"] == action
+    assert vm.model.snapshot.mappings["key.8"]["short_name"] == "我的豆包语音"
+
+
+def test_legacy_doubao_send_recovery_changes_only_the_double_click_key(
+    session, monkeypatch, tmp_path,
+):
+    from controller_config.voice_setup import (
+        save_confirmed_voice_choice, save_voice_trial,
+    )
+
+    window, vm, gateway, snapshot, first = applied_guide(
+        session, monkeypatch, tmp_path,
+    )
+    action = copy.deepcopy(first.action)
+    settings = window._onboarding_settings
+    settings.setValue(first._provider_key, "doubao")
+    save_confirmed_voice_choice(
+        settings, vm.draft.serial, vm.model.snapshot.active_profile_id,
+        action, "doubao", mode=first._mode,
+    )
+    save_voice_trial(
+        settings, vm.draft.serial, vm.model.snapshot.active_profile_id,
+        first._control_id, action, "doubao", "codex", mode=first._mode,
+    )
+    first.reject()
+    window._open_voice_setup("key.8")
+    dialog = window._voice_setup_dialog
+    assert dialog._history_panel.isVisible()
+    dialog._repair("send")
+    dialog._shortcut_editors[1][1]._shortcut_recorder.shortcut_recorded.emit(
+        {"type": "key", "usage": 41, "modifiers": []}
+    )
+    assert dialog._adapt_button.text() == "保存快捷键"
+    dialog._adapt_button.click()
+    candidate = gateway.commands[-1].payload["config"]
+    profile = next(
+        item for item in candidate["profiles"]
+        if item["id"] == candidate["active_profile"]
+    )
+    candidate_action = next(
+        item["action"] for item in profile["mappings"]
+        if item["control_id"] == "key.8"
+    )
+    assert candidate_action["usage"] == action["usage"]
+    assert candidate_action.get("modifiers", []) == action.get("modifiers", [])
+    assert candidate_action["double_usage"] == 41
+    readback(vm, gateway, vm.model.snapshot)
+    applied = vm.model.snapshot.mappings["key.8"]["action"]
+    assert applied["usage"] == action["usage"]
+    assert applied.get("modifiers", []) == action.get("modifiers", [])
+    assert applied["double_usage"] == 41
 
 
 def test_nested_common_ai_guide_tracks_adapted_readback(session, monkeypatch, tmp_path, qtbot):
@@ -139,13 +246,16 @@ def test_reconnection_needs_matching_readback_not_just_a_link(session, monkeypat
     gateway.failure.emit(BootstrapKind.READ_FAILED, "设备连接已中断", "test")
     assert vm.write_transaction.state is ConfigTransactionState.UNKNOWN
     assert not dialog._next.isEnabled() and dialog.action["usage"] == 104
+    dialog.reject()
+    assert window._voice_setup_dialog is dialog and dialog._adapting
     gateway.snapshot_ready.emit(replace(snapshot,
         status=_active_status(snapshot, digest, snapshot.config_result["generation"] + 1),
         config_result={
         **snapshot.config_result, "generation": snapshot.config_result["generation"] + 1,
         "config": candidate, "digest": digest}))
     assert dialog.action["usage"] == 228
-    assert dialog._context_ready and not dialog._next.isEnabled()
+    assert dialog._context_ready and dialog._next.isEnabled()
+    assert dialog._pages.currentIndex() == 0
     dialog.reject()
 
 
@@ -160,7 +270,7 @@ def test_adapted_preset_can_restore_previous_send_when_voice_is_disabled(contrac
     from controller_config.drafts import LocalDraft
     from controller_config.transport.demo import _power_v2_snapshot
     draft = LocalDraft.from_snapshot(_power_v2_snapshot(contract, read_only=False), contract)
-    draft.actions = (*draft.actions, "key_gesture")
+    assert "key_gesture" in draft.actions   # Power V2 firmware lists it
     config, entries = prepare_ai_profiles(draft, ["codex"], "codex", "external", {}, platform="darwin")
     draft.config = config
     profile = entries["codex"]["profile_id"]
@@ -182,22 +292,12 @@ def test_provider_guidance_three_language_layout(session, monkeypatch, tmp_path,
     output.mkdir(parents=True, exist_ok=True)
     for provider in ("doubao", "qianwen"):
         dialog.provider.setCurrentIndex(dialog.provider.findData(provider))
-        hint = (
-            "推荐使用右 Control。设备保存完成后，在豆包“免按模式”中设为右 Control，并切换到豆包输入法或开启全局唤起。"
-            if provider == "doubao" else
-            "推荐使用右 Option。设备保存完成后，在千问“语音输入”中设为右 Option，并打开“短按也唤起语音输入”。"
-        )
+        confirm_shortcut(dialog, 228 if provider == "doubao" else 230)
         for language in ("zh_CN", "en_US", "ja_JP"):
             window._language_manager.set_language(language)
             dialog.resize(480, 620)
             qtbot.wait(30)
             assert dialog.provider.currentText() == translate_ui_text("豆包输入法" if provider == "doubao" else "千问输入法")
-            assert dialog._step_number.text() == "1/2 ·"
-            assert dialog._heading.text() == translate_ui_text("连接语音输入软件")
-            assert dialog._binding_hint.text() == translate_ui_text(hint)
-            assert dialog._recommended_button.text() == translate_ui_text("使用推荐快捷键")
-            assert dialog._device_stage_status.text() == translate_ui_text("1  设备快捷键 · 待保存")
-            assert dialog._software_stage_status.text() == translate_ui_text("2  输入软件绑定 · 保存设备后继续")
             assert dialog._toggle_supported.sizeHint().width() <= dialog._body.viewport().width()
             assert dialog._next.mapTo(dialog, dialog._next.rect().bottomRight()).y() < dialog.height()
             dialog.grab().save(str(output / f"{provider}-{language}.png"))
@@ -205,24 +305,9 @@ def test_provider_guidance_three_language_layout(session, monkeypatch, tmp_path,
     dialog.reject()
 
 
-def test_qianwen_help_explains_manual_settings_path(session, monkeypatch, tmp_path):
-    _, _, _, _, dialog = applied_guide(session, monkeypatch, tmp_path)
-    dialog.provider.setCurrentIndex(dialog.provider.findData("qianwen"))
-    dialog._more_toggle.click()
-    assert dialog._more_panel.isVisible()
-    dialog._help_button.click()
-    assert dialog._binding_help.isVisible()
-    assert "Mac 顶部输入法菜单" in dialog._binding_help.text()
-    assert "千问设置 → 语音输入" in dialog._binding_help.text()
-    assert "右 Option" in dialog._binding_help.text()
-    dialog._more_toggle.click()
-    assert not dialog._more_panel.isVisible()
-    assert not dialog._binding_help.isVisible()
-    dialog.reject()
-
-
 @pytest.mark.parametrize("language", ["zh_CN", "en_US", "ja_JP"])
 def test_binding_confirmation_stays_visible_with_manual_editors_open(session, monkeypatch, tmp_path, qtbot, language):
+    from PySide6.QtCore import QPoint
     from controller_config.i18n import translate_ui_text
     window, vm, gateway, snapshot, dialog = applied_guide(session, monkeypatch, tmp_path)
     window._language_manager.set_language(language)
@@ -241,10 +326,14 @@ def test_binding_confirmation_stays_visible_with_manual_editors_open(session, mo
         output.mkdir(parents=True, exist_ok=True)
         dialog.grab().save(str(output / f"binding-footer-expanded-{language}.png"))
     assert not dialog._body.isAncestorOf(dialog._toggle_supported)
-    assert not dialog._toggle_supported.isVisible()
-    assert not dialog._open_voice_button.isVisible()
+    assert dialog._toggle_supported.isVisible()
+    assert dialog._toggle_supported.mapTo(dialog, QPoint(0, 0)).y() >= dialog._body.geometry().bottom()
+    assert dialog._toggle_supported.mapTo(dialog, dialog._toggle_supported.rect().bottomRight()).y() < dialog._adapt_button.y()
+    assert not dialog._adapt_button.isEnabled()
+    assert dialog._adapt_notice.text() == translate_ui_text("请确认上方的快捷键和启停方式，再继续。")
+    dialog._toggle_supported.setChecked(True)
     assert dialog._adapt_button.isEnabled()
-    assert dialog._adapt_notice.text() == translate_ui_text("先保存到设备，再到语音软件中完成上方绑定。")
+    assert dialog._adapt_notice.text() == translate_ui_text("保存成功后，自动进入实体练习。")
     dialog._step(1)
     assert not dialog._toggle_supported.isVisible()
     window._language_manager.set_language("zh_CN")
@@ -289,70 +378,16 @@ def test_open_inspector_follows_applied_shortcut_without_an_extra_apply(session,
     dialog.reject()
 
 
-@pytest.mark.parametrize("provider,usage", [
-    ("doubao", 228),
-    ("qianwen", 230),
-    ("typeless", 104),
-])
-def test_known_provider_selection_prepares_tested_shortcut_without_writing(
-        session, monkeypatch, tmp_path, provider, usage):
-    _, _, gateway, _, dialog = applied_guide(session, monkeypatch, tmp_path)
-    commands = list(gateway.commands)
-    dialog.provider.setCurrentIndex(dialog.provider.findData(provider))
-    assert dialog._requested_action["usage"] == usage
-    assert gateway.commands == commands
-    assert dialog._custom_shortcut_chosen
-    assert not dialog._toggle_supported.isChecked()
-    assert not dialog._next.isEnabled()
-    assert dialog._shortcut_panel.isHidden()
-    assert dialog._more_toggle.isVisible()
-    assert not dialog._shortcut_toggle.isVisible()
-    dialog._more_toggle.setChecked(True)
-    assert dialog._shortcut_toggle.isVisible()
-    assert dialog._adapt_button.isVisible() is (usage != 104)
-    dialog.reject()
-
-
-def test_unlisted_provider_still_requires_its_real_shortcut(session, monkeypatch, tmp_path):
+@pytest.mark.parametrize("provider", ["doubao", "qianwen", "typeless", "other"])
+def test_provider_selection_does_not_guess_existing_shortcut(session, monkeypatch, tmp_path, provider):
     _, _, gateway, _, dialog = applied_guide(session, monkeypatch, tmp_path)
     before = copy.deepcopy(dialog._requested_action)
     commands = list(gateway.commands)
-    dialog.provider.setCurrentIndex(dialog.provider.findData("other"))
+    dialog.provider.setCurrentIndex(dialog.provider.findData(provider))
     assert dialog._requested_action == before
     assert gateway.commands == commands
-    assert not dialog._custom_shortcut_chosen
-    assert not dialog._adapt_button.isEnabled()
-    assert dialog._shortcut_panel.isVisible()
-    assert dialog._shortcut_toggle.isHidden()
-    dialog.reject()
-
-
-def test_switching_provider_restores_its_confirmed_voice_key_but_keeps_send(
-        session, monkeypatch, tmp_path):
-    window, _, gateway, snapshot, dialog = applied_guide(session, monkeypatch, tmp_path)
-    serial = snapshot.identity["serial"]
-    typeless = {**PRESET, "double_modifiers": [225]}
-    qianwen = {**PRESET, "usage": 230, "double_modifiers": [225]}
-    save_confirmed_voice_choice(window._onboarding_settings, serial,
-                                snapshot.active_profile_id, typeless, "typeless", mode="normal")
-    save_confirmed_voice_choice(window._onboarding_settings, serial,
-                                snapshot.active_profile_id, qianwen, "qianwen", mode="normal")
-    selection_key = "ui/voice_input_software"
-    commands = list(gateway.commands)
-
-    dialog.provider.setCurrentIndex(dialog.provider.findData("typeless"))
-    assert dialog._requested_action["usage"] == 104
-    assert dialog._requested_action["double_usage"] == PRESET["double_usage"]
-    assert dialog._requested_action.get("double_modifiers") == [227]
-    assert dialog._custom_shortcut_chosen
-    # A dropdown choice alone is not an applied configuration.
-    assert window._onboarding_settings.value(selection_key) == "qianwen"
-
-    dialog.provider.setCurrentIndex(dialog.provider.findData("qianwen"))
-    assert dialog._requested_action["usage"] == 230
-    assert dialog._requested_action.get("double_modifiers") == [227]
-    assert dialog._custom_shortcut_chosen
-    assert gateway.commands == commands
+    assert not dialog._toggle_supported.isChecked()
+    assert not dialog._next.isEnabled()
     dialog.reject()
 
 
@@ -362,40 +397,24 @@ def test_doubao_rejects_f13_and_respects_recorded_right_command(session, monkeyp
     dialog.provider.setCurrentIndex(dialog.provider.findData("doubao"))
     confirm_shortcut(dialog, 104)
     assert dialog._shortcut_problem()
-    assert not dialog._adapt_button.isEnabled()
-    commands = list(gateway.commands)
+    assert dialog._adapt_button.isEnabled()
     dialog._adapt_button.click()
-    assert gateway.commands == commands
+    readback(vm, gateway, snapshot)
+    assert dialog.action["usage"] == 228
+    assert dialog._pages.currentIndex() == 0 and dialog._next.isEnabled()
+    dialog._shortcut_toggle.setChecked(True)
     confirm_shortcut(dialog, 231)
     assert not dialog._shortcut_problem()
     assert describe_action({"type": "key", "usage": 231}, platform="macos") in dialog._shortcut_summary.text()
     assert dialog._adapt_button.isEnabled()
+    snapshot = vm.model.snapshot
     dialog._adapt_button.click()
     readback(vm, gateway, snapshot)
     assert dialog.action["usage"] == 231
     assert dialog.action["double_usage"] == 40
     assert dialog.action["double_modifiers"] == [227]
-    assert dialog._pages.currentIndex() == 1
-    assert not dialog.practice.completed and not dialog._next.isEnabled()
-    dialog.reject()
-
-
-def test_common_macos_editing_shortcut_is_rejected_and_can_reset_to_recommended(
-        session, monkeypatch, tmp_path):
-    _, _, gateway, _, dialog = applied_guide(session, monkeypatch, tmp_path)
-    dialog.provider.setCurrentIndex(dialog.provider.findData("typeless"))
-    dialog._shortcut_editors[0][1]._shortcut_recorder.shortcut_recorded.emit(
-        {"type": "key", "usage": 25, "modifiers": [227]}
-    )
-
-    assert "macOS" in dialog._shortcut_problem()
-    assert not dialog._adapt_button.isEnabled()
-    assert not any(command.name == "VALIDATE_CONFIG" for command in gateway.commands)
-
-    dialog._recommended_button.click()
-    assert dialog._requested_action["usage"] == 104
-    assert not dialog._shortcut_problem()
-    assert not dialog._adaptation_needed()
+    assert dialog._pages.currentIndex() == 0
+    assert not dialog.practice.completed and dialog._next.isEnabled()
     dialog.reject()
 
 

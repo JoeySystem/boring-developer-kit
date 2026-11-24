@@ -103,9 +103,13 @@ def test_native_builds_stage_the_production_policy_marker() -> None:
     project = Path(__file__).resolve().parents[1]
     macos = (project / "deploy" / "build_macos.sh").read_text(encoding="utf-8")
     windows = (project / "deploy" / "build_windows.ps1").read_text(encoding="utf-8")
+    # The internal Doubao acceptance build script is not part of the community kit.
 
     assert "stage_device_trust_policy.py" in macos
     assert "stage_device_trust_policy.py" in windows
+    # No build may read the marker from the source tree: it is staged per build.
+    gitignore = (project / ".gitignore").read_text(encoding="utf-8")
+    assert "src/controller_config/assets/device-trust-policy.json" in gitignore.splitlines()
     assert "device-trust-policy.json" in macos
     assert "device-trust-policy.json" in windows
     assert "--include-package=CoreBluetooth" in macos

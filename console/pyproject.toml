@@ -39,7 +39,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-"controller_config.assets" = ["*.json", "*.md", "*.svg", "*.png", "*.icns", "*.ico"]
+"controller_config.assets" = ["*.json", "*.md", "*.svg", "*.png", "*.icns", "*.ico", "onboarding/icons/*.svg", "onboarding/icons/LICENSE"]
 "controller_config.translations" = ["*.json", "*.md"]
 
 [tool.setuptools.dynamic]

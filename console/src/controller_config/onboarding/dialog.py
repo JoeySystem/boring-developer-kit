@@ -1,10 +1,22 @@
+"""Device operation guide in the shared dark dialog shell (design decision).
+
+the designer's B v0.4 合成版 3 (使用引导): the one dark dialog shell, with a white
+stage that holds the animation; the stage colour equals the GIF background so
+no seam shows. "稍后设置" sits bottom-left instead of the round close, the step
+dots sit in the middle of the bottom row, the primary button on the right.
+The two help popups stay dialogs (the designer 11-19) in the same shell.
+"""
 from __future__ import annotations
 
+import html
+
 from PySide6.QtCore import (
+    QByteArray,
     QEasingCurve,
     QRectF,
     QSize,
     Qt,
+    QTimer,
     Signal,
     Slot,
     QVariantAnimation,
@@ -12,56 +24,65 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
-    QBoxLayout,
     QButtonGroup,
     QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 
 from controller_config.accessibility import system_reduces_motion
 from controller_config.i18n import normalize_language
+from controller_config.style import tokens
 from controller_config.text_catalog import get_text_catalog
+from controller_config.views.ui.button import Button
+from controller_config.views.ui.dialog import SMALL, XLARGE, Dialog
 
 from .content import BLUETOOTH_STEP, ONBOARDING_STEPS, cue_at
 from .player import GuidePlayer, asset_root
 
 
-STYLE = """
-QDialog#onboardingDialog { background: transparent; }
-QFrame#companionCard { background: #fafbfb; border: 1px solid #d4d8d2; border-radius: 24px; }
-QFrame#companionCard QWidget { color: #242625; font-size: 15px; background: transparent; }
-QFrame#companionCard QLabel { border: 0; padding: 0; }
-QFrame#companionCard QLabel#onboardingBrand { font-size: 17px; font-weight: 650; }
-QFrame#companionCard QLabel#onboardingTitle { font-size: 32px; font-weight: 600; }
-QFrame#companionCard QLabel#onboardingDescription { font-size: 16px; color: #626762; }
-QFrame#companionCard QLabel#guideCue { font-size: 14px; color: #4b514a; }
-QFrame#companionCard QPushButton { border: 1px solid #cbd0ca; border-radius: 22px; padding: 10px 17px; color: #525951; background: transparent; min-height: 22px; }
-QFrame#companionCard QPushButton:hover { background: #eff1ee; }
-QFrame#companionCard QPushButton:pressed { background: #e5eae3; }
-QFrame#companionCard QPushButton:focus { border: 2px solid #f47b10; }
-QFrame#companionCard QPushButton#onboardingNext { background: #f47b10; border: 0; border-radius: 24px; padding: 12px 24px; color: #241e16; font-weight: 600; min-height: 24px; }
-QFrame#companionCard QPushButton#onboardingNext:hover { background: #e97108; }
-QFrame#companionCard QPushButton#onboardingNext:focus { border: 2px solid #30251b; }
-QFrame#companionCard QPushButton[quiet="true"] { border: 0; }
-QFrame#companionCard QPushButton[iconOnly="true"] { min-height: 0; padding: 0; border: 0; border-radius: 18px; }
-QFrame#companionCard QPushButton[iconOnly="true"]:focus { border: 2px solid #f47b10; }
-QFrame#companionCard QPushButton#guideReplay { min-height: 0; border-radius: 20px; padding: 5px 12px; }
-QFrame#companionCard QPushButton[connection="true"] { border-radius: 14px; text-align: left; padding: 12px 16px; min-height: 38px; background: #f4f6f3; }
-QFrame#companionCard QPushButton[connection="true"]:checked { border: 2px solid #f47b10; background: #fff5eb; }
-QFrame#companionCard QPushButton[progress="true"] { padding: 0; min-height: 0; border: 0; background: transparent; color: #bec6ba; font-size: 15px; }
-QFrame#companionCard QPushButton[progress="true"]:checked { color: #f47b10; }
-QFrame#companionCard QPushButton[progress="true"]:focus { border: 1px solid #f47b10; border-radius: 12px; }
-"""
+# Sizes not on the spec image are the Agent's picks (cue 12, connection cards side
+# by side, selected card = cream ring, not orange). Title 26 as on the spec, second
+# line of each card in the secondary grey, outlined buttons as tall as the primary
+# one (design ticket 答复第 2 件, Agent 提议, the designer "都按推荐").
+STYLE = tokens.stylesheet("""
+QFrame#onboardingStage { background: ${ONBOARDING_STAGE}; border: none; border-radius: ${ONBOARDING_STAGE_RADIUS}px; }
+QLabel#onboardingBrand { color: ${TEXT_PRIMARY}; font-size: ${FONT_CAPTION}px; font-weight: 600; }
+QLabel#onboardingTitle { color: ${TEXT_PRIMARY}; font-size: ${FONT_ONBOARDING_TITLE}px; font-weight: 600; }
+QLabel#guideCardTitle { color: ${TEXT_PRIMARY}; font-size: ${FONT_BODY}px; }
+QLabel#guideCardDetail { color: ${TEXT_SECONDARY}; font-size: ${FONT_BODY}px; }
+QDialog#onboardingDialog QPushButton[boringButton="secondary"][boringButtonSize="large"] {
+    min-height: ${CONTROL_HEIGHT_OUTLINED}px; max-height: ${CONTROL_HEIGHT_OUTLINED}px; }
+QLabel#onboardingDescription, QLabel#guideConnectionNote { color: ${TEXT_SECONDARY}; font-size: ${FONT_BODY}px; }
+QLabel#guideCue { color: ${TEXT_SECONDARY}; font-size: ${FONT_CAPTION}px; }
+QPushButton[iconOnly="true"] { background: transparent; border: 1px solid ${BORDER_STRONG}; border-radius: ${RADIUS_CONTROL_SMALL}px; padding: 0; }
+QPushButton[iconOnly="true"]:hover { background: ${SURFACE_3}; }
+QPushButton[iconOnly="true"]:focus { border-color: ${ACCENT_FOCUS}; }
+QPushButton[connection="true"] { background: ${SURFACE_2}; color: ${TEXT_PRIMARY}; border: 1px solid ${BORDER_CONTROL}; border-radius: ${RADIUS_LIST_ROW}px; text-align: left; padding: 12px 14px; font-size: ${FONT_BODY}px; }
+QPushButton[connection="true"]:hover { background: ${SURFACE_3}; }
+QPushButton[connection="true"]:checked { background: ${SURFACE_3}; border-color: ${TEXT_PRIMARY}; }
+QPushButton[connection="true"]:focus { border-color: ${ACCENT_FOCUS}; }
+QPushButton[progress="true"] { padding: 0; min-height: 0; border: 0; background: transparent; color: ${DOT_ROW_UNLIT}; font-size: ${FONT_EMPHASIS}px; }
+QPushButton[progress="true"]:checked { color: ${DOT_ROW_LIT}; }
+QPushButton[progress="true"]:focus { border: 1px solid ${ACCENT_FOCUS}; border-radius: ${RADIUS_TAG}px; }
+""")
+
+_ICONS: dict[str, QIcon] = {}
 
 
 def icon(name: str) -> QIcon:
-    return QIcon(str(asset_root() / "icons" / f"{name}.svg"))
+    """A guide icon drawn in the shell's text colour (the SVGs use currentColor)."""
+    cached = _ICONS.get(name)
+    if cached is None:
+        svg = (asset_root() / "icons" / f"{name}.svg").read_text(encoding="utf-8")
+        pixmap = QPixmap()
+        pixmap.loadFromData(QByteArray(svg.replace("currentColor", tokens.TEXT_PRIMARY).encode()), "SVG")
+        cached = _ICONS[name] = QIcon(pixmap)
+    return cached
 
 
 class Scene(QWidget):
@@ -76,7 +97,7 @@ class Scene(QWidget):
         self._previous = QPixmap()
         self._mix = 1.0
         self._transition = QVariantAnimation(self)
-        self._transition.setDuration(260)
+        self._transition.setDuration(tokens.MOTION_MEDIUM_MS)
         self._transition.setStartValue(0.0)
         self._transition.setEndValue(1.0)
         self._transition.setEasingCurve(QEasingCurve.Type.InOutCubic)
@@ -136,7 +157,7 @@ class Scene(QWidget):
         painter = QPainter(self)
         pixmap = self.current_visual()
         if pixmap.isNull():
-            painter.setPen(QColor("#626762"))
+            painter.setPen(QColor(tokens.ONBOARDING_STAGE_TEXT))
             painter.drawText(
                 self.rect().adjusted(20, 20, -20, -20),
                 Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,
@@ -151,7 +172,7 @@ class Scene(QWidget):
         painter.drawPixmap(rect, pixmap, QRectF(pixmap.rect()))
 
 
-class OnboardingDialog(QDialog):
+class OnboardingDialog(Dialog):
     """Drop-in App dialog. Emits navigation only; cannot access the SDK or device.
 
     The host owns first-run persistence and the connection-trigger policy.
@@ -169,17 +190,11 @@ class OnboardingDialog(QDialog):
         assets=None,
         language: str | None = None,
     ) -> None:
-        super().__init__(
-            parent, Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint
-        )
-        self.setObjectName("onboardingDialog")
+        super().__init__(parent, width=XLARGE, close="later", full_height=True,
+                         object_name="onboardingDialog")
         self.setWindowTitle("MIST · Companion guide")
-        self.setModal(True)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setMinimumSize(620, 560)
-        screen = self.screen().availableGeometry()
-        self.resize(min(1100, screen.width()), min(680, screen.height()))
-        self.setStyleSheet(STYLE)
+        # Appended: without a parent window the shell carries the app sheet itself.
+        self.setStyleSheet(self.styleSheet() + STYLE)
         self._step_index = 0
         self._bluetooth = False
         self._reduce_motion = (
@@ -193,45 +208,85 @@ class OnboardingDialog(QDialog):
         )) or "zh_CN"
         self._popups: list[QDialog] = []
         self.player = GuidePlayer(self, assets=assets)
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(12, 12, 12, 12)
-        card = QFrame(objectName="companionCard")
-        outer.addWidget(card)
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(30, 18, 30, 24)
-        layout.setSpacing(12)
-        header = QHBoxLayout()
-        header.addWidget(QLabel("MIST", objectName="onboardingBrand"))
-        header.addStretch()
-        self._skip = QPushButton(objectName="onboardingSkip")
-        self._skip.setProperty("quiet", True)
-        self._skip.clicked.connect(self.reject)
-        header.addWidget(self._skip)
-        layout.addLayout(header)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._body = QWidget()
-        self._body_layout = QBoxLayout(QBoxLayout.Direction.LeftToRight, self._body)
-        self._body_layout.setContentsMargins(0, 0, 0, 0)
-        self._body_layout.setSpacing(26)
-        scroll.setWidget(self._body)
-        layout.addWidget(scroll, 1)
-        visual = QWidget()
-        visual_layout = QVBoxLayout(visual)
-        visual_layout.setContentsMargins(0, 0, 0, 0)
-        visual_layout.setSpacing(3)
+        layout = self.body_layout()
+        layout.setSpacing(0)
+        layout.addWidget(QLabel("MIST", objectName="onboardingBrand"))
+        layout.addSpacing(6)
+        self._title = QLabel(objectName="onboardingTitle")
+        self._title.setWordWrap(True)
+        layout.addWidget(self._title)
+        layout.addSpacing(6)
+        self._description = QLabel(objectName="onboardingDescription")
+        self._description.setWordWrap(True)
+        layout.addWidget(self._description)
+        layout.addSpacing(12)
+
+        self._connections = QWidget()
+        choices = QHBoxLayout(self._connections)
+        choices.setContentsMargins(0, 0, 0, 8)
+        choices.setSpacing(8)
+        group = QButtonGroup(self)
+        self._usb = QPushButton(objectName="guideUSB")
+        self._ble = QPushButton(objectName="guideBluetooth")
+        self._card_lines: dict[QPushButton, tuple[QLabel, QLabel]] = {}
+        for button, name in ((self._usb, "usb"), (self._ble, "bluetooth")):
+            button.setCheckable(True)
+            button.setProperty("connection", True)
+            button.setAutoDefault(False)
+            # Two lines in two colours: what it is, then (secondary grey) what it is for.
+            inner = QHBoxLayout(button)
+            inner.setContentsMargins(14, 12, 14, 12)
+            inner.setSpacing(10)
+            glyph = QLabel()
+            glyph.setPixmap(icon(name).pixmap(22, 22))
+            glyph.setFixedSize(22, 22)
+            lines = QVBoxLayout()
+            lines.setContentsMargins(0, 0, 0, 0)
+            lines.setSpacing(2)
+            title = QLabel(objectName="guideCardTitle")
+            detail = QLabel(objectName="guideCardDetail")
+            for label in (glyph, title, detail):
+                label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            lines.addWidget(title)
+            lines.addWidget(detail)
+            inner.addWidget(glyph, 0, Qt.AlignmentFlag.AlignVCenter)
+            inner.addLayout(lines, 1)
+            self._card_lines[button] = (title, detail)
+            group.addButton(button)
+            choices.addWidget(button, 1)
+        self._usb.clicked.connect(lambda: self.set_connection_mode(False))
+        self._ble.clicked.connect(lambda: self.set_connection_mode(True))
+        layout.addWidget(self._connections)
+        self._connection_note = QLabel(objectName="guideConnectionNote")
+        self._connection_note.setWordWrap(True)
+        # "稍后配对" is a link at the end of this line, not a fourth button at the bottom,
+        # so every language fits three buttons and the dots (design ticket 答复第 4 件).
+        self._connection_note.setTextFormat(Qt.TextFormat.RichText)
+        self._connection_note.setTextInteractionFlags(
+            Qt.TextInteractionFlag.LinksAccessibleByMouse | Qt.TextInteractionFlag.LinksAccessibleByKeyboard)
+        self._connection_note.setOpenExternalLinks(False)
+        self._connection_note.linkActivated.connect(lambda _link: self.next_step())
+        self._connection_note.setContentsMargins(0, 0, 0, 8)
+        layout.addWidget(self._connection_note)
+        self._help = Button("", "secondary", size="small", object_name="guideHelp")
+        self._help.setIcon(icon("question"))
+        self._help.clicked.connect(self.open_help)
+        layout.addWidget(self._help, 0, Qt.AlignmentFlag.AlignLeft)
+        layout.addSpacing(16)
+
+        stage = QFrame(objectName="onboardingStage")
+        stage_layout = QVBoxLayout(stage)
+        stage_layout.setContentsMargins(0, 0, 0, 0)
         self.scene = Scene(self.player)
-        visual_layout.addWidget(self.scene, 1)
-        controls = QWidget()
-        controls.setFixedWidth(390)
-        controls_layout = QVBoxLayout(controls)
-        controls_layout.setContentsMargins(8, 0, 8, 0)
-        controls_layout.setSpacing(0)
+        self.scene.setMinimumSize(270, 180)
+        stage_layout.addWidget(self.scene)
+        layout.addWidget(stage, 1)
+        self._stage = stage
+        layout.addSpacing(8)
+
         row = QHBoxLayout()
-        row.setSpacing(12)
+        row.setSpacing(10)
         self._cue_icon = QLabel()
         self._cue_icon.setFixedSize(24, 24)
         self._cue = QLabel(objectName="guideCue")
@@ -240,62 +295,19 @@ class OnboardingDialog(QDialog):
         row.addWidget(self._cue, 1)
         self._pause = self._icon_button("pause", "guidePause")
         self._pause.clicked.connect(self.toggle_playback)
-        self._replay = QPushButton(
-            icon("arrow-counter-clockwise"), "重播", objectName="guideReplay"
-        )
-        self._replay.setFixedHeight(40)
-        self._replay.setIconSize(QSize(18, 18))
+        self._replay = Button("", "secondary", size="small", object_name="guideReplay")
+        self._replay.setIcon(icon("arrow-counter-clockwise"))
+        self._replay.setIconSize(QSize(16, 16))
         self._replay.clicked.connect(self.player.replay)
         row.addWidget(self._pause)
         row.addWidget(self._replay)
-        controls_layout.addLayout(row)
-        visual_layout.addWidget(controls, 0, Qt.AlignmentFlag.AlignHCenter)
-        self._body_layout.addWidget(visual, 57)
-        self._visual = visual
+        layout.addLayout(row)
 
-        copy = QWidget()
-        copy.setMaximumWidth(390)
-        text = QVBoxLayout(copy)
-        text.setContentsMargins(0, 16, 0, 16)
-        text.setSpacing(20)
-        text.addStretch()
-        self._title = QLabel(objectName="onboardingTitle")
-        self._title.setWordWrap(True)
-        self._description = QLabel(objectName="onboardingDescription")
-        self._description.setWordWrap(True)
-        text.addWidget(self._title)
-        text.addWidget(self._description)
-        self._connections = QWidget()
-        choices = QVBoxLayout(self._connections)
-        choices.setContentsMargins(0, 0, 0, 0)
-        choices.setSpacing(10)
-        group = QButtonGroup(self)
-        self._usb = QPushButton(objectName="guideUSB")
-        self._ble = QPushButton(objectName="guideBluetooth")
-        for button, name in ((self._usb, "usb"), (self._ble, "bluetooth")):
-            button.setCheckable(True)
-            button.setProperty("connection", True)
-            button.setIcon(icon(name))
-            button.setIconSize(QSize(22, 22))
-            group.addButton(button)
-            choices.addWidget(button)
-        self._usb.clicked.connect(lambda: self.set_connection_mode(False))
-        self._ble.clicked.connect(lambda: self.set_connection_mode(True))
-        text.addWidget(self._connections)
-        self._connection_note = QLabel()
-        self._connection_note.setWordWrap(True)
-        text.addWidget(self._connection_note)
-        self._help = QPushButton(objectName="guideHelp")
-        self._help.setIcon(icon("question"))
-        self._help.clicked.connect(self.open_help)
-        text.addWidget(self._help, 0, Qt.AlignmentFlag.AlignLeft)
-        text.addStretch()
-        self._body_layout.addWidget(copy, 43)
-        self._copy = copy
-
-        self._footer = QBoxLayout(QBoxLayout.Direction.LeftToRight)
-        self._footer.setSpacing(20)
-        dots = QWidget()
+        # Bottom row: "稍后设置" (the shell's close) | dots in the middle of the row | 返回 · primary.
+        self._skip = self.close_button  # keeps the shell's "dialogLater" name and look
+        footer = self.button_row()
+        self._footer = footer
+        dots = QWidget(footer.parentWidget())
         dots_layout = QHBoxLayout(dots)
         dots_layout.setContentsMargins(0, 0, 0, 0)
         dots_layout.setSpacing(0)
@@ -303,32 +315,21 @@ class OnboardingDialog(QDialog):
         for i in range(7):
             button = QPushButton("●", objectName=f"guideStep{i}")
             button.setProperty("progress", True)
-            button.setFixedSize(27, 28)
+            button.setFixedSize(24, 28)
             button.setCheckable(True)
+            button.setAutoDefault(False)
             button.clicked.connect(
                 lambda _checked=False, index=i: self.goto_step(index)
             )
             dots_layout.addWidget(button)
             self._dots.append(button)
-        self._footer.addWidget(dots, 1, Qt.AlignmentFlag.AlignLeft)
-        actions = QWidget()
-        actions_layout = QHBoxLayout(actions)
-        actions_layout.setContentsMargins(0, 0, 0, 0)
-        actions_layout.setSpacing(8)
-        self._back = QPushButton(objectName="onboardingBack")
-        self._back.setProperty("quiet", True)
+        dots.setFixedSize(24 * len(self._dots), 28)
+        self._dots_bar = dots   # placed by _place_dots(): centred on the whole row, not the gap
+        self._back = self.add_button("", "secondary", object_name="onboardingBack")
         self._back.clicked.connect(self.previous_step)
-        self._defer = QPushButton()
-        self._defer.setProperty("quiet", True)
-        self._defer.clicked.connect(self.next_step)
-        self._next = QPushButton(objectName="onboardingNext")
-        self._next.setMinimumWidth(180)
+        self._next = self.add_button("", "primary", object_name="onboardingNext")
         self._next.clicked.connect(self.next_step)
-        for button in (self._back, self._defer, self._next):
-            button.setAutoDefault(False)
-            actions_layout.addWidget(button)
-        self._footer.addWidget(actions, 0, Qt.AlignmentFlag.AlignRight)
-        layout.addLayout(self._footer)
+
         self.player.position_changed.connect(self._sync_frame)
         self.player.playing_changed.connect(self._sync_playback)
         self.player.error.connect(self._asset_error)
@@ -341,9 +342,9 @@ class OnboardingDialog(QDialog):
     def _icon_button(self, name: str, object_name: str) -> QPushButton:
         button = QPushButton(objectName=object_name)
         button.setProperty("iconOnly", True)
-        button.setFixedSize(36, 36)
+        button.setFixedSize(tokens.CONTROL_HEIGHT_SMALL, tokens.CONTROL_HEIGHT_SMALL)
         button.setIcon(icon(name))
-        button.setIconSize(QSize(18, 18))
+        button.setIconSize(QSize(16, 16))
         button.setAutoDefault(False)
         return button
 
@@ -409,6 +410,33 @@ class OnboardingDialog(QDialog):
             self._play_after_transition = False
             self.player.play()
 
+    def _fit_footer(self) -> None:
+        """The dots sit in the middle of the whole row (design ticket 答复第 2 件). Button
+        words come first: where long words (Japanese step 2, English last step) leave no room
+        there, the dots move to the middle of the gap between the buttons, and only step aside
+        when even the gap is too narrow."""
+        self._place_dots()
+        QTimer.singleShot(0, self, self._place_dots)  # again once the row has re-laid out
+
+    def _place_dots(self) -> None:
+        row = self._footer.geometry()
+        if not row.isValid():
+            return
+        bar = self._dots_bar
+        left_end = self._skip.geometry().right() + 8
+        right = [b.geometry().left() for b in (self._back, self._next) if not b.isHidden()]
+        right_start = min(right, default=row.right()) - 8
+        x = row.center().x() - bar.width() / 2
+        if x < left_end or x + bar.width() > right_start:
+            x = (left_end + right_start) / 2 - bar.width() / 2
+        bar.move(round(x), round(row.center().y() - bar.height() / 2))
+        bar.setVisible(right_start - left_end >= bar.width())
+        bar.raise_()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._place_dots()
+
     def _render_text(self) -> None:
         step = self.active_step
         self.setWindowTitle(self.tr_pair(("MIST · 设备操作动画", "MIST · Device operation guide")))
@@ -419,35 +447,29 @@ class OnboardingDialog(QDialog):
         self._skip.setText(self.tr_pair(("稍后设置", "Set up later")))
         self._back.setText(self.tr_pair(("返回", "Back")))
         self._back.setVisible(self._step_index > 0)
-        self._defer.setText(self.tr_pair(("稍后配对", "Pair later")))
-        self._defer.setVisible(self._step_index == 1 and self._bluetooth)
         self._connections.setVisible(self._step_index == 1)
-        self._usb.setText(
-            self.tr_pair(
-                (
-                    "使用数据线\n连接应用，修改配置",
-                    "Use a USB cable\nConnect to configure",
-                )
-            )
-        )
-        self._ble.setText(
-            self.tr_pair(
-                (
-                    "设置蓝牙\n无线使用，可稍后设置",
-                    "Set up Bluetooth\nOptional wireless use",
-                )
-            )
-        )
+        for button, pair in (
+            (self._usb, ("使用数据线\n连接应用，修改配置", "Use a USB cable\nConnect to configure")),
+            (self._ble, ("设置蓝牙\n无线使用，可稍后设置", "Set up Bluetooth\nOptional wireless use")),
+        ):
+            title, _, detail = self.tr_pair(pair).partition("\n")
+            title_label, detail_label = self._card_lines[button]
+            title_label.setText(title)
+            detail_label.setText(detail)
+            button.setAccessibleName(f"{title} {detail}".strip())
+            button.setMinimumHeight(button.layout().sizeHint().height())
         self._usb.setChecked(not self._bluetooth)
         self._ble.setChecked(self._bluetooth)
         self._connection_note.setVisible(self._step_index == 1 and self._bluetooth)
+        note = self.tr_pair((
+            "支持通过 USB 或蓝牙连接控制台并修改配置；固件升级需要 USB。",
+            "Configure through USB or Bluetooth; firmware updates require USB.",
+        ))
+        lead = self.tr_pair(("暂时不用蓝牙？", "Not using Bluetooth yet?"))
+        later = self.tr_pair(("稍后配对", "Pair later"))
         self._connection_note.setText(
-            self.tr_pair(
-                (
-                    "支持通过 USB 或蓝牙连接控制台并修改配置；固件升级需要 USB。",
-                    "Configure through USB or Bluetooth; firmware updates require USB.",
-                )
-            )
+            f"{html.escape(note)} {html.escape(lead)}"
+            f'<a href="pair-later" style="color: {tokens.TEXT_PRIMARY};">{html.escape(later)}</a>'
         )
         self.scene.fallback_text = self.tr_pair((
             "动画暂不可用，仍可阅读说明并继续。",
@@ -466,6 +488,7 @@ class OnboardingDialog(QDialog):
                     v1=i + 1, v2=self.tr_pair(ONBOARDING_STEPS[i].title)
                 )
             )
+        self._fit_footer()
         self._sync_playback(self.player.playing)
         self._sync_frame(self.player.position)
         self.scene.update()
@@ -512,64 +535,51 @@ class OnboardingDialog(QDialog):
     def toggle_playback(self) -> None:
         self.player.pause() if self.player.playing else self.player.play()
 
-    def _popup(self, title: str) -> tuple[QDialog, QVBoxLayout]:
-        dialog = QDialog(self)
+    def _popup(self, title: str) -> Dialog:
+        """A help popup: the shared shell at the small width, round close."""
+        dialog = Dialog(self, title, width=SMALL, object_name="onboardingHelp")
         dialog.setWindowTitle(title)
-        dialog.setModal(True)
+        dialog.title_label.setText(title)
         dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        dialog.setStyleSheet(
-            "QDialog{background:#fafbfb} QLabel{color:#242625;font-size:15px} QPushButton{color:#242625;background:#eef1ed;border:0;border-radius:20px;padding:11px 18px}"
-        )
-        dialog.resize(420, 300)
-        layout = QVBoxLayout(dialog)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(16)
-        heading = QLabel(title)
-        heading.setStyleSheet("font-size:23px;font-weight:600")
-        heading.setWordWrap(True)
-        layout.addWidget(heading)
-        for w in dialog.findChildren(QWidget):
-            w.setProperty("boringI18nSkip", True)
         self._popups.append(dialog)
         dialog.finished.connect(
             lambda _result: (
                 self._popups.remove(dialog) if dialog in self._popups else None
             )
         )
-        return dialog, layout
+        return dialog
 
     def open_help(self) -> None:
         self._play_after_transition = False
         self.player.pause()
-        dialog, layout = self._popup(self.tr_pair(self.active_step.help))
+        dialog = self._popup(self.tr_pair(self.active_step.help))
         body = QLabel(self.tr_pair(self.active_step.answer))
-        body.setProperty("boringI18nSkip", True)
         body.setWordWrap(True)
-        layout.addWidget(body)
+        dialog.body_layout().addWidget(body)
         if self._step_index == 3:
+            demos = QVBoxLayout()
+            demos.setSpacing(8)
             for slug, caption in (
                 ("knob-clockwise", ("顺时针示范", "Clockwise")),
                 ("knob-counterclockwise", ("逆时针示范", "Counterclockwise")),
                 ("knob-press", ("按压示范", "Press")),
             ):
-                button = QPushButton(self.tr_pair(caption))
-                button.setProperty("boringI18nSkip", True)
+                button = Button(self.tr_pair(caption), "secondary", size="small")
                 button.clicked.connect(
                     lambda _checked=False, clip=slug: (
                         dialog.accept(),
                         self.player.load(clip, autoplay=True),
                     )
                 )
-                layout.addWidget(button)
-        row = QHBoxLayout()
-        close = QPushButton(self.tr_pair(("关闭", "Close")))
-        close.clicked.connect(dialog.accept)
-        replay = QPushButton(
+                demos.addWidget(button, 0, Qt.AlignmentFlag.AlignLeft)
+            dialog.body_layout().addLayout(demos)
+        replay = dialog.add_button(
             self.tr_pair(
                 ("从头再看", "Start over")
                 if self._step_index == 6
                 else ("重播示范", "Replay demo")
-            )
+            ),
+            "secondary",
         )
         replay.clicked.connect(
             lambda: (
@@ -579,10 +589,8 @@ class OnboardingDialog(QDialog):
                 else self.player.load(self.active_step.clip, autoplay=True),
             )
         )
-        for button in (close, replay):
-            button.setProperty("boringI18nSkip", True)
-            row.addWidget(button)
-        layout.addLayout(row)
+        for widget in dialog.findChildren(QWidget):
+            widget.setProperty("boringI18nSkip", True)
         dialog.open()
 
     def _finish(self, _result: int) -> None:
@@ -594,6 +602,7 @@ class OnboardingDialog(QDialog):
 
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
+        QTimer.singleShot(0, self, self._place_dots)
         if self.player.movie is None:
             self.player.load(self.active_step.clip)
         if self._autoplay:
@@ -603,28 +612,3 @@ class OnboardingDialog(QDialog):
         self._play_after_transition = False
         self.player.pause()
         super().hideEvent(event)
-
-    def resizeEvent(self, event) -> None:  # noqa: N802
-        super().resizeEvent(event)
-        if not hasattr(self, "_body_layout"):
-            return
-        narrow = self.width() < 850
-        first = self._copy if narrow else self._visual
-        if self._body_layout.indexOf(first) != 0:
-            self._body_layout.removeWidget(first)
-            self._body_layout.insertWidget(0, first)
-        self._body_layout.setDirection(
-            QBoxLayout.Direction.TopToBottom
-            if narrow
-            else QBoxLayout.Direction.LeftToRight
-        )
-        self._footer.setDirection(
-            QBoxLayout.Direction.TopToBottom
-            if narrow
-            else QBoxLayout.Direction.LeftToRight
-        )
-        self._body_layout.setStretch(0, 0 if narrow else 57)
-        self._body_layout.setStretch(1, 0 if narrow else 43)
-        self.scene.setMinimumHeight(240 if narrow else 260)
-        self.scene.setMaximumHeight(290 if narrow else 16777215)
-        self._copy.setMaximumWidth(16777215 if narrow else 390)

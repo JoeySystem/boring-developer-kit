@@ -1,18 +1,23 @@
 {
-  "version": "0.2.1",
-  "from_version": "0.1.46",
+  "version": "0.3.0",
   "highlights": {
     "zh_CN": [
-      "同步 0.2.1 控制台的配置、语音设置和草稿恢复功能。",
-      "社区版使用独立设置、系统字体和简化设备示意。"
+      "界面全新设计：Mode、Prompt、Settings 三个页签，设备居中显示，可以展开查看设备上的所有屏幕。",
+      "新手引导重做，新增蓝牙首次配对的分步演示；首页的书本图标随时可以再打开。",
+      "第一次连接时播放全新的连接动画；蓝牙连接更快，连接中按三步显示进度。",
+      "社区版使用独立设置、系统字体和简化设备示意，不含连接动画、3D 模型和豆包联动。"
     ],
     "en_US": [
-      "Sync Console 0.2.1 configuration, voice setup and draft recovery.",
-      "Community builds use separate settings, system fonts and a schematic device view."
+      "A completely redesigned interface with Mode, Prompt and Settings tabs, the device in the center, and a view that expands to show every screen on the device.",
+      "A redesigned getting-started guide with a step-by-step first Bluetooth pairing. Reopen it any time from the book icon on the home screen.",
+      "A new animation plays on the first connection. Bluetooth connects faster and shows its progress in three steps.",
+      "Community builds use separate settings, system fonts and a schematic device view, without the connection animation, 3D model or Doubao link."
     ],
     "ja_JP": [
-      "Console 0.2.1 の設定、音声入力設定、下書き復元を同期。",
-      "コミュニティ版は独立した設定、システムフォント、簡易デバイス表示を使用。"
+      "インターフェースを全面的に刷新しました。Mode・Prompt・Settings の 3 つのタブで、デバイスを中央に表示し、デバイスのすべての画面を展開して確認できます。",
+      "はじめてガイドを作り直し、Bluetooth の初回ペアリングを手順ごとに案内します。ホーム画面の本のアイコンからいつでも開けます。",
+      "初回の接続時に新しいアニメーションを再生します。Bluetooth の接続が速くなり、接続中は 3 つのステップで進み具合を表示します。",
+      "コミュニティ版は独立した設定、システムフォント、簡易デバイス表示を使用し、接続アニメーション、3D モデル、Doubao 連携は含みません。"
     ]
   }
 }

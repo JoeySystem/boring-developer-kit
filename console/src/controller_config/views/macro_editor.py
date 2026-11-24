@@ -7,7 +7,6 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
-    QMessageBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -17,6 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from controller_config.views.ui import notice
 from controller_config.drafts import macro_steps_encoded_size
 from controller_config.i18n import set_translatable_text, translate_ui_text
 from controller_config.protocol.contract import ConfigEditorRules
@@ -188,7 +188,7 @@ class MacroEditor(QWidget):
                  {"op": "tap", "usage": action["usage"]},
                  *( {"op": "release", "usage": value} for value in reversed(modifiers))]
         if len(self._rows) + len(steps) > self._rules.macro_steps_max_items:
-            QMessageBox.warning(self, translate_ui_text("无法添加快捷键"),
+            notice.notify(self, translate_ui_text("无法添加快捷键"),
                                 translate_ui_text("剩余步骤不足，请先移除一些步骤。"))
             return
         for step in steps:

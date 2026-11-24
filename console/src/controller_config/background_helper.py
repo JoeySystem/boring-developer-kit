@@ -3,6 +3,7 @@ from __future__ import annotations
 import plistlib
 import json
 import sys
+import time
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -26,7 +27,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMenu,
-    QProgressBar,
     QPushButton,
     QSystemTrayIcon,
     QVBoxLayout,
@@ -46,7 +46,10 @@ from controller_config.appearance import (
     MACOS_GLASS_MENU_STYLE,
     install_macos_vibrancy,
 )
+from controller_config.style import tokens
 from controller_config.i18n import LanguageManager, translate_ui_text
+from controller_config.program_path import program_executable
+from controller_config.views.ui.progress_ring import ProgressRing
 
 
 BACKGROUND_ENABLED_KEY = "prompt_helper/background_enabled"
@@ -110,33 +113,40 @@ class _MacTextStatusItem:
 
 
 class _CodexQuotaProgress(QWidget):
-    """Compact, non-interactive quota bar embedded in the tray menu."""
+    """One quota row in the tray menu: small ring, "5h" / "week usage", reset time.
+
+    进度条点阵样式 定稿 v1 (4-菜单栏额度面板.png): the ring is white and grey,
+    the number in it is what is left (no percent sign), it turns orange when
+    the quota is nearly used up; the reset time is right-aligned.
+    """
 
     def __init__(self, role: str, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        color = "#FF6A00"
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 2)
-        self.progress = QProgressBar(objectName="menuBarQuotaProgress")
-        self.progress.setRange(0, 100)
-        self.progress.setTextVisible(False)
-        self.progress.setFixedHeight(5)
-        self.progress.setStyleSheet(
-            "QProgressBar {"
-            " background: #34383c; border: none; border-radius: 2px;"
-            "}"
-            "QProgressBar::chunk {"
-            f" background: {color}; border: none; border-radius: 2px;"
-            "}"
+        super().__init__(parent, objectName="menuBarQuotaRow")
+        self.setProperty("windowRole", role)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+        self.progress = ProgressRing(
+            36, quota=True,
+            lit=tokens.MENUBAR_QUOTA_RING_LIT, unlit=tokens.MENUBAR_QUOTA_RING_UNLIT,
         )
+        self.progress.setObjectName("menuBarQuotaProgress")
+        self.label = QLabel(objectName="menuBarQuotaWindowLabel")
+        self.label.setProperty("windowRole", role)
+        self.reset = QLabel(objectName="menuBarQuotaReset")
+        self.reset.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(self.progress)
+        layout.addWidget(self.label, 1)
+        layout.addWidget(self.reset)
 
     def set_window(self, window: CodexQuotaWindow | None) -> None:
         if window is None:
-            self.progress.setValue(0)
+            self.progress.set_value(0)
             self.hide()
             return
-        self.progress.setValue(round(window.remaining_percent))
+        self.progress.set_value(window.remaining_percent)
+        self.label.setText(_menu_bar_window_name(window))
+        self.reset.setText(_menu_bar_reset_time(window))
         self.show()
 
 
@@ -171,6 +181,10 @@ class _UsageProviderSection(QWidget):
         self.source.setText(
             _menu_bar_usage_source_line(snapshot, self._provider_title)
         )
+        # 定稿 v1 drops this line; "更新于" is written once at the bottom of the
+        # panel. Waiting, failed and lagging data have no drawing yet, so the
+        # line stays for them as before.
+        self.source.setVisible(not _usage_is_live(snapshot))
         next_shape = tuple(_bucket_shape(bucket) for bucket in snapshot.buckets)
         current_shape = tuple(
             _bucket_shape(bucket) for bucket in self._rendered_buckets
@@ -219,19 +233,11 @@ class _UsageProviderSection(QWidget):
         ):
             if window is None:
                 continue
-            label = QLabel(
-                _menu_bar_window_line(window),
-                objectName="menuBarQuotaWindowLabel",
-            )
-            label.setProperty("limitId", bucket.limit_id)
-            label.setProperty("windowRole", role)
-            label.setWordWrap(True)
-            layout.addWidget(label)
-            progress = _CodexQuotaProgress(role)
-            progress.setProperty("limitId", bucket.limit_id)
-            progress.setProperty("windowRole", role)
-            progress.set_window(window)
-            layout.addWidget(progress)
+            row = _CodexQuotaProgress(role)
+            row.setProperty("limitId", bucket.limit_id)
+            row.label.setProperty("limitId", bucket.limit_id)
+            row.set_window(window)
+            layout.addWidget(row)
         return section
 
     def _update_bucket_section(
@@ -244,10 +250,6 @@ class _UsageProviderSection(QWidget):
         if plan is not None and bucket.plan_type:
             plan.setText(bucket.plan_type.upper())
         windows = {"primary": bucket.primary, "secondary": bucket.secondary}
-        for label in section.findChildren(QLabel, "menuBarQuotaWindowLabel"):
-            window = windows.get(str(label.property("windowRole")))
-            if window is not None:
-                label.setText(_menu_bar_window_line(window))
         for progress in section.findChildren(_CodexQuotaProgress):
             progress.set_window(windows.get(str(progress.property("windowRole"))))
 
@@ -260,18 +262,22 @@ class _UsageMenuPanel(QWidget):
         self.setFixedWidth(286)
         self.setStyleSheet(
             "QWidget#menuBarUsagePanel { background: transparent; }"
-            "QLabel { background: transparent; color: #f5f5f7; }"
-            "QLabel#menuBarUsageSource { color: rgba(235, 235, 245, 150);"
-            " font-size: 11px; }"
-            "QLabel#menuBarQuotaBucketName { font-size: 13px; font-weight: 700; }"
-            "QLabel#menuBarQuotaPlan { color: #ff8068; font-size: 10px;"
+            f"QLabel {{ background: transparent; color: {tokens.MENUBAR_TEXT}; }}"
+            f"QLabel#menuBarUsageSource {{ color: {tokens.MENUBAR_TEXT_SOURCE};"
+            f" font-size: {tokens.MENUBAR_FONT_SMALL}px; }}"
+            f"QLabel#menuBarQuotaBucketName {{ font-size: {tokens.MENUBAR_FONT_BODY}px; font-weight: 700; }}"
+            f"QLabel#menuBarQuotaPlan {{ color: {tokens.MENUBAR_PLAN}; font-size: {tokens.MENUBAR_FONT_TINY}px;"
             " font-weight: 700; }"
-            "QLabel#menuBarQuotaWindowLabel { color: rgba(245, 245, 247, 210);"
-            " font-size: 11px; }"
-            "QLabel#menuBarUsageMessage { color: rgba(235, 235, 245, 170);"
-            " font-size: 11px; }"
+            f"QLabel#menuBarQuotaWindowLabel {{ color: {tokens.MENUBAR_TEXT};"
+            f" font-size: {tokens.MENUBAR_FONT_BODY}px; }}"
+            f"QLabel#menuBarQuotaReset {{ color: {tokens.MENUBAR_TEXT_RESET};"
+            f" font-size: {tokens.MENUBAR_FONT_SMALL}px; }}"
+            f"QLabel#menuBarUsageUpdated {{ color: {tokens.MENUBAR_TEXT_SOURCE};"
+            f" font-size: {tokens.MENUBAR_FONT_SMALL}px; }}"
+            f"QLabel#menuBarUsageMessage {{ color: {tokens.MENUBAR_TEXT_MESSAGE};"
+            f" font-size: {tokens.MENUBAR_FONT_SMALL}px; }}"
             "QFrame#menuBarUsageDivider {"
-            " background: rgba(255, 255, 255, 30); border: none; max-height: 1px;"
+            f" background: {tokens.MENUBAR_DIVIDER}; border: none; max-height: 1px;"
             "}"
         )
         layout = QVBoxLayout(self)
@@ -284,6 +290,10 @@ class _UsageMenuPanel(QWidget):
         layout.addWidget(self.codex)
         layout.addWidget(divider)
         layout.addWidget(self.claude)
+        self.updated = QLabel(objectName="menuBarUsageUpdated")
+        self.updated.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.updated.hide()
+        layout.addWidget(self.updated)
 
     def update_snapshots(
         self,
@@ -300,6 +310,12 @@ class _UsageMenuPanel(QWidget):
             claude_snapshot,
             rebuild_buckets=rebuild_buckets,
         )
+        live = [item.updated_at for item in (codex_snapshot, claude_snapshot)
+                if _usage_is_live(item) and item.updated_at is not None]
+        self.updated.setText(
+            f"{translate_ui_text('更新于')} {_menu_bar_clock(max(live))}" if live else ""
+        )
+        self.updated.setVisible(bool(live))
 
 
 def _bucket_shape(bucket: CodexQuotaBucket) -> tuple[str, bool, bool, bool]:
@@ -320,17 +336,17 @@ class _PersistentMenuButton(QPushButton):
         self.setMinimumHeight(34)
         self.setStyleSheet(
             "QPushButton#persistentTrayMenuButton {"
-            " background: transparent; color: #f5f5f7; border: none;"
-            " border-radius: 7px; padding: 7px 12px; text-align: left;"
+            f" background: transparent; color: {tokens.MENUBAR_TEXT}; border: none;"
+            f" border-radius: {tokens.MENUBAR_RADIUS_BUTTON}px; padding: 7px 12px; text-align: left;"
             "}"
             "QPushButton#persistentTrayMenuButton:hover {"
-            " background: rgba(255, 255, 255, 28); color: #ffffff;"
+            f" background: {tokens.MENUBAR_BUTTON_HOVER}; color: {tokens.MENUBAR_TEXT_HOVER};"
             "}"
             "QPushButton#persistentTrayMenuButton:pressed {"
-            " background: rgba(255, 255, 255, 38);"
+            f" background: {tokens.MENUBAR_BUTTON_PRESSED};"
             "}"
             "QPushButton#persistentTrayMenuButton:disabled {"
-            " color: rgba(235, 235, 245, 138);"
+            f" color: {tokens.MENUBAR_TEXT_DISABLED};"
             "}"
         )
 
@@ -530,6 +546,7 @@ class PromptBackgroundController(QObject):
 
     state_changed = Signal()
     codex_usage_changed = Signal(object)
+    claude_usage_changed = Signal(object)
 
     def __init__(
         self,
@@ -689,6 +706,11 @@ class PromptBackgroundController(QObject):
     def set_claude_usage_snapshot(self, snapshot: CodexUsageSnapshot) -> None:
         self._claude_usage_snapshot = snapshot
         self._update_tray_usage()
+        self.claude_usage_changed.emit(snapshot)
+
+    @property
+    def claude_usage_snapshot(self) -> CodexUsageSnapshot:
+        return self._claude_usage_snapshot
 
     def refresh_usage(self) -> None:
         if (self._codex_usage_monitor is not None
@@ -716,6 +738,12 @@ class PromptBackgroundController(QObject):
             )
         return True
 
+    def notify_failure(self, title: str, message: str) -> None:
+        if self._tray is not None:
+            self._tray.showMessage(
+                title, message, QSystemTrayIcon.MessageIcon.Warning, 5000,
+            )
+
     def show_window(self) -> None:
         if self._window is None:
             return
@@ -728,6 +756,13 @@ class PromptBackgroundController(QObject):
         self._window.activateWindow()
 
     def _on_application_state_changed(self, state: Qt.ApplicationState) -> None:
+        if state != Qt.ApplicationState.ApplicationActive:
+            # Leaving Console for the target app must dismiss the full popup
+            # stack (including submenus), not the configuration window/dialog.
+            for widget in self._application.topLevelWidgets():
+                if widget.windowType() == Qt.WindowType.Popup and widget.isVisible():
+                    widget.close()
+            return
         if (state == Qt.ApplicationState.ApplicationActive
                 and not self._quitting and self._window is not None
                 and (self._window_closed_to_background or self._window.isMinimized())):
@@ -977,7 +1012,7 @@ class PromptBackgroundController(QObject):
 
 def background_program_arguments() -> tuple[str, ...]:
     if getattr(sys, "frozen", False) or "__compiled__" in globals():
-        return sys.executable, "--background"
+        return program_executable(), "--background"
     return sys.executable, "-m", "controller_config.app", "--background"
 
 
@@ -1055,22 +1090,32 @@ def _menu_bar_window_short(window: CodexQuotaWindow) -> str:
     return "LIMIT"
 
 
-def _menu_bar_window_line(window: CodexQuotaWindow) -> str:
-    label = {
-        300: translate_ui_text("5 小时窗口"),
-        10_080: translate_ui_text("周额度"),
-    }.get(window.window_minutes, translate_ui_text("额度窗口"))
-    reset = ""
-    if window.resets_at is not None:
-        reset_at = datetime.fromtimestamp(window.resets_at).astimezone()
-        reset = (
-            f" · {translate_ui_text('预计恢复')} "
-            f"{reset_at.strftime('%m-%d %H:%M')}"
-        )
+def _usage_is_live(snapshot: CodexUsageSnapshot) -> bool:
+    """Fresh data from a live source: the per-group status line can go."""
     return (
-        f"{label} · {translate_ui_text('剩余')} "
-        f"{_remaining_percent(window)}%{reset}"
+        snapshot.status is CodexUsageStatus.AVAILABLE
+        and snapshot.source in {"app_server", "claude_oauth"}
     )
+
+
+def _menu_bar_window_name(window: CodexQuotaWindow) -> str:
+    """the designer's short names (定稿 v1), the same in every language."""
+    return {300: "5h", 10_080: "week usage"}.get(
+        window.window_minutes, translate_ui_text("额度窗口")
+    )
+
+
+def _menu_bar_clock(timestamp: float, *, now: float | None = None) -> str:
+    """Within a day only the time ("00:20"), further off the date too ("11-21 22:20")."""
+    moment = datetime.fromtimestamp(timestamp).astimezone()
+    reference = time.time() if now is None else now
+    if abs(timestamp - reference) < 86_400:
+        return moment.strftime("%H:%M")
+    return moment.strftime("%m-%d %H:%M")
+
+
+def _menu_bar_reset_time(window: CodexQuotaWindow, *, now: float | None = None) -> str:
+    return "" if window.resets_at is None else _menu_bar_clock(window.resets_at, now=now)
 
 
 def _remaining_percent(window: CodexQuotaWindow) -> str:

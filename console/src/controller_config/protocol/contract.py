@@ -20,6 +20,27 @@ class ContractError(RuntimeError):
 BLE_NAME_GET = 0x1C
 BLE_NAME_SET = 0x1D
 BLE_NAME_MAX_UTF8_BYTES = 24
+
+# Desktop Agent status source (protocol.md "Desktop Agent status source" and
+# "Desktop encoder task navigation"). SET/CLEAR_AGENT_STATUS carry it.
+SET_AGENT_STATUS_TYPE = 0x28
+CLEAR_AGENT_STATUS_TYPE = 0x29
+DESKTOP_AGENT_SOURCE = "desktop"
+DESKTOP_AGENT_STATES = (
+    "unknown", "idle", "standby", "working", "completed",
+    "approval", "reply", "error", "codex",
+)
+DESKTOP_AGENT_SLOT_KEYS = (1, 2, 4, 5, 6, 7)
+DESKTOP_AGENT_LEASE_MS = 5000
+DESKTOP_AGENT_EVENT_LIFETIME_MS = 2000
+DESKTOP_AGENT_BLE_POLL_MS = 250
+FEATURE_DESKTOP_AGENT_STATUS = "desktop_agent_status"
+FEATURE_DESKTOP_TASK_NAVIGATION = "desktop_task_navigation"
+DESKTOP_ENCODER_NAVIGATION = "encoder_navigation"
+STATUS_DESKTOP_AGENT_STATUS = "desktop_agent_status"
+STATUS_DESKTOP_AGENT_PRESS = "desktop_agent_press"
+STATUS_DESKTOP_NAVIGATION = "desktop_navigation"
+STATUS_CODEX_STATUS_AGE_MS = "status_age_ms"
 _BLE_NAME_WHITESPACE = frozenset(
     [*range(0x09, 0x0E), 0x20, 0x85, 0xA0, 0x1680,
      *range(0x2000, 0x200B), 0x2028, 0x2029, 0x202F, 0x205F, 0x3000]
@@ -135,7 +156,9 @@ class Contract:
         except (KeyError, TypeError, ValueError) as exc:
             raise ContractError(f"共享协议资产结构无效：{exc}") from exc
 
-    def validate_hello(self, payload: dict[str, Any]) -> None:
+    def validate_hello(
+        self, payload: dict[str, Any], *, allow_config_incompatible: bool = False
+    ) -> None:
         result = payload.get("result")
         if not isinstance(result, dict):
             raise ContractError("HELLO result 必须是 object")
@@ -160,9 +183,14 @@ class Contract:
             raise ContractError("设备序列号不符合当前 USB fixture")
         if versions.get("protocol_major") != self.protocol_major:
             raise ContractError("设备 protocol major 与客户端不兼容")
-        if versions.get("protocol_minor") != self.protocol_minor:
-            raise ContractError("设备 protocol minor 与客户端不兼容")
-        if versions.get("schema_version") != self.schema_version:
+        # Same major: any minor is accepted (protocol.md §2). Minors only add
+        # backward-compatible fields/commands; features come from CAPABILITIES.
+        minor = versions.get("protocol_minor")
+        if type(minor) is not int or minor < 0:
+            raise ContractError("HELLO protocol_minor 必须是非负整数")
+        if type(versions.get("schema_version")) is not int or versions["schema_version"] < 1:
+            raise ContractError("HELLO schema_version 必须是正整数")
+        if not allow_config_incompatible and versions.get("schema_version") != self.schema_version:
             raise ContractError("设备配置 schema 与客户端不兼容")
         if not isinstance(versions.get("firmware"), str):
             raise ContractError("HELLO firmware 版本不是字符串")
@@ -237,6 +265,29 @@ class Contract:
                 validate_agent_readback(result["claude_code_status"])
             except ValueError as exc:
                 raise ContractError(str(exc)) from exc
+        from controller_config.doubao_status import validate_readback, validate_press, validate_navigation
+        for field, validator in (("doubao_status", validate_readback),
+                                 ("doubao_agent_press", validate_press),
+                                 ("doubao_navigation", validate_navigation)):
+            if field in result:
+                try:
+                    validator(result[field])
+                except ValueError as exc:
+                    raise ContractError(str(exc)) from exc
+        from controller_config import desktop_status_wire as desktop
+        # Firmware without the desktop source omits these fields.
+        for field, validator in ((desktop.STATUS_FIELD, desktop.validate_readback),
+                                 (desktop.PRESS_FIELD, desktop.validate_press),
+                                 (desktop.NAVIGATION_FIELD, desktop.validate_navigation)):
+            if field in result:
+                try:
+                    validator(result[field])
+                except ValueError as exc:
+                    raise ContractError(str(exc)) from exc
+        try:
+            desktop.validate_codex_status_age(codex_micro)
+        except ValueError as exc:
+            raise ContractError(str(exc)) from exc
         if codex_micro is not None:
             self._validate_ble_slots(codex_micro)
         active_controls = result.get("active_controls")

@@ -992,6 +992,8 @@ Knob: confirm</translation></message>
     <message><source>素材检查超时，已停止本次检查；请换一张图片或重新选择。 原有内容未改变，可继续导入其他图片。</source><translation>Image check timed out and was stopped. Choose another image or try again. Existing content is unchanged; you can import another image.</translation></message>
     <message><source>素材检查未完成，请重新选择图片再试。 原有内容未改变，可继续导入其他图片。</source><translation>Image check could not finish. Select an image to try again. Existing content is unchanged; you can import another image.</translation></message>
     <message><source>0 · 关闭震动</source><translation>0 · Off</translation></message>
+    <message><source>1 · 标准</source><translation>1 · Standard</translation></message>
+    <message><source>2 · 强</source><translation>2 · Strong</translation></message>
     <message><source>1 · 低</source><translation>1 · Low</translation></message>
     <message><source>2 · 中</source><translation>2 · Medium</translation></message>
     <message><source>3 · 高</source><translation>3 · High</translation></message>

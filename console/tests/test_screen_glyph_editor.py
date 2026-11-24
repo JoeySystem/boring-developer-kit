@@ -4,6 +4,7 @@ from PySide6.QtGui import QColor, QImage
 from PySide6.QtWidgets import QMessageBox
 
 from controller_config.views.screen_glyph_editor import GlyphDraft, ScreenGlyphEditor, render_glyph
+from notice_helpers import answer_questions, answer_warnings
 
 
 class Transfer(QObject):
@@ -124,8 +125,8 @@ def test_confirmation_cannot_mutate_changed_target(editor, image_path, monkeypat
         else:
             transfer.device_key = ("CP01-112233445566", "MIST")
         return QMessageBox.Yes
-    monkeypatch.setattr(QMessageBox, "question", question)
-    monkeypatch.setattr(QMessageBox, "warning", lambda *args: QMessageBox.Ok)
+    answer_questions(monkeypatch, question)
+    answer_warnings(monkeypatch, lambda *args: QMessageBox.Ok)
     getattr(widget, "_confirm_" + operation)()
     assert not requests
 
@@ -139,7 +140,7 @@ def test_write_carries_frozen_payload_and_verified_readback_clears_only_that_dra
     def question(*args):
         widget.invert.setChecked(True)
         return QMessageBox.Yes
-    monkeypatch.setattr(QMessageBox, "question", question)
+    answer_questions(monkeypatch, question)
     widget._confirm_write()
     assert requests == [original]
     transfer.verified_write = ("timer", original)

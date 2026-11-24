@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QPushButton, QVBoxLayout, QWidget,
 )
 
+from controller_config.views.ui import notice
 from controller_config.i18n import set_translatable_text, translate_ui_text
 from controller_config.screen_icon import load_icon_image
 from controller_config.views.icon_material_review import IconMaterialReview
@@ -331,12 +332,14 @@ class ScreenGlyphEditor(QWidget):
         if t is None or self.draft_key is None:
             return False
         key, epoch = self.draft_key, t.connection_epoch
-        result = QMessageBox.question(self, translate_ui_text(title), translate_ui_text(message),
-                                      QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel)
+        # The button says what happens: the title is the action (写入当前图标 / 本项恢复默认).
+        result = notice.ask(self, translate_ui_text(title), translate_ui_text(message),
+                            QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel,
+                            labels={QMessageBox.Yes: title})
         if result != QMessageBox.Yes:
             return False
         if key != self.draft_key or epoch != t.connection_epoch:
-            QMessageBox.warning(self, translate_ui_text("设备连接已变化"), translate_ui_text(
+            notice.alert(self, translate_ui_text("设备连接已变化"), translate_ui_text(
                 "设备或选中的图标已变化，请重新确认后操作。"))
             return False
         entry = self._entry()

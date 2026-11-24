@@ -5,8 +5,9 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
-from PySide6.QtCore import QObject, Signal
-from PySide6.QtWidgets import QFileDialog, QLineEdit, QPushButton
+from PySide6.QtCore import QObject, Signal, Qt
+from PySide6.QtGui import QCloseEvent
+from PySide6.QtWidgets import QFileDialog, QLabel, QLineEdit, QPushButton
 
 from controller_config.desktop_update import UpdateStatus
 from controller_config.build_identity import BuildIdentity
@@ -52,10 +53,13 @@ class FakeUpdater(QObject):
         {"download": self.download, "install": self.install}.get(self.status.retry_action, self.check)()
 
     def cancel(self):
-        if self.status.state not in {'checking', 'downloading'}:
+        if self.status.state not in {'checking', 'downloading', 'ready'}:
             return
         self.calls.append("cancel")
-        self.publish("available", version="0.2.0")
+        self.publish(
+            "idle" if self.status.state == "ready" else "available",
+            version="0.2.0",
+        )
 
     def install(self):
         self.calls.append("install")
@@ -129,7 +133,7 @@ def test_footer_download_progress_cancel_and_restart(update_session):
     ui.show_status(UpdateStatus(state="current"))
     assert ui.row.isHidden()
     updater.publish("available", version="0.2.0")
-    assert window._nav_buttons['settings'].accessibleName() == '固件与系统'
+    assert window._nav_buttons['settings'].accessibleName() == 'Settings'
     assert ui.row.isHidden()
     assert ui.action.text() == "下载更新"
     ui.action.click()
@@ -145,6 +149,44 @@ def test_footer_download_progress_cancel_and_restart(update_session):
     assert ui.restart_prepared
     assert ui.store.load()["workspace"]["page"] == vm.page
     assert not window.isEnabled()
+
+
+@pytest.mark.parametrize(
+    "choice, expected_close, expected_call",
+    [
+        ("install", False, "install"),
+        ("discard", True, "cancel"),
+        ("cancel", False, None),
+    ],
+)
+def test_ready_update_requires_an_explicit_quit_choice(
+    update_session, choice, expected_close, expected_call
+):
+    window, _, _, _, _, ui, updater, _ = update_session
+    ui._confirm_ready_update_quit = lambda: choice
+    updater.publish("ready", version="0.2.0")
+
+    assert ui.handle_close_request() is expected_close
+    if expected_call is None:
+        assert updater.calls == []
+        assert ui.status.state == "ready"
+    else:
+        assert updater.calls[-1] == expected_call
+
+
+def test_main_window_does_not_quit_when_ready_update_choice_is_cancelled(
+    update_session,
+):
+    window, _, _, _, _, ui, updater, shutdown = update_session
+    ui._confirm_ready_update_quit = lambda: "cancel"
+    updater.publish("ready", version="0.2.0")
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    assert not event.isAccepted()
+    assert updater.calls == []
+    assert shutdown == []
 
 
 @pytest.mark.parametrize("failure_state", ["failed", "ready"])
@@ -163,14 +205,31 @@ def test_installer_launch_failure_reenables_current_app_and_preserves_workspace(
 
 def test_about_settings_exposes_explicit_check(update_session):
     window, vm, _, _, _, ui, updater, _ = update_session
-    window._settings_section = "system"
+    window._settings_section = "updates"
     vm.navigate("settings")
     button = window.findChild(QPushButton, "checkDesktopUpdate")
+    inline = window.findChild(QLabel, "desktopUpdateInlineMessage")
     assert button is not None
+    assert inline is not None and inline.isHidden()
     button.click()
     assert updater.calls == ["check"]
-    assert not ui.row.isHidden()
-    assert ui.message.text() == "当前已是最新版本"
+    assert ui.row.isHidden()
+    assert ui.message.text() == "软件：当前已是最新版本"
+    assert inline.text() == "软件：当前已是最新版本"
+    assert not inline.isHidden()
+
+    window._select_settings_section("device")
+    assert ui.row.isHidden()
+    assert not window.findChild(QLabel, "desktopUpdateInlineMessage").isVisible()
+
+    window._select_settings_section("updates")
+    inline = window.findChild(QLabel, "desktopUpdateInlineMessage")
+    assert inline is not None and not inline.isHidden()
+    assert inline.text() == "软件：当前已是最新版本"
+    assert ui.row.isHidden()
+
+    vm.navigate("firmware")
+    assert ui.row.isHidden()
 
 
 @pytest.mark.parametrize("kind", ["mapping", "preferences", "macro", "prompt", "automation", "workflow"])
@@ -186,7 +245,7 @@ def test_pending_editor_survives_fresh_window_without_device_write(update_sessio
         vm.navigate("lighting")
         window._content.findChild(PreferencesEditor)._haptic_duration.setValue(37)
     elif kind == "macro":
-        window._selected_macro_id = vm.create_macro()
+        window._sequences_page.selected_macro_id = vm.create_macro()
         vm.navigate("sequences")
         window._content.findChild(QLineEdit, "macroNameEditor").setText("Pending sequence")
         window._content.findChild(MacroEditor)._add_step("delay")
@@ -243,7 +302,7 @@ def test_mapping_inputs_survive_update_from_system_page(update_session, contract
     updater.publish("ready", version="0.2.0")
     window._activate_settings_navigation()
     assert vm.page == "settings"
-    assert window._settings_section == "system"
+    assert window._settings_section == "updates"
     assert window._current_mapping_card() is None
     gateway.commands.clear()
     ui.action.click()
@@ -251,18 +310,23 @@ def test_mapping_inputs_survive_update_from_system_page(update_session, contract
     saved = ui.store.load()["workspace"]["mapping"]
     assert saved["short_name"] == "更新验收临时"
     assert saved["action"] == action
-    assert vm.draft.config == confirmed
+    # Leaving Mode keeps the typing in the local draft (not on the device).
+    expected = {"control_id": "key.8", "short_name": "更新验收临时", "action": action}
+    assert vm.draft.mapping(vm.draft.config["active_profile"], "key.8") == expected
+    assert vm.draft.is_dirty and confirmed != vm.draft.config
     assert gateway.commands == []
 
     window2, vm2, gateway2, restored = _restart_destination(update_session, contract, qtbot, monkeypatch)
     restored.restore_if_ready()
     assert vm2.page == "settings"
-    assert window2._settings_section == "system"
+    assert window2._settings_section == "updates"
     vm2.navigate("overview")
     assert window2._selected_control_id == "key.8"
     assert window2._content.findChild(QLineEdit, "mappingShortNameEditor").text() == "更新验收临时"
     assert window2._content.findChild(ActionEditor).action() == action
-    assert vm2.draft.config == confirmed
+    # The kept local draft comes back too; still nothing was written to the device.
+    assert vm2.draft.mapping(vm2.draft.config["active_profile"], "key.8") == expected
+    assert vm2.draft.is_dirty
     assert gateway2.commands == []
     assert not ui.store.path.exists()
 
@@ -291,12 +355,12 @@ def test_unsafe_restart_is_blocked_without_saving_or_shutting_down(update_sessio
     elif blocker == "image_draft":
         window._screen_icon_drafts["home"] = SimpleNamespace(is_dirty=True)
     else:
-        vm._firmware_update = FirmwareUpdateTransaction(FirmwareUpdateState.TRANSFERRING)
+        vm._firmware.replace_silently(FirmwareUpdateTransaction(FirmwareUpdateState.TRANSFERRING))
     assert not ui.prepare_restart()
     assert shutdown == []
     assert not ui.store.path.exists()
     assert window.isEnabled()
-    vm._firmware_update = FirmwareUpdateTransaction()
+    vm._firmware.replace_silently(FirmwareUpdateTransaction())
     window._screen_icon_drafts.clear()
 
 
@@ -480,13 +544,18 @@ def test_failed_recovery_export_retains_original_and_pending_state(update_sessio
 def test_manual_async_current_stays_visible_background_current_is_quiet(update_session, monkeypatch):
     window, _, _, _, _, ui, updater, _ = update_session
     window.show()
+    window._select_settings_section('updates')
     updater.publish('current')
     assert ui.row.isHidden()
+    assert window.findChild(QLabel, 'desktopUpdateInlineMessage').isHidden()
     monkeypatch.setattr(updater, 'check', lambda: updater.publish('checking'))
     ui.check()
     updater.publish('current')
-    assert not ui.row.isHidden()
-    assert ui.message.text() == '当前已是最新版本'
+    assert ui.row.isHidden()
+    assert ui.message.text() == '软件：当前已是最新版本'
+    inline = window.findChild(QLabel, 'desktopUpdateInlineMessage')
+    assert inline.text() == '软件：当前已是最新版本'
+    assert not inline.isHidden()
 
 
 def test_manual_current_supersedes_successful_workspace_recovery_message(
@@ -508,7 +577,7 @@ def test_manual_current_supersedes_successful_workspace_recovery_message(
     restored.check()
     assert restored.message.text() == '正在检查应用更新…'
     updater.publish('current')
-    assert restored.message.text() == '当前已是最新版本'
+    assert restored.message.text() == '软件：当前已是最新版本'
 
 
 @pytest.mark.parametrize(
@@ -567,7 +636,7 @@ def test_snooze_and_manual_check_ready_state(update_session, tmp_path, monkeypat
     updater.publish('ready', version='0.2.0')
     assert not ui._reminder_timer.isActive()
     assert ui.action.text() == '重启并更新'
-    assert window._nav_buttons['settings'].accessibleName() == '固件与系统'
+    assert window._nav_buttons['settings'].accessibleName() == 'Settings'
 
 
 def test_update_notifications_never_resize_editor(update_session):
@@ -587,11 +656,19 @@ def test_update_notifications_never_resize_editor(update_session):
 
 @pytest.mark.parametrize('result', ['current', 'failed'])
 def test_manual_check_joins_inflight_background_request(update_session, result):
-    _, _, _, _, _, ui, updater, _ = update_session
+    window, _, _, _, _, ui, updater, _ = update_session
+    window._select_settings_section('updates')
     updater.publish('checking')
     ui.check()
     updater.publish(result, message='network unavailable' if result == 'failed' else '')
-    assert not ui.row.isHidden()
+    inline = window.findChild(QLabel, 'desktopUpdateInlineMessage')
+    assert inline is not None and not inline.isHidden()
+    if result == 'current':
+        assert ui.row.isHidden()
+        assert inline.text() == '软件：当前已是最新版本'
+    else:
+        # 失败状态仍在全局更新条保留“重试”操作。
+        assert not ui.row.isHidden()
     assert updater.calls == []
 
 
@@ -627,12 +704,12 @@ def test_snooze_releases_native_offer_and_allows_newer_release(update_session, t
     native._version = '0.3.0'
     native._download_reply = choices.append
     native._publish('available')
-    assert ui.window._nav_buttons['settings'].accessibleName() == '固件与系统'
+    assert ui.window._nav_buttons['settings'].accessibleName() == 'Settings'
     assert native._download_reply is not None
 
 
 @pytest.mark.parametrize('language', ['zh_CN', 'en_US', 'ja_JP'])
-def test_both_reminders_fit_small_window_in_all_languages(update_session, qtbot, language):
+def test_both_reminders_fit_small_window_in_all_languages(update_session, qtbot, language, tmp_path):
     from PySide6.QtWidgets import QApplication
     from test_firmware_reminder_ui import offer
     window, vm, gateway, snapshot, store, ui, updater, _ = update_session
@@ -643,41 +720,62 @@ def test_both_reminders_fit_small_window_in_all_languages(update_session, qtbot,
     updater.publish('available', version='0.2.0')
     QApplication.processEvents()
     button = window._nav_buttons['settings']
-    assert button.accessibleName() == window._language_manager.translate('固件与系统')
+    assert button.accessibleName() == 'Settings'
     assert button.property('firmwareUpdateAvailable') is True
     assert not button.firmware_notice_visible()
     assert button.fontMetrics().horizontalAdvance(button.text()) < button.width()
     assert button.parentWidget().rect().contains(button.geometry())
     assert ui.row.isHidden() and firmware_ui.row.isHidden()
-    from pathlib import Path
-    output = Path('output/update-navigation-20260914')
-    output.mkdir(parents=True, exist_ok=True)
-    window.grab().save(str(output / f'controlled-navigation-{language}.png'))
+    # The screenshot stays in the test's own folder, not in the repository.
+    assert window.grab().save(str(tmp_path / f'controlled-navigation-{language}.png'))
 
 
 def test_about_button_dispatches_manual_update_request(update_session, qtbot):
     from PySide6.QtCore import Qt
     window, vm, _, _, _, ui, updater, _ = update_session
-    window._settings_section = 'system'
+    window._settings_section = 'updates'
     vm.navigate('settings')
     window.show()
     button = window.findChild(QPushButton, 'checkDesktopUpdate')
     qtbot.mouseClick(button, Qt.LeftButton)
     assert updater.calls == ['check']
-    assert not ui.row.isHidden()
+    assert ui.row.isHidden()
+    inline = window.findChild(QLabel, 'desktopUpdateInlineMessage')
+    assert inline is not None and not inline.isHidden()
+    assert inline.text() == '软件：当前已是最新版本'
+
+
+def test_check_feedback_updates_both_cached_settings_pages(update_session, qtbot):
+    window, _, _, _, _, ui, updater, _ = update_session
+    # 检查更新现在只在「更新」这一组；离开再回来，留着的那一页仍然要收到结果。
+    window._select_settings_section('updates')
+    window._select_settings_section('system')
+    window._select_settings_section('updates')
+    labels = window.findChildren(QLabel, 'desktopUpdateInlineMessage')
+    assert len(labels) == 1
+    window.show()
+    qtbot.waitUntil(lambda: any(b.isVisible() for b in window.findChildren(QPushButton, 'checkDesktopUpdate')))
+    qtbot.mouseClick(next(b for b in window.findChildren(QPushButton, 'checkDesktopUpdate') if b.isVisible()), Qt.LeftButton)
+    assert updater.calls == ['check']
+    assert all(label.text() == '软件：当前已是最新版本' and not label.isHidden() for label in labels)
+    assert ui.row.isHidden()
 
 
 @pytest.mark.parametrize('previous', ['idle', 'current'])
 def test_deferred_native_check_does_not_settle_on_previous_status(update_session, monkeypatch, previous):
-    _, _, _, _, _, ui, updater, _ = update_session
+    window, _, _, _, _, ui, updater, _ = update_session
+    window._select_settings_section('updates')
     updater.publish(previous)
     # Sparkle checkForUpdates returns before its checking callback is delivered.
     monkeypatch.setattr(updater, 'check', lambda: None)
     ui.check()
     updater.publish('checking')
     updater.publish('current')
-    assert not ui.row.isHidden()
-    assert ui.message.text() == '当前已是最新版本'
+    assert ui.row.isHidden()
+    assert ui.message.text() == '软件：当前已是最新版本'
+    inline = window.findChild(QLabel, 'desktopUpdateInlineMessage')
+    assert inline is not None and not inline.isHidden()
+    assert inline.text() == '软件：当前已是最新版本'
 
 
 @pytest.mark.parametrize('cancelled_state', ['idle', 'available'])
@@ -697,7 +795,7 @@ def test_update_navigation_never_downloads_or_installs(update_session, qtbot, st
     updater.publish(state, version='0.2.0')
     window._activate_settings_navigation()
     assert vm.page == 'settings'
-    assert window._settings_section == 'system'
+    assert window._settings_section == 'updates'
     assert updater.calls == []
     updater.publish('ready', version='0.2.0')
     from PySide6.QtWidgets import QApplication

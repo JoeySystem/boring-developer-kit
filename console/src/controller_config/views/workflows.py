@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from controller_config.views.ui import notice
 from controller_config.i18n import translate_ui_text
 from controller_config.views.v4_widgets import V4Card
 from controller_config.workflow_files import export_workflow, import_workflow
@@ -416,11 +417,12 @@ class WorkflowPage(QScrollArea):
     def _confirm_replace(self) -> bool:
         if not self._dirty:
             return True
-        choice = QMessageBox.question(
+        choice = notice.ask(
             self, translate_ui_text("未保存的自定义动作"),
             translate_ui_text("保存当前修改后再继续？"),
             QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
             QMessageBox.Cancel,
+            labels={QMessageBox.Discard: "放弃修改"},
         )
         if choice == QMessageBox.Save:
             return self._save() is not None
@@ -886,10 +888,11 @@ class WorkflowPage(QScrollArea):
         if self._selected_id is None:
             self._new_workflow()
             return
-        if QMessageBox.question(
+        if notice.ask(
             self, translate_ui_text("删除自定义动作"),
             translate_ui_text("删除后将不再响应设备操作。确定删除？"),
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+            QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel,
+            danger=True, labels={QMessageBox.Yes: "删除"},
         ) != QMessageBox.Yes:
             return
         try:
@@ -1039,7 +1042,7 @@ class WorkflowPage(QScrollArea):
 
     def _show_error(self, message: str) -> None:
         self._status.setText(translate_ui_text(message))
-        QMessageBox.warning(self, "无法完成操作", message)
+        notice.notify(self, "无法完成操作", message)
 
 
 def _card(role: str = "secondary") -> QFrame:

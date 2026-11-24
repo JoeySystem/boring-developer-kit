@@ -43,6 +43,8 @@ class CalibrationSample:
     maximum_x: int | None = None
     maximum_y: int | None = None
     travel_complete: bool = False
+    ready_to_confirm: bool = False
+    stable_returns_supported: bool = False
     center_window_ms: int = 0
     timeout_ms: int = 0
 
@@ -69,6 +71,9 @@ class CalibrationSample:
         travel_complete = result.get("travel_complete")
         if not isinstance(travel_complete, bool):
             raise CalibrationError("校准 travel_complete 必须是布尔值")
+        ready_to_confirm = result.get("ready_to_confirm", travel_complete)
+        if not isinstance(ready_to_confirm, bool) or (ready_to_confirm and not travel_complete):
+            raise CalibrationError("校准 ready_to_confirm 与行程状态不一致")
 
         center_x = center_y = minimum_x = minimum_y = maximum_x = maximum_y = None
         if state == "CAPTURING":
@@ -80,7 +85,7 @@ class CalibrationSample:
                 and minimum_y <= center_y <= maximum_y
             ):
                 raise CalibrationError("校准端点与中心关系无效")
-        elif travel_complete:
+        elif travel_complete or ready_to_confirm:
             raise CalibrationError("CENTERING 阶段不能报告行程完成")
 
         center_window_ms = result.get("center_window_ms", 0)
@@ -101,6 +106,8 @@ class CalibrationSample:
             maximum_x=maximum_x,
             maximum_y=maximum_y,
             travel_complete=travel_complete,
+            ready_to_confirm=ready_to_confirm,
+            stable_returns_supported="ready_to_confirm" in result,
             center_window_ms=int(center_window_ms) if _positive_int(center_window_ms) else 0,
             timeout_ms=int(timeout_ms) if _positive_int(timeout_ms) else 0,
         )
@@ -121,6 +128,8 @@ class CalibrationTransaction:
     maximum_x: int | None = None
     maximum_y: int | None = None
     travel_complete: bool = False
+    ready_to_confirm: bool = False
+    stable_returns_supported: bool = False
     center_window_ms: int = 0
     timeout_ms: int = 0
     base_generation: int | None = None
@@ -168,7 +177,7 @@ class CalibrationTransaction:
 
     @property
     def can_confirm(self) -> bool:
-        return self.state is CalibrationState.READY_TO_CONFIRM and self.travel_complete
+        return self.state is CalibrationState.READY_TO_CONFIRM and self.ready_to_confirm
 
 
 def calibration_start_command() -> Command:

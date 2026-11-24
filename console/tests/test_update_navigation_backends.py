@@ -110,4 +110,4 @@ def test_capsule_windows_rejects_tampered_download(update_session, update, qtbot
     assert events == []
     assert backend._installer is None
     assert window.isEnabled() and not ui.row.isHidden()
-    assert window._nav_buttons['settings'].text() == '固件与系统'
+    assert window._nav_buttons['settings'].accessibleName() == 'Settings'

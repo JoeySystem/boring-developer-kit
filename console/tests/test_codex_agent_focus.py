@@ -273,7 +273,7 @@ def test_activator_uses_launchservices_without_background_or_new_instance(qtbot,
     monkeypatch.setattr(activator._process, "start", lambda *args: calls.append(args))
     activator.activate(4)
     activator.activate(5)
-    assert calls == [("/usr/bin/open", ["-a", "/Applications/Codex.app"])]
+    assert calls == [("/usr/bin/open", ["-a", str(Path("/Applications/Codex.app"))])]
     activator._finished(0, QProcess.ExitStatus.NormalExit)
     assert not activator._deadline.isActive()
     activator.shutdown()

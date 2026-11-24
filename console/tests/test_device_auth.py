@@ -200,6 +200,8 @@ def test_production_policy_never_accepts_test_roots_or_private_material(load_fix
 def test_source_runtime_uses_shared_test_root_in_development(
     load_fixture,
 ) -> None:
+    # The production marker is only written by the native build scripts; the
+    # source tree must not carry it (it is gitignored).
     authenticator = load_default_authenticator()
     fixture_root = load_fixture("device-auth-v1.json")["test_root"]
 

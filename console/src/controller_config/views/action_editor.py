@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QPushButton,
     QSizePolicy,
     QSpinBox,
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from controller_config.voice_presets import DEFAULT_VOICE_ACTION, DEFAULT_VOICE_USAGE
 from controller_config.actions import (
     ActionDefinition,
     ActionField,
@@ -35,6 +37,7 @@ from controller_config.i18n import (
     set_translatable_text,
     translate_ui_text,
 )
+from controller_config.profile_templates import agent_profile_mappings
 from controller_config.views.voice_guide import VoiceDemo
 
 
@@ -44,6 +47,9 @@ _MODIFIER_KEY_USAGES = {
     int(Qt.Key.Key_Alt): 226,
     int(Qt.Key.Key_Meta): 227,
 }
+
+_FIRST_MODIFIER_USAGE = 224  # Left Control
+_LAST_MODIFIER_USAGE = 231   # Right GUI (Command / Win)
 
 _MACOS_NATIVE_MODIFIER_KEY_USAGES = {
     0x3B: 224,  # Left Control
@@ -255,11 +261,11 @@ class _ShortcutCaptureButton(QPushButton):
         self.capture_message.emit("正在录制，请按下一个按键或快捷键组合。")
         self.recording_changed.emit(True)
 
-    def cancel_recording(self, message: str = "已取消录制，原快捷键未改变。") -> None:
+    def cancel_recording(self) -> None:
         if not self._recording:
             return
         self._finish_recording()
-        self.capture_message.emit(message)
+        self.capture_message.emit("点击录制后，直接在电脑键盘上按下目标按键。")
 
     def event(self, event: QEvent) -> bool:
         if self._recording and event.type() == QEvent.Type.ShortcutOverride:
@@ -285,14 +291,14 @@ class _ShortcutCaptureButton(QPushButton):
         if modifier_usage is not None:
             self._pressed_modifier_usages.add(modifier_usage)
             self.capture_message.emit(
-                "已检测到修饰键。直接松开即可保存；继续按其他键可录制组合键。"
+                "继续按下主按键；只映射修饰键时，直接松开即可。"
             )
             return
         usage, implied_shift = _key_usage(event.key(), event.modifiers())
         if usage is None:
             self._unsupported_key_pending = True
             self.capture_message.emit(
-                "这个按键不能由控制台录制。Fn 或系统快捷键可能无法送达；请改用手动设置或其他快捷键。"
+                "这个按键暂不支持录制，请换一个按键或组合键。"
             )
             return
         modifiers = _effective_modifier_usages(
@@ -356,9 +362,7 @@ class _ShortcutCaptureButton(QPushButton):
 
     def focusOutEvent(self, event: QFocusEvent) -> None:  # noqa: N802
         if self._recording:
-            self.cancel_recording(
-                "录制已取消：窗口失去焦点。请重新点击录制，并在当前窗口完成按键。"
-            )
+            self.cancel_recording()
         super().focusOutEvent(event)
 
     def _toggle_recording(self) -> None:
@@ -391,20 +395,22 @@ class ShortcutRecorder(QFrame):
     ) -> None:
         super().__init__(parent)
         self.setObjectName("shortcutRecorder")
-        self.setMinimumHeight(118)
+        self.setMinimumHeight(82)
         self._platform = platform
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 11, 12, 11)
         layout.setSpacing(7)
 
-        layout.addWidget(QLabel("快捷键", objectName="shortcutRecorderHeading"))
-        row = QVBoxLayout()
+        heading = QLabel("快捷键", objectName="shortcutRecorderHeading")
+        heading.setWordWrap(True)
+        layout.addWidget(heading)
+        row = QHBoxLayout()
         row.setSpacing(8)
         self._preview = QLabel(objectName="shortcutRecorderPreview")
         self._preview.setMinimumWidth(0)
         self._preview.setWordWrap(True)
         self._preview.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        row.addWidget(self._preview)
+        row.addWidget(self._preview, 1)
         self._capture = _ShortcutCaptureButton(platform=capture_platform or platform)
         self._capture.shortcut_recorded.connect(self._recorded)
         row.addWidget(self._capture, 0, Qt.AlignRight)
@@ -419,6 +425,12 @@ class ShortcutRecorder(QFrame):
         self._capture.capture_message.connect(self._set_capture_message)
         layout.addWidget(self._message)
         self.set_action(action)
+
+    describe_all = False   # True: a non-key action is written out instead of "—"
+    # True where the expected answer is one modifier on its own (the voice key
+    # must match the voice app, e.g. right Option), so a lone modifier is not
+    # treated as a possibly swallowed combination.
+    voice_key = False
 
     def _set_capture_message(self, message: str) -> None:
         set_translatable_text(self._message, message)
@@ -440,15 +452,31 @@ class ShortcutRecorder(QFrame):
                                   describe_action(action, platform=self._platform, compact=True))
             set_translatable_accessible_name(
                 self._preview, f"准备修改为 {describe_action(action, platform=self._platform)}")
+        elif self.describe_all and action.get("type") not in {None, "none"}:
+            # The Mode card writes out any kind here (现在的动作, Mode页 定稿 v1, 11).
+            set_translatable_text(self._preview, describe_action(action, platform=self._platform, compact=True))
+            set_translatable_accessible_name(self._preview, describe_action(action, platform=self._platform))
         else:
             set_translatable_text(self._preview, "—")
             set_translatable_accessible_name(self._preview, "尚未录制键盘快捷键")
 
     def _recorded(self, action: dict[str, Any]) -> None:
         self.set_action(action)
-        set_translatable_text(self._message, "已识别，尚未保存到设备。")
+        set_translatable_text(self._message, self._recorded_message(action))
         self._message.show()
         self.shortcut_recorded.emit(action)
+
+    def _recorded_message(self, action: dict[str, Any]) -> str:
+        # Only a modifier release ends a recording on a modifier. When another
+        # app (Doubao, Raycast, an input method) owns e.g. Option+Space, macOS
+        # hands it the Space, so the user releases and gets just the Option.
+        if not _FIRST_MODIFIER_USAGE <= action.get("usage", 0) <= _LAST_MODIFIER_USAGE:
+            return "已识别，可继续修改或应用到设备。"
+        keys = describe_action(action, platform=self._platform)
+        if self.voice_key:
+            return (f"已录到 {keys}。语音键单独用这个键就行；要是还按了别的键，"
+                    "可能被语音软件（比如豆包）先收走了，先退出它再录。")
+        return f"只录到了 {keys}。另一个键可能被别的应用（比如豆包、输入法）占用了，先退出它再录。"
 
 
 class ModifierSelector(QWidget):
@@ -506,7 +534,8 @@ class ActionEditor(QWidget):
         if not definitions:
             raise ValueError("设备没有可编辑的动作类型")
         self._codex_voice = codex_voice
-        self._codex_voice_action = copy.deepcopy(action) if action.get("type") == "key_gesture" else {"type": "key_gesture", "usage": 104, "double_usage": 40}
+        self._voice_action_types = {"key_gesture"} | ({"key"} if codex_voice else set())
+        self._codex_voice_action = copy.deepcopy(action) if action.get("type") in self._voice_action_types else copy.deepcopy(DEFAULT_VOICE_ACTION)
         self._definitions = {definition.action_type: definition for definition in definitions}
         self._field_widgets: dict[str, QWidget] = {}
         self._unsupported_action: dict | None = None
@@ -516,24 +545,46 @@ class ActionEditor(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(9)
+        layout.setSpacing(6)
 
         self._purpose: QComboBox | None = None
         self._voice_panel: QWidget | None = None
-        self._ordinary_action = copy.deepcopy(action) if action.get("type") != "key_gesture" else {"type": "none"}
-        if allow_voice_preset:
-            layout.addWidget(QLabel("按键用途"))
+        self._voice_firmware_notice: QLabel | None = None
+        self._native_voice_note: QLabel | None = None
+        self._common_shortcuts: QPushButton | None = None
+        self._ordinary_action = copy.deepcopy(action) if action.get("type") not in self._voice_action_types else {"type": "none"}
+        shortcut_purposes = not codex_voice and "key" in self._definitions and len(self._definitions) > 1
+        if allow_voice_preset or shortcut_purposes:
             self._purpose = QComboBox(objectName="mappingPurpose")
             self._purpose.setAccessibleName("按键用途")
             self._purpose.addItem("Codex 自带语音" if codex_voice else "快捷键", "shortcut")
-            self._purpose.addItem("第三方语音输入软件" if codex_voice else "语音输入", "voice")
+            if allow_voice_preset:
+                self._purpose.addItem("第三方语音输入软件" if codex_voice else "语音输入", "voice")
+            if shortcut_purposes:
+                self._purpose.addItem("AI 软件自带语音", "native")
             layout.addWidget(self._purpose)
-            if "key_gesture" not in self._definitions:
+            if allow_voice_preset and not self._voice_action_types.intersection(self._definitions):
                 self._purpose.model().item(1).setEnabled(False)
-                note = QLabel("此设备固件尚不支持单击语音、双击发送。", objectName="voiceFirmwareNotice")
-                note.setWordWrap(True)
-                layout.addWidget(note)
+                notice = "此设备固件尚不支持单击语音、双击发送。"
+                self._purpose.setToolTip(notice)
+                self._purpose.setItemData(1, notice, Qt.ToolTipRole)
+                self._voice_firmware_notice = QLabel(notice, objectName="voiceFirmwareNotice")
+                self._voice_firmware_notice.setWordWrap(True)
+                layout.addWidget(self._voice_firmware_notice)
 
+        if shortcut_purposes:
+            self._native_voice_note = QLabel(
+                "启用 AI 语音快捷键后录制。",
+                objectName="nativeVoiceShortcutNotice",
+            )
+            self._native_voice_note.setWordWrap(True)
+            self._native_voice_note.setStyleSheet("font-size: 12px;")
+            self._native_voice_note.setToolTip("先在目标 AI 软件中确认并启用语音快捷键，再在这里录制。没有快捷键的语音入口暂不能绑定；保存后请到目标应用中试用。")
+            layout.addWidget(self._native_voice_note)
+
+        tools = QHBoxLayout()
+        tools.setContentsMargins(0, 0, 0, 0)
+        tools.setSpacing(7)
         self._shortcut_recorder: ShortcutRecorder | None = None
         if "key" in self._definitions:
             self._shortcut_recorder = ShortcutRecorder(
@@ -546,13 +597,38 @@ class ActionEditor(QWidget):
             )
             layout.addWidget(self._shortcut_recorder)
 
+            preset_platform = "darwin" if platform in {"macos", "darwin"} else "win32" if platform.startswith("win") else None
+            if shortcut_purposes and preset_platform is not None:
+                self._common_shortcuts = QPushButton("常用操作…", objectName="commonShortcutMenu")
+                self._common_shortcuts.setProperty("buttonRole", "secondary")
+                self._common_shortcuts.setStyleSheet("QPushButton { padding-left: 8px; padding-right: 8px; font-size: 12px; }")
+                menu = QMenu(self._common_shortcuts)
+                mappings = {mapping["control_id"]: mapping for mapping in
+                            agent_profile_mappings("basic", platform=preset_platform)}
+                for key, control in (("copy", "key.11"), ("paste", "key.12"),
+                                     ("undo", "key.9"), ("redo", "key.10")):
+                    mapping = mappings[control]
+                    preset = menu.addAction(mapping["short_name"])
+                    preset.setObjectName(f"commonShortcut_{key}")
+                    preset.triggered.connect(
+                        lambda _checked=False, action=mapping["action"]: self._shortcut_was_recorded(action)
+                    )
+                self._common_shortcuts.setMenu(menu)
+                tools.addWidget(self._common_shortcuts, 1)
+
         self._manual_toggle: QPushButton | None = None
         if show_manual_controls or self._shortcut_recorder is None:
-            self._manual_toggle = QPushButton("手动设置或选择其他动作")
+            self._manual_toggle = QPushButton("其他动作…" if self._common_shortcuts is not None else "手动设置或选择其他动作")
             self._manual_toggle.setObjectName("shortcutManualToggle")
+            set_translatable_accessible_name(self._manual_toggle, "手动设置或选择其他动作")
+            self._manual_toggle.setToolTip("手动设置或选择其他动作")
             self._manual_toggle.setProperty("buttonRole", "secondary")
+            if self._common_shortcuts is not None:
+                self._manual_toggle.setStyleSheet("QPushButton { padding-left: 8px; padding-right: 8px; font-size: 12px; }")
             self._manual_toggle.setCheckable(True)
-            layout.addWidget(self._manual_toggle)
+            tools.addWidget(self._manual_toggle, 1)
+        if tools.count():
+            layout.addLayout(tools)
 
         self._manual_panel = QWidget(objectName="manualActionEditor")
         manual_layout = QVBoxLayout(self._manual_panel)
@@ -584,41 +660,60 @@ class ActionEditor(QWidget):
             connect.setProperty("buttonRole", "primary")
             connect.clicked.connect(self.voice_setup_requested)
             voice_layout.addWidget(connect)
-            blocked = QLabel(objectName="voiceSetupBlockedReason")
-            blocked.setWordWrap(True)
-            blocked.hide()
-            voice_layout.addWidget(blocked)
             demo = VoiceDemo()
             demo.key_pressed.connect(self.voice_demo_pressed)
-            demo_toggle = QPushButton("查看操作演示…", objectName="voiceDemoToggle")
-            demo_toggle.setProperty("buttonRole", "secondary")
+            demo_toggle = QPushButton("查看操作演示", objectName="voiceDemoToggle")
+            demo_toggle.setProperty("buttonRole", "ghost")
             demo_toggle.setCheckable(True)
             demo_toggle.toggled.connect(demo.setVisible)
             voice_layout.addWidget(demo_toggle)
             demo.hide()
             voice_layout.addWidget(demo)
-            setup = QPushButton("设置要求与帮助…", objectName="voiceSetupToggle")
-            setup.setProperty("buttonRole", "secondary")
+            setup = QPushButton("设置帮助", objectName="voiceSetupToggle")
+            setup.setProperty("buttonRole", "ghost")
             setup.setCheckable(True)
             voice_layout.addWidget(setup)
             instructions = QWidget(objectName="voiceSetupInstructions")
             instructions_layout = QVBoxLayout(instructions)
             instructions_layout.setContentsMargins(0, 0, 0, 0)
-            note = QLabel(
-                "语音软件需保持运行，并支持用同一快捷键开始和结束。"
-                "输入软件、设备快捷键和双击发送都在“设置语音输入”中统一配置。"
-            )
+            note = QLabel("语音软件需保持运行，并支持用快捷键切换开始／结束。")
             note.setWordWrap(True)
             instructions_layout.addWidget(note)
             setup.toggled.connect(instructions.setVisible)
             instructions.hide()
             voice_layout.addWidget(instructions)
+            details = QPushButton("高级快捷键", objectName="voiceShortcutDetailsToggle")
+            details.setProperty("buttonRole", "ghost")
+            details.setCheckable(True)
+            instructions_layout.addWidget(details)
+            self._voice_details = QWidget(objectName="voiceShortcutDetails")
+            details_layout = QVBoxLayout(self._voice_details)
+            details_layout.setContentsMargins(0, 0, 0, 0)
+            key_note = QLabel("这里修改设备发送的快捷键；需要与语音输入软件中的设置一致。")
+            key_note.setWordWrap(True)
+            details_layout.addWidget(key_note)
+            details_layout.addWidget(QLabel("语音快捷键（与你的语音软件一致）"))
+            self._voice_recorder = ShortcutRecorder(
+                {"type": "key", "usage": DEFAULT_VOICE_USAGE}, platform=platform, capture_platform=capture_platform,
+            )
+            self._voice_recorder.voice_key = True
+            details_layout.addWidget(self._voice_recorder)
+            details_layout.addWidget(QLabel("发送快捷键（与目标应用一致）"))
+            self._send_recorder = ShortcutRecorder(
+                {"type": "key", "usage": 40}, platform=platform, capture_platform=capture_platform,
+            )
+            details_layout.addWidget(self._send_recorder)
+            self._voice_recorder.shortcut_recorded.connect(lambda value: self._record_voice_shortcut(value, double=False))
+            self._send_recorder.shortcut_recorded.connect(lambda value: self._record_voice_shortcut(value, double=True))
+            details.toggled.connect(self._voice_details.setVisible)
+            self._voice_details.hide()
+            instructions_layout.addWidget(self._voice_details)
             layout.addWidget(self._voice_panel)
         if self._purpose is not None:
             self._purpose.currentIndexChanged.connect(self._purpose_changed)
         self.set_action(action)
         if self._manual_toggle is not None:
-            self._manual_toggle.setChecked(action.get("type") not in {"key", "none"})
+            self._manual_toggle.setChecked(action.get("type") not in {"key", "none", "key_gesture"})
             self._manual_panel.setVisible(self._manual_toggle.isChecked())
         else:
             # Preserve existing non-key actions in the draft/readback model
@@ -658,32 +753,79 @@ class ActionEditor(QWidget):
         self._sync_voice_ui(action)
         self.action_changed.emit()
 
+    def set_purpose(self, value: str) -> bool:
+        """Route a task to the existing editor without writing device state."""
+        if self._purpose is None:
+            return False
+        if self._codex_voice and value == "native":
+            value = "shortcut"
+        index = self._purpose.findData(value)
+        if index < 0 or not self._purpose.model().item(index).isEnabled():
+            return False
+        self._purpose.setCurrentIndex(index)
+        return True
+
     def set_remembered_voice_action(self, action: dict) -> None:
         """Keep the confirmed custom choice while official voice stays active."""
-        if action.get("type") == "key_gesture":
+        if action.get("type") in self._voice_action_types:
             self._codex_voice_action = copy.deepcopy(action)
 
     def _purpose_changed(self) -> None:
+        if self._purpose.currentData() in {"native", "voice"} and self._manual_toggle is not None:
+            self._manual_toggle.setChecked(False)
         if self._purpose.currentData() == "voice":
             self._ordinary_action = copy.deepcopy(self.action())
             self.set_action(self._codex_voice_action if self._codex_voice else
-                            {"type": "key_gesture", "usage": 104, "double_usage": 40})
+                            copy.deepcopy(DEFAULT_VOICE_ACTION))
             self.voice_preset_selected.emit()
         else:
             if self._codex_voice:
                 self._codex_voice_action = copy.deepcopy(self.action())
-            self.set_action({"type": "none"} if self._codex_voice else self._ordinary_action)
+                self.set_action({"type": "none"})
+            elif self.action().get("type") in self._voice_action_types:
+                self.set_action(self._ordinary_action)
+            else:
+                # Native AI shortcuts are app-defined. Selecting this purpose
+                # explains recording, but does not replace the existing action.
+                self._sync_voice_ui(self.action())
+                self.action_changed.emit()
+
+    def _record_voice_shortcut(self, shortcut: dict, *, double: bool) -> None:
+        action = self.action()
+        prefix = "double_" if double else ""
+        action[prefix + "usage"] = shortcut["usage"]
+        action[prefix + "modifiers"] = shortcut.get("modifiers", [])
+        self.set_action(action)
 
     def _sync_voice_ui(self, action: dict) -> None:
-        voice = action.get("type") == "key_gesture"
+        voice = action.get("type") in self._voice_action_types
+        gesture = action.get("type") == "key_gesture"
         if self._purpose is not None:
+            native = self._purpose.currentData() == "native" and not voice
             self._purpose.blockSignals(True)
-            self._purpose.setCurrentIndex(1 if voice else 0)
+            purpose = "voice" if voice else "native" if native else "shortcut"
+            index = self._purpose.findData(purpose)
+            self._purpose.setCurrentIndex(index if index >= 0 else 0)
             self._purpose.blockSignals(False)
+        native = self._purpose is not None and self._purpose.currentData() == "native"
+        if self._native_voice_note is not None:
+            self._native_voice_note.setVisible(native)
+        if self._voice_firmware_notice is not None:
+            self._voice_firmware_notice.setVisible(voice)
+        if self._common_shortcuts is not None:
+            self._common_shortcuts.setVisible(not voice and not native)
         if self._voice_panel is not None:
-            self._voice_panel.setVisible(voice)
+            self._voice_panel.setVisible(gesture)
+            if gesture:
+                for recorder, prefix in ((self._voice_recorder, ""), (self._send_recorder, "double_")):
+                    recorder.set_action({"type": "key", "usage": action[prefix + "usage"], "modifiers": action.get(prefix + "modifiers", [])})
         if self._shortcut_recorder is not None:
-            self._shortcut_recorder.setVisible(not self._codex_voice and (not voice or self._voice_panel is None))
+            heading = self._shortcut_recorder.findChild(QLabel, "shortcutRecorderHeading")
+            set_translatable_text(heading, "AI 语音快捷键" if native else "快捷键")
+            self._shortcut_recorder.setVisible(
+                action.get("type") == "key" if self._codex_voice
+                else not voice or self._voice_panel is None
+            )
 
     def action(self) -> dict[str, Any]:
         if self._unsupported_action is not None:
@@ -708,6 +850,8 @@ class ActionEditor(QWidget):
         self._rebuild_fields(action)
         if self._shortcut_recorder is not None:
             self._shortcut_recorder.set_action(action)
+        if self._purpose is not None and self._purpose.currentData() == "native" and action_type != "key":
+            self._purpose.setCurrentIndex(self._purpose.findData("shortcut"))
         self._sync_voice_ui(action)
         self.action_changed.emit()
 

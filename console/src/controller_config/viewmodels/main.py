@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
+import os
+import time
+from collections import deque
 from dataclasses import replace
 from pathlib import Path
 from time import monotonic
@@ -33,16 +37,20 @@ from controller_config.config_files import (
 from controller_config.ble_name import BleNameSession
 from controller_config.normal_agent import NormalAgentSession
 from controller_config.drafts import LocalDraft
-from controller_config.diagnostics import DiagnosticsSession, diagnostic_capture
+from controller_config.connect_timing import TimingMark, timing_report
+from controller_config.connection_steps import ConnectionSteps
+from controller_config.diagnostics import (
+    DiagnosticCapturePhase,
+    DiagnosticReadiness,
+    DiagnosticsSession,
+    diagnostic_capture_owned,
+    diagnostic_readiness,
+)
 from controller_config.firmware_update import (
     FirmwarePackage,
     FirmwarePackageError,
-    FirmwareStatus,
     FirmwareUpdateState,
     FirmwareUpdateTransaction,
-    firmware_abort_command,
-    firmware_end_command,
-    firmware_status_command,
 )
 from controller_config.firmware_origin import FirmwareReleaseHistory
 from controller_config.firmware_signature import FirmwareSignatureError
@@ -79,7 +87,7 @@ from controller_config.lighting_preview import (
     set_lighting_preview_command,
     validate_lighting_preview_response,
 )
-from controller_config.models import AppState, DeviceSnapshot, PortCandidate, ScreenModel
+from controller_config.models import AppState, DeviceSnapshot, ScreenModel
 from controller_config.prompt_library import (
     PROMPT_SLOT_COUNT,
     PromptEntry,
@@ -89,7 +97,7 @@ from controller_config.prompt_library import (
 )
 from controller_config.prompt_device import PromptDeviceSession
 from controller_config.prompt_helper import PromptHelperRuntime
-from controller_config.protocol.bootstrap import BootstrapError, BootstrapKind, Command
+from controller_config.protocol.bootstrap import COMMAND_DROPPED, BootstrapError, BootstrapKind, Command
 from controller_config.protocol.contract import Contract, ContractError
 from controller_config.protocol.framing import canonical_json_bytes
 from controller_config.transactions import (
@@ -103,6 +111,12 @@ from controller_config.workflow_runtime import WorkflowHost, WorkflowRunResult
 from controller_config.workflows import LocalWorkflow, WorkflowError, WorkflowStore
 from controller_config.screen_icon_transfer import ScreenIconTransfer
 from controller_config.screen_glyph_transfer import ScreenGlyphTransfer
+from controller_config.viewmodels.connection_controller import ConnectionContext, ConnectionController
+from controller_config.viewmodels.firmware_update_controller import FirmwareUpdateController
+
+
+_DIAGNOSTIC_READY_TIMEOUT_MS = 2_000
+_DIAGNOSTIC_CONFIRM_TIMEOUT_MS = 4_000
 
 
 class DeviceGateway(Protocol):
@@ -130,6 +144,7 @@ class MainViewModel(QObject):
     changed = Signal(object)
     ble_slot_failed = Signal(str, str)
     diagnostics_changed = Signal()
+    connection_steps_changed = Signal()   # the Mode bar's connecting steps moved on (design decision)
     lighting_preview_changed = Signal(object)
     extension_context_changed = Signal(int)
 
@@ -149,8 +164,11 @@ class MainViewModel(QObject):
     ) -> None:
         super().__init__(parent)
         self._gateway = gateway
+        # SH-005: confirmed configurations are saved per authenticated device
+        # so the next handshake can skip GET_CONFIG when HELLO's digest matches.
+        self._config_cache = getattr(gateway, "config_cache", None)
+        self._cached_config_revision: dict[str, tuple[object, object]] = {}
         self.ble_name = BleNameSession(gateway.execute_command, self.ble_name_write_block_reason, self)
-        self._known_device_names: dict[str, tuple[str, str]] = {}
         from controller_config.codex_agent_focus import CodexAgentFocus
         self.codex_agent_focus = CodexAgentFocus(self)
         self._normal_agent_status_refresh = False
@@ -158,6 +176,14 @@ class MainViewModel(QObject):
         self.normal_agent.changed.connect(self._sync_normal_agent_focus)
         from controller_config.claude_status import ClaudeStatusBridge
         self.claude_status = ClaudeStatusBridge(gateway, parent=self)
+        # Desktop Agent lights (Doubao and later apps) over the `desktop` source;
+        # replaces the old DoubaoBridge, whose `doubao` source the firmware
+        # no longer has (design decision).
+        from controller_config.viewmodels.desktop_agents import DesktopAgentLink
+        self.desktop_agents = DesktopAgentLink(gateway, parent=self)
+        # design decision: Claude desktop Code sessions share the `desktop` lights
+        # with Doubao; the bridge no longer sends the old `claude_code` source.
+        self.desktop_agents.attach_claude(self.claude_status)
         self._contract = contract
         self._firmware_release_source = firmware_release_source
         self._firmware_release_history = firmware_release_history or FirmwareReleaseHistory()
@@ -171,7 +197,15 @@ class MainViewModel(QObject):
         self._config_refresh: tuple[str, str] | None = None
         self._write_transaction = ConfigTransaction()
         self._confirm_write_after_validation = False
-        self._firmware_update = FirmwareUpdateTransaction()
+        self._firmware = FirmwareUpdateController(
+            gateway.execute_command,
+            gateway.set_status_poll_interval,
+            lambda: self._model.snapshot,
+            self,
+        )
+        self._firmware.transaction_changed.connect(self._on_firmware_transaction_changed)
+        self._firmware.finished.connect(self._on_firmware_finished)
+        self._firmware.rescan_requested.connect(self.refresh)
         self._remote_firmware = RemoteFirmwareCheck(
             state=(
                 RemoteFirmwareState.IDLE
@@ -190,8 +224,19 @@ class MainViewModel(QObject):
         self.screen_icon = ScreenIconTransfer(contract, gateway.execute_command, self)
         self.screen_glyphs = ScreenGlyphTransfer(gateway.execute_command, self)
         self._diagnostics = DiagnosticsSession()
-        self._diagnostic_capture_pending = ""
+        # 连接设备… → 确认是你的 BORING… → 读取设置… on the Mode bar (design decision).
+        self.connection_steps = ConnectionSteps()
+        self._diagnostic_capture_pending = DiagnosticCapturePhase.IDLE
         self._diagnostic_capture_error = ""
+        self._diagnostic_capture_technical = ""
+        self._diagnostic_intent_generation = 0
+        self._diagnostic_intent_device: tuple[str, str, str] | None = None
+        self._diagnostic_retry_count = 0
+        self._diagnostic_start_was_sent = False
+        self._diagnostic_capture_confirmed = False
+        self._diagnostic_status_revision = 0
+        self._diagnostic_confirmation_after_revision = -1
+        self._diagnostic_start_commands: deque[tuple[int, str]] = deque()
         self._lighting_preview = LightingPreviewStatus()
         self._lighting_preview_sent = False
         self._lighting_preview_clear_pending = False
@@ -231,28 +276,19 @@ class MainViewModel(QObject):
         self._write_deadline.setSingleShot(True)
         self._write_deadline.setInterval(10_000)
         self._write_deadline.timeout.connect(self._on_write_deadline)
-        self._connection_port = ""
-        self._failed_connection_ports: set[str] = set()
-        self._reconnect_timer = QTimer(self)
-        self._reconnect_timer.setInterval(500)
-        self._reconnect_timer.timeout.connect(self._scan_for_reconnect)
-        self._usb_probe_timer = QTimer(self)
-        self._usb_probe_timer.setInterval(2000)
-        self._usb_probe_timer.timeout.connect(self._probe_usb_handoff)
+        self._connection = ConnectionController(
+            gateway, self._connection_context, self._usb_handoff_blocked, self,
+            clock=monotonic,
+        )
+        self._connection.screen_requested.connect(self._set)
+        self._connection.connect_requested.connect(self.connect_candidate)
+        self._connection.connection_changed.connect(self.desktop_agents.connection_changed)
         # A lightweight tick retries deferred checks; network attempts remain six hours apart.
         self._remote_firmware_check_timer = QTimer(self)
         self._remote_firmware_check_timer.setInterval(60_000)
         self._remote_firmware_check_timer.timeout.connect(self.auto_check_remote_firmware)
         if firmware_release_source is not None:
             self._remote_firmware_check_timer.start()
-        self._firmware_status_timer = QTimer(self)
-        self._firmware_status_timer.setSingleShot(True)
-        self._firmware_status_timer.setInterval(200)
-        self._firmware_status_timer.timeout.connect(self._poll_firmware_status)
-        self._firmware_deadline = QTimer(self)
-        self._firmware_deadline.setSingleShot(True)
-        self._firmware_deadline.setInterval(15_000)
-        self._firmware_deadline.timeout.connect(self._on_firmware_deadline)
         self._calibration_sample_timer = QTimer(self)
         self._calibration_sample_timer.setSingleShot(True)
         self._calibration_sample_timer.setInterval(100)
@@ -268,6 +304,14 @@ class MainViewModel(QObject):
         self._diagnostic_capture_heartbeat.timeout.connect(
             self._renew_diagnostic_capture
         )
+        self._diagnostic_capture_deadline = QTimer(self)
+        self._diagnostic_capture_deadline.setSingleShot(True)
+        self._diagnostic_capture_deadline.setInterval(
+            _DIAGNOSTIC_READY_TIMEOUT_MS
+        )
+        self._diagnostic_capture_deadline.timeout.connect(
+            self._on_diagnostic_capture_deadline
+        )
         self._lighting_preview_debounce = QTimer(self)
         self._lighting_preview_debounce.setSingleShot(True)
         self._lighting_preview_debounce.setInterval(50)
@@ -280,17 +324,23 @@ class MainViewModel(QObject):
             self._send_lighting_preview
         )
         self.changed.connect(lambda model: self.host_tasks.attach(model.snapshot if model.state is AppState.READY else None))
-        gateway.candidates_found.connect(self._on_candidates)
-        gateway.progress.connect(self._on_progress)
+        gateway.candidates_found.connect(self._connection.handle_candidates)
+        gateway.progress.connect(self._connection.handle_progress)
+        connect_step = getattr(gateway, "connect_step", None)   # the demo and test gateways have none
+        if connect_step is not None:
+            connect_step.connect(self._on_connect_step)
         gateway.snapshot_ready.connect(self._on_snapshot)
         gateway.status_updated.connect(self._on_status_updated)
         gateway.command_completed.connect(self._on_command_completed)
         gateway.command_failed.connect(self._on_command_failed)
         gateway.failure.connect(self._on_failure)
         gateway.disconnected.connect(self._on_disconnected)
+        link_warning = getattr(gateway, "link_warning", None)
+        if link_warning is not None:
+            link_warning.connect(self._diagnostics.record_link_warning)
         usb_candidate_found = getattr(gateway, "usb_candidate_found", None)
         if usb_candidate_found is not None:
-            usb_candidate_found.connect(self._on_usb_handoff_candidate)
+            usb_candidate_found.connect(self._connection.handle_usb_candidate)
         if firmware_release_source is not None:
             firmware_release_source.release_found.connect(
                 self._on_remote_firmware_release_found
@@ -329,7 +379,7 @@ class MainViewModel(QObject):
             return "请连接并认证设备后操作"
         if snapshot.compatibility.get("write") is not True:
             return "设备当前只读，不能应用设置"
-        if (self._firmware_update.blocks_editing or self._calibration.blocks_editing
+        if (self._firmware.transaction.blocks_editing or self._calibration.blocks_editing
                 or self._write_transaction.blocks_editing
                 or self._write_transaction.state is ConfigTransactionState.UNKNOWN
                 or self._config_refresh is not None or self.screen_icon.busy or self.screen_glyphs.busy
@@ -345,7 +395,7 @@ class MainViewModel(QObject):
             return "请连接并认证设备后读取名称"
         if snapshot.compatibility.get("write") is not True:
             return "设备当前只读，不能保存蓝牙名称"
-        if (self._firmware_update.blocks_editing or self._calibration.blocks_editing
+        if (self._firmware.transaction.blocks_editing or self._calibration.blocks_editing
                 or self._write_transaction.blocks_editing
                 or self._write_transaction.state is ConfigTransactionState.UNKNOWN
                 or self._config_refresh is not None or self.screen_icon.busy or self.screen_glyphs.busy
@@ -372,7 +422,7 @@ class MainViewModel(QObject):
 
     @property
     def firmware_update(self) -> FirmwareUpdateTransaction:
-        return self._firmware_update
+        return self._firmware.transaction
 
     @property
     def remote_firmware(self) -> RemoteFirmwareCheck:
@@ -495,11 +545,28 @@ class MainViewModel(QObject):
 
     @property
     def diagnostic_capture_pending(self) -> str:
-        return self._diagnostic_capture_pending
+        return self._diagnostic_capture_pending.value
 
     @property
     def diagnostic_capture_error(self) -> str:
         return self._diagnostic_capture_error
+
+    @property
+    def diagnostic_capture_technical(self) -> str:
+        return self._diagnostic_capture_technical
+
+    @property
+    def diagnostic_capture_readiness(self) -> DiagnosticReadiness:
+        snapshot = self._model.snapshot
+        if snapshot is None or self._model.state not in {
+            AppState.READY,
+            AppState.READ_ONLY,
+        }:
+            return DiagnosticReadiness("action_required", "connection_required")
+        return diagnostic_readiness(
+            snapshot.status,
+            calibration_active=self._calibration.blocks_editing,
+        )
 
     @property
     def diagnostic_capture_supported(self) -> bool:
@@ -517,8 +584,9 @@ class MainViewModel(QObject):
     def diagnostic_capture_active(self) -> bool:
         snapshot = self._model.snapshot
         return (
-            snapshot is not None
-            and diagnostic_capture(snapshot.status).get("active") is True
+            self._diagnostic_capture_confirmed
+            and snapshot is not None
+            and diagnostic_capture_owned(snapshot.status)
         )
 
     @property
@@ -697,7 +765,9 @@ class MainViewModel(QObject):
             "firmware",
         }:
             raise ValueError(f"未知页面 {page}")
-        if self._firmware_update.blocks_editing and page != "firmware":
+        if self._model.state is AppState.FIRMWARE_MAINTENANCE and page not in {"firmware", "settings"}:
+            raise ValueError("当前仅可维护固件；更新并重新读取配置后才能使用其他功能")
+        if self._firmware.transaction.blocks_editing and page != "firmware":
             raise ValueError("固件维护进行中，请先完成或中止当前事务")
         if self._calibration.blocks_editing and page != "joystick":
             raise ValueError("摇杆校准进行中，请先完成或取消校准")
@@ -728,31 +798,36 @@ class MainViewModel(QObject):
             raise ValueError("请先连接并读取设备")
         if not self.diagnostic_capture_supported:
             raise ValueError("当前固件尚未提供安全的诊断输入接管能力")
-        if snapshot.status.get("inputs_neutral") is not True:
-            raise ValueError("请先松开设备上的全部控件")
-        action_engine = snapshot.status.get("action_engine")
-        if isinstance(action_engine, dict) and (
-            action_engine.get("host_output_state") != "enabled"
-            or action_engine.get("local_page") != "none"
-        ):
-            raise ValueError("请先退出设备本地页面，等待主机输出恢复")
-        self._diagnostics.reset_control_check()
-        self._diagnostic_capture_pending = "starting"
+        if not self.diagnostic_capture_readiness.ready:
+            raise ValueError("设备尚未准备好，请按页面提示处理")
+        self._diagnostic_intent_generation += 1
+        self._diagnostic_intent_device = self._diagnostic_device_identity(snapshot)
+        self._diagnostic_retry_count = 0
+        self._diagnostic_start_was_sent = False
+        self._diagnostic_capture_confirmed = False
         self._diagnostic_capture_error = ""
+        self._diagnostic_capture_technical = ""
+        self._diagnostic_capture_deadline.stop()
         self._diagnostic_capture_heartbeat.stop()
-        self.diagnostics_changed.emit()
-        self._gateway.execute_command(Command("DIAGNOSTIC_START", 0x24, {}))
+        self._send_diagnostic_start("initial")
 
     def stop_diagnostic_capture(self) -> None:
         self._diagnostic_capture_heartbeat.stop()
+        self._diagnostic_capture_deadline.stop()
         if not self.diagnostic_capture_supported:
+            self._cancel_diagnostic_start(clear_error=True)
             return
-        if (
-            not self.diagnostic_capture_active
-            and self._diagnostic_capture_pending != "starting"
-        ):
+        was_active = self.diagnostic_capture_active
+        should_stop = was_active or self._diagnostic_start_was_sent
+        self._cancel_diagnostic_start(clear_error=True)
+        if not should_stop:
+            self.diagnostics_changed.emit()
             return
-        self._diagnostic_capture_pending = "stopping"
+        # A STOP acknowledgement is not a fresh status read. Preserve known
+        # ownership until status confirms that the device released capture so
+        # a failed stop remains visible and retryable.
+        self._diagnostic_capture_confirmed = was_active
+        self._diagnostic_capture_pending = DiagnosticCapturePhase.STOPPING
         self.diagnostics_changed.emit()
         self._gateway.execute_command(Command("DIAGNOSTIC_STOP", 0x25, {}))
 
@@ -760,7 +835,165 @@ class MainViewModel(QObject):
         if self._page != "diagnostics" or not self.diagnostic_capture_active:
             self._diagnostic_capture_heartbeat.stop()
             return
+        self._send_diagnostic_start("heartbeat", update_ui=False)
+
+    def _send_diagnostic_start(self, kind: str, *, update_ui: bool = True) -> None:
+        if kind in {"initial", "retry"}:
+            self._diagnostic_capture_pending = DiagnosticCapturePhase.STARTING
+            self._diagnostic_start_was_sent = True
+        self._diagnostic_start_commands.append(
+            (self._diagnostic_intent_generation, kind)
+        )
+        if update_ui:
+            self.diagnostics_changed.emit()
         self._gateway.execute_command(Command("DIAGNOSTIC_START", 0x24, {}))
+
+    def _take_diagnostic_start_result(self) -> tuple[int, str]:
+        if not self._diagnostic_start_commands:
+            return (-1, "")
+        return self._diagnostic_start_commands.popleft()
+
+    def _cancel_diagnostic_start(
+        self,
+        *,
+        clear_error: bool,
+        discard_command_results: bool = False,
+    ) -> None:
+        self._diagnostic_intent_generation += 1
+        self._diagnostic_intent_device = None
+        self._diagnostic_retry_count = 0
+        self._diagnostic_start_was_sent = False
+        self._diagnostic_capture_confirmed = False
+        self._diagnostic_confirmation_after_revision = -1
+        self._diagnostic_capture_deadline.stop()
+        self._diagnostic_capture_pending = DiagnosticCapturePhase.IDLE
+        if discard_command_results:
+            # Transport teardown drops its in-flight callback. Retaining that
+            # correlation record would consume the first result after reconnect.
+            self._diagnostic_start_commands.clear()
+        if clear_error:
+            self._diagnostic_capture_error = ""
+            self._diagnostic_capture_technical = ""
+
+    def _finish_diagnostic_start_failure(
+        self,
+        message: str,
+        technical: str,
+        *,
+        may_still_activate: bool = False,
+    ) -> None:
+        self._diagnostic_capture_deadline.stop()
+        self._diagnostic_capture_heartbeat.stop()
+        self._diagnostic_capture_pending = DiagnosticCapturePhase.IDLE
+        self._diagnostic_capture_confirmed = False
+        self._diagnostic_capture_error = message
+        self._diagnostic_capture_technical = technical
+        self._diagnostic_start_was_sent = may_still_activate
+        self.diagnostics_changed.emit()
+
+    def _on_diagnostic_capture_deadline(self) -> None:
+        if self._diagnostic_capture_pending is DiagnosticCapturePhase.WAITING_READY:
+            self._finish_diagnostic_start_failure(
+                "设备还在切换状态，请稍后重试。",
+                self._diagnostic_capture_technical,
+            )
+        elif self._diagnostic_capture_pending is DiagnosticCapturePhase.AWAITING_ACTIVE:
+            self._finish_diagnostic_start_failure(
+                "设备没有完成安全接管，请稍后重试。",
+                self._diagnostic_capture_technical,
+                may_still_activate=True,
+            )
+
+    def _diagnostic_status_confirms_current_intent(self, status: dict) -> bool:
+        snapshot = self._model.snapshot
+        pending = self._diagnostic_capture_pending
+        return (
+            not self._diagnostic_capture_confirmed
+            and self._diagnostic_start_was_sent
+            and snapshot is not None
+            and self._diagnostic_intent_device
+            == self._diagnostic_device_identity(snapshot)
+            and self._diagnostic_status_revision
+            > self._diagnostic_confirmation_after_revision
+            and (
+                pending is DiagnosticCapturePhase.AWAITING_ACTIVE
+                or (
+                    pending is DiagnosticCapturePhase.IDLE
+                    and bool(self._diagnostic_capture_error)
+                )
+            )
+            and diagnostic_capture_owned(status)
+        )
+
+    def _confirm_diagnostic_capture(self) -> None:
+        self._diagnostic_capture_deadline.stop()
+        self._diagnostic_capture_pending = DiagnosticCapturePhase.IDLE
+        self._diagnostic_capture_confirmed = True
+        self._diagnostic_capture_error = ""
+        self._diagnostic_capture_technical = ""
+        # A BLE status read can consume most of the device's three-second
+        # capture lease. Renew immediately after authoritative ownership is
+        # observed, then let the existing periodic heartbeat maintain it.
+        self._send_diagnostic_start("heartbeat", update_ui=False)
+        if not self._diagnostic_capture_heartbeat.isActive():
+            self._diagnostic_capture_heartbeat.start()
+        self.diagnostics_changed.emit()
+
+    @staticmethod
+    def _diagnostic_device_identity(snapshot: DeviceSnapshot) -> tuple[str, str, str]:
+        return (
+            str(snapshot.identity.get("serial", "")),
+            str(snapshot.identity.get("hardware_id", "")),
+            snapshot.port_name,
+        )
+
+    def _reconcile_diagnostic_capture_status(self, status: dict) -> None:
+        if self._page != "diagnostics":
+            return
+        snapshot = self._model.snapshot
+        if snapshot is None:
+            return
+        if (
+            self._diagnostic_intent_device is not None
+            and self._diagnostic_intent_device
+            != self._diagnostic_device_identity(snapshot)
+        ):
+            self._cancel_diagnostic_start(
+                clear_error=True,
+                discard_command_results=True,
+            )
+            self.diagnostics_changed.emit()
+            return
+
+        pending = self._diagnostic_capture_pending
+        if pending is DiagnosticCapturePhase.WAITING_READY:
+            readiness = diagnostic_readiness(
+                status,
+                calibration_active=self._calibration.blocks_editing,
+            )
+            if readiness.ready and self._diagnostic_retry_count == 0:
+                self._diagnostic_retry_count = 1
+                self._diagnostic_capture_deadline.stop()
+                self._send_diagnostic_start("retry")
+            return
+        if pending is DiagnosticCapturePhase.AWAITING_ACTIVE:
+            if self._diagnostic_status_confirms_current_intent(status):
+                self._confirm_diagnostic_capture()
+            return
+        if pending is DiagnosticCapturePhase.STARTING:
+            return
+
+        if self._diagnostic_status_confirms_current_intent(status):
+            self._confirm_diagnostic_capture()
+        elif self._diagnostic_capture_confirmed and diagnostic_capture_owned(status):
+            if not self._diagnostic_capture_heartbeat.isActive():
+                self._diagnostic_capture_heartbeat.start()
+        else:
+            self._diagnostic_capture_heartbeat.stop()
+            if self._diagnostic_capture_confirmed:
+                self._diagnostic_capture_confirmed = False
+                self._diagnostic_start_was_sent = False
+                self.diagnostics_changed.emit()
 
     def diagnostic_report_text(self) -> str:
         return self._diagnostics.report_text(self._model)
@@ -921,7 +1154,7 @@ class MainViewModel(QObject):
     def _ensure_icon_operation_allowed(self) -> None:
         if self._model.state is not AppState.READY:
             raise ValueError("请先连接可配置的 BORING 设备")
-        if (self._firmware_update.blocks_editing or self._calibration.blocks_editing
+        if (self._firmware.transaction.blocks_editing or self._calibration.blocks_editing
                 or self._write_transaction.blocks_editing
                 or self._write_transaction.state is ConfigTransactionState.AWAITING_CONFIRMATION
                 or self._write_transaction.state is ConfigTransactionState.UNKNOWN
@@ -947,7 +1180,7 @@ class MainViewModel(QObject):
             return
         if self._model.state not in {AppState.READY, AppState.READ_ONLY}:
             return
-        if (self._firmware_update.blocks_editing or self._calibration.blocks_editing
+        if (self._firmware.transaction.blocks_editing or self._calibration.blocks_editing
                 or self._write_transaction.blocks_editing
                 or self._write_transaction.state is ConfigTransactionState.AWAITING_CONFIRMATION):
             return
@@ -956,7 +1189,7 @@ class MainViewModel(QObject):
     def refresh_screen_glyphs(self, icon_id: str | None = None) -> None:
         if self._model.state is not AppState.READY or self.screen_icon.busy:
             return
-        if (self._firmware_update.blocks_editing or self._calibration.blocks_editing
+        if (self._firmware.transaction.blocks_editing or self._calibration.blocks_editing
                 or self._write_transaction.blocks_editing
                 or self._write_transaction.state is ConfigTransactionState.AWAITING_CONFIRMATION):
             return
@@ -988,7 +1221,7 @@ class MainViewModel(QObject):
             raise PromptLibraryError("配置写入进行中，不能同时操作提示词存储")
         if self._calibration.blocks_editing:
             raise PromptLibraryError("摇杆校准进行中，不能同时操作提示词存储")
-        if self._firmware_update.blocks_editing:
+        if self._firmware.transaction.blocks_editing:
             raise PromptLibraryError("固件维护进行中，不能同时操作提示词存储")
 
     def _require_prompt_library(self) -> PromptLibrary:
@@ -1034,6 +1267,16 @@ class MainViewModel(QObject):
         self._before_draft_change()
         self._require_draft().set_active_profile(profile_id)
         self._notify_draft_changed()
+
+    def reorder_profiles(self, order: list[int]) -> bool:
+        """New order of the profiles (全部方案 drag): one unsaved change, saved by 保存到设备."""
+        draft = self._require_draft()
+        if [profile.get("id") for profile in draft.profiles] == list(order):
+            return False
+        self._before_draft_change()
+        draft.reorder_profiles(order)
+        self._notify_draft_changed()
+        return True
 
     def preview_common_ai(self, selected, current, voice, saved, *, platform):
         from controller_config.ai_setup import prepare_ai_profiles
@@ -1086,8 +1329,6 @@ class MainViewModel(QObject):
 
     def export_configuration(self, path: Path, *, kind: str, draft: LocalDraft | None = None) -> None:
         current_workspace = draft is None
-        draft = draft if draft is not None else self._require_draft()
-        config = draft.config if kind == "draft" else draft.confirmed_config
         transaction = self._write_transaction
         unresolved_write = None
         if current_workspace and kind == "draft" and transaction.state is ConfigTransactionState.UNKNOWN:
@@ -1102,13 +1343,18 @@ class MainViewModel(QObject):
                 "candidate_digest": transaction.candidate_digest,
                 "recovery": "Reconnect the original device and read its configuration before deciding whether to apply this draft. Do not automatically retry SET_CONFIG.",
             }
+            base_generation, base_digest = transaction.base_generation, transaction.base_digest
+        else:
+            draft = draft if draft is not None else self._require_draft()
+            config = draft.config if kind == "draft" else draft.confirmed_config
+            base_generation, base_digest = draft.base_generation, draft.base_digest
         export_config_package(
             path,
             config=config,
             hardware_ids=(config["hardware_id"],),
             kind=kind,
-            base_generation=transaction.base_generation if unresolved_write else draft.base_generation,
-            base_digest=transaction.base_digest if unresolved_write else draft.base_digest,
+            base_generation=base_generation,
+            base_digest=base_digest,
             unresolved_write=unresolved_write,
         )
 
@@ -1136,6 +1382,32 @@ class MainViewModel(QObject):
     def set_codex_voice(self, profile_id: int | None, action: dict) -> None:
         self._before_draft_change()
         self._require_draft().set_codex_voice(profile_id, action)
+        self._notify_draft_changed()
+
+    def set_global_voice(self, action: dict) -> None:
+        self._before_draft_change()
+        self._require_draft().set_global_voice(action)
+        self._notify_draft_changed()
+
+    def prepare_doubao_voice(self) -> None:
+        """Prepare the tested hold/independent-send mapping, using normal save/readback."""
+        import sys
+        if sys.platform != "win32":
+            raise ValueError("此预设仅适用于 Windows 豆包输入法")
+        self._before_draft_change()
+        draft = self._require_draft()
+        if draft.hardware_id != "WMP-S3-MATRIX12-POWER-V2":
+            raise ValueError("此预设仅适用于 Power V2")
+        candidate = copy.deepcopy(draft)
+        profile_id = self._model.snapshot.active_profile_id
+        from controller_config.voice_presets import DOUBAO_WINDOWS_HOLD
+        voice = copy.deepcopy(DOUBAO_WINDOWS_HOLD)
+        if candidate.config.get("voice_action") is not None:
+            candidate.set_global_voice(voice)
+        else:
+            candidate.set_mapping(profile_id, "key.8", "语音", voice)
+        candidate.set_mapping(profile_id, "key.9", "发送", {"type": "key", "usage": 40})
+        draft.replace_config(candidate.config, self._contract)
         self._notify_draft_changed()
 
     def set_mapping(
@@ -1190,7 +1462,7 @@ class MainViewModel(QObject):
             or snapshot.compatibility.get("write") is not True
         ):
             raise ValueError("设备当前只读，不允许恢复出厂设置")
-        if self._firmware_update.blocks_editing:
+        if self._firmware.transaction.blocks_editing:
             raise ValueError("固件维护进行中，不能恢复出厂设置")
         if self._calibration.blocks_editing:
             raise ValueError("摇杆校准进行中，不能恢复出厂设置")
@@ -1224,7 +1496,7 @@ class MainViewModel(QObject):
         features = snapshot.capabilities.get("features")
         if not isinstance(features, dict) or features.get("ble_host_slots") != 3:
             raise ValueError("当前固件不支持三槽蓝牙管理")
-        if (self._firmware_update.blocks_editing or self._calibration.blocks_editing
+        if (self._firmware.transaction.blocks_editing or self._calibration.blocks_editing
                 or self._write_transaction.blocks_editing
                 or self._prompt_device.status.is_busy or self.screen_icon.busy
                 or self.screen_glyphs.busy or self.ble_name.busy or self.normal_agent.busy):
@@ -1244,7 +1516,7 @@ class MainViewModel(QObject):
         if self._config_refresh is not None:
             raise ValueError("正在读取设备最新配置，请稍后再操作")
         self._ensure_icon_idle()
-        if self._firmware_update.blocks_editing:
+        if self._firmware.transaction.blocks_editing:
             raise ValueError("固件维护进行中，不能同时写入配置")
         if self._calibration.blocks_editing:
             raise ValueError("摇杆校准进行中，不能同时写入配置")
@@ -1423,7 +1695,7 @@ class MainViewModel(QObject):
             raise ValueError("当前设备没有声明摇杆校准能力")
         if snapshot.compatibility.get("write") is not True:
             raise ValueError("设备当前只读，不能保存校准")
-        if self._firmware_update.blocks_editing:
+        if self._firmware.transaction.blocks_editing:
             raise ValueError("固件维护进行中，不能开始校准")
         if self._prompt_device.status.is_busy:
             raise ValueError("提示词设备操作进行中，不能开始校准")
@@ -1498,10 +1770,22 @@ class MainViewModel(QObject):
             )
 
     @property
+    def firmware_connection_ready(self) -> bool:
+        snapshot = self._model.snapshot
+        if snapshot is None:
+            return False
+        return self._model.state is AppState.READY or (
+            self._model.state is AppState.FIRMWARE_MAINTENANCE
+            and snapshot.maintenance_only
+            and snapshot.trust.is_authenticated
+            and snapshot.connection_kind == "usb"
+        )
+
+    @property
     def remote_firmware_device(self) -> tuple[str, str, str] | None:
         """The connected device owning this result; offline results are not actionable."""
         snapshot = self._model.snapshot
-        if snapshot is None or self._model.state is not AppState.READY:
+        if not self.firmware_connection_ready:
             return None
         identity = tuple(str(snapshot.identity.get(field, ""))
                          for field in ("serial", "product_id", "hardware_id"))
@@ -1541,9 +1825,9 @@ class MainViewModel(QObject):
                 RemoteFirmwareState.CHECKING, RemoteFirmwareState.DOWNLOADING,
                 RemoteFirmwareState.DOWNLOADED,
             }
-            or self._firmware_update.blocks_editing
-            or (self._firmware_update.package is not None
-                and self._firmware_update.state is not FirmwareUpdateState.COMPLETED)
+            or self._firmware.transaction.blocks_editing
+            or (self._firmware.transaction.package is not None
+                and self._firmware.transaction.state is not FirmwareUpdateState.COMPLETED)
             or self._calibration.blocks_editing or self._write_transaction.blocks_editing
             or self._write_transaction.state is ConfigTransactionState.UNKNOWN
             or self._config_refresh is not None or self.screen_icon.busy or self.screen_glyphs.busy
@@ -1576,13 +1860,13 @@ class MainViewModel(QObject):
             raise ValueError("在线固件请求正在进行")
         if self._remote_firmware.state is RemoteFirmwareState.DOWNLOADED:
             raise ValueError("新固件已经下载，请先安装或放弃当前维护包")
-        if snapshot is None or self._model.state is not AppState.READY:
-            raise ValueError("请先连接可写兼容的 BORING 设备")
-        if self._firmware_update.is_busy:
+        if not self.firmware_connection_ready:
+            raise ValueError("请先连接可用的 BORING 设备；旧设备请使用 USB 固件维护")
+        if self._firmware.transaction.is_busy:
             raise ValueError("固件维护事务进行中，不能检查其他发布包")
-        if self._calibration.blocks_editing:
+        if not snapshot.maintenance_only and self._calibration.blocks_editing:
             raise ValueError("摇杆校准进行中，不能检查固件更新")
-        if self._write_transaction.blocks_editing:
+        if not snapshot.maintenance_only and self._write_transaction.blocks_editing:
             raise ValueError("配置写入事务尚未结束")
         features = snapshot.capabilities.get("features")
         if not isinstance(features, dict) or features.get("firmware_update") is not True:
@@ -1662,9 +1946,9 @@ class MainViewModel(QObject):
             RemoteFirmwareState.FAILED,
         }:
             raise ValueError("当前没有可下载的在线固件")
-        if snapshot is None or self._model.state is not AppState.READY:
-            raise ValueError("请先连接可写兼容的 BORING 设备")
-        if self._firmware_update.is_busy:
+        if not self.firmware_connection_ready:
+            raise ValueError("请先连接可用的 BORING 设备；旧设备请使用 USB 固件维护")
+        if self._firmware.transaction.is_busy:
             raise ValueError("固件维护事务进行中，不能下载其他发布包")
         validate_minimum_app_version(release.manifest)
         if self.remote_firmware_device is None:
@@ -1726,7 +2010,7 @@ class MainViewModel(QObject):
         except (FirmwareReleaseError, FirmwarePackageError) as exc:
             self._on_remote_firmware_failed(exc)
             return
-        self._set_firmware_update(
+        self._firmware.set_transaction(
             FirmwareUpdateTransaction(
                 state=FirmwareUpdateState.PACKAGE_READY,
                 message="在线发布包已下载并完成本地检查，尚未向设备发送数据",
@@ -1752,7 +2036,7 @@ class MainViewModel(QObject):
         kind = error.kind if isinstance(error, FirmwareReleaseError) else ""
         unpublished = kind == "unpublished" and not downloading
         if unpublished:
-            message = "暂无可用的固件发布\n已连接更新服务，当前渠道尚未提供固件。你可以继续使用设备，稍后再检查。"
+            message = "在线渠道暂无可用的固件发布\n当前在线地址未提供固件。可使用本页的恢复入口，或从文件安装官方固件。"
         elif kind == "network":
             message = "暂时无法连接更新服务，请检查网络后重试。"
         elif kind == "service":
@@ -1781,7 +2065,7 @@ class MainViewModel(QObject):
             RemoteFirmwareState.DOWNLOADING,
         }:
             raise ValueError("在线固件请求进行中，暂时不能选择本地维护包")
-        if self._firmware_update.is_busy:
+        if self._firmware.transaction.is_busy:
             raise ValueError("固件维护事务进行中，不能更换软件包")
         package = load_local_firmware_package(package_path, self._contract, custom=custom)
         snapshot = self._model.snapshot
@@ -1789,13 +2073,7 @@ class MainViewModel(QObject):
             package.validate_for_device(snapshot)
         if package.source_kind == "official":
             self._firmware_release_history.remember(package.manifest)
-        self._set_firmware_update(
-            FirmwareUpdateTransaction(
-                state=FirmwareUpdateState.PACKAGE_READY,
-                message="固件包已完成本地检查，尚未向设备发送数据",
-                package=package,
-            )
-        )
+        self._firmware.prepare(package)
         self._set_remote_firmware(
             RemoteFirmwareCheck(
                 state=(
@@ -1822,12 +2100,12 @@ class MainViewModel(QObject):
             RemoteFirmwareState.DOWNLOADING,
         }:
             raise ValueError("在线固件请求正在进行，请等待完成后再安装")
-        transaction = self._firmware_update
+        transaction = self._firmware.transaction
         package = transaction.package
         snapshot = self._model.snapshot
         if package is None:
             raise ValueError("请先导入固件维护包")
-        if snapshot is None or self._model.state is not AppState.READY:
+        if not self.firmware_connection_ready:
             raise ValueError("设备当前不可执行固件维护")
         if snapshot.connection_kind == "bluetooth":
             raise ValueError("蓝牙固件更新尚未完成实机验收，请连接 USB 后安装")
@@ -1840,85 +2118,38 @@ class MainViewModel(QObject):
                 raise ValueError("设备已断开或切换，请重新检查官方版本")
             if not self._remote_firmware.restoration and (self.firmware_origin != "official" or not release_is_newer(release, snapshot)):
                 raise ValueError("设备已不需要此在线更新，请重新检查版本")
-        if self._write_transaction.is_busy or self._write_transaction.state is ConfigTransactionState.UNKNOWN:
+        if not snapshot.maintenance_only and (self._write_transaction.is_busy
+                or self._write_transaction.state is ConfigTransactionState.UNKNOWN):
             raise ValueError("配置写入事务尚未结束")
-        if self._calibration.blocks_editing:
+        if not snapshot.maintenance_only and self._calibration.blocks_editing:
             raise ValueError("摇杆校准进行中，不能同时更新固件")
         if self._prompt_device.status.is_busy:
             raise ValueError("提示词设备操作进行中，不能同时更新固件")
-        chunk_size = package.validate_for_device(snapshot)
-        serial = snapshot.identity.get("serial")
-        if not isinstance(serial, str) or not serial:
-            raise ValueError("设备没有返回可绑定的设备序列号")
-        self._gateway.set_status_poll_interval(60_000)
-        self._set_firmware_update(
-            replace(
-                transaction,
-                state=FirmwareUpdateState.CHECKING,
-                message="正在读取设备固件维护状态",
-                technical="",
-                serial=serial,
-                chunk_size=chunk_size,
-                received_size=0,
-                in_flight_size=0,
-                target_partition="",
-                abort_requested=False,
-                restart_failed=True,
-            )
-        )
-        self._gateway.execute_command(firmware_status_command())
+        self._firmware.start(snapshot)
 
     def abort_firmware_update(self) -> None:
-        transaction = self._firmware_update
-        if not transaction.can_abort:
-            raise ValueError("当前固件维护状态不能执行中止")
-        if self._model.state not in {AppState.READY, AppState.READ_ONLY}:
-            raise ValueError("请先重新连接设备，再中止固件接收事务")
-        waiting_for_current_command = transaction.state in {
-            FirmwareUpdateState.CHECKING,
-            FirmwareUpdateState.BEGINNING,
-            FirmwareUpdateState.TRANSFERRING,
-        }
-        self._set_firmware_update(
-            replace(
-                transaction,
-                state=FirmwareUpdateState.ABORTING,
-                message=(
-                    "等待当前请求结束，然后中止设备固件接收事务"
-                    if waiting_for_current_command
-                    else "正在让设备丢弃未完成的固件接收事务"
-                ),
-                abort_requested=True,
-            )
+        self._firmware.abort(
+            self._model.snapshot,
+            link_usable=(self.firmware_connection_ready
+                         or self._model.state is AppState.READ_ONLY),
         )
-        if not waiting_for_current_command:
-            self._gateway.execute_command(firmware_abort_command())
 
     @property
     def can_stop_firmware_wait(self) -> bool:
-        return (self._firmware_update.state is FirmwareUpdateState.PAUSED
+        return (self._firmware.transaction.state is FirmwareUpdateState.PAUSED
                 and self._model.state not in {AppState.READY, AppState.READ_ONLY})
 
     def stop_firmware_wait(self) -> None:
         if not self.can_stop_firmware_wait:
             raise ValueError("设备已连接或维护状态已改变，请重新确认设备状态")
-        self._reconnect_timer.stop()
-        self._finish_firmware_update(
+        self._connection.stop_reconnect()
+        self._firmware.finish(
             FirmwareUpdateState.FAILED,
             "已停止本地等待；设备端更新未取消，结果尚未确认。重新连接并选择安装后将先读取设备状态。",
         )
 
     def dismiss_firmware_update(self) -> None:
-        transaction = self._firmware_update
-        if transaction.state not in {
-            FirmwareUpdateState.NEEDS_ABORT,
-            FirmwareUpdateState.PACKAGE_READY,
-            FirmwareUpdateState.COMPLETED,
-            FirmwareUpdateState.FAILED,
-        }:
-            raise ValueError("当前固件维护事务不能直接关闭")
-        self._gateway.set_status_poll_interval(500)
-        self._set_firmware_update(FirmwareUpdateTransaction())
+        self._firmware.dismiss()
         if self._remote_firmware.state in {
             RemoteFirmwareState.AVAILABLE,
             RemoteFirmwareState.DOWNLOADED,
@@ -1959,35 +2190,43 @@ class MainViewModel(QObject):
         self.diagnostics_changed.emit()
 
     def refresh(self) -> None:
-        self._failed_connection_ports.clear()
+        self.desktop_agents.unbind()
         self._cancel_remote_firmware_request()
         self.screen_glyphs.attach(None)
         self.screen_icon.attach(None)
         self.claude_status.unbind(clear=True)
-        self._reconnect_timer.stop()
-        self._reconnect_timer.setInterval(500)
+        self._connection.reset()
         self._suspend_extension_platform("正在重新扫描设备")
         self.stop_lighting_preview(clear_candidate=True)
+        self._diagnostic_capture_heartbeat.stop()
+        self._cancel_diagnostic_start(
+            clear_error=True,
+            discard_command_results=True,
+        )
+        self.diagnostics_changed.emit()
         self._prompt_device.unbind()
         self._set(ScreenModel(AppState.SCANNING, "正在查找已连接到此电脑的 BORING 设备…", snapshot=self._model.snapshot))
-        if self._firmware_update.is_busy:
-            self._gateway.scan(usb_only=True)
-        else:
-            self._gateway.scan()
+        self._connection.scan(usb_only=self._firmware.transaction.is_busy)
 
     def connect_candidate(self, port_name: str) -> None:
-        self._connection_port = port_name
+        self.desktop_agents.unbind()
+        self._diagnostic_capture_heartbeat.stop()
+        self._cancel_diagnostic_start(
+            clear_error=True,
+            discard_command_results=True,
+        )
+        self.diagnostics_changed.emit()
         self._cancel_remote_firmware_request()
         self.screen_glyphs.attach(None)
         self.screen_icon.attach(None)
         self.claude_status.unbind(clear=True)
-        self._reconnect_timer.stop()
-        self._reconnect_timer.setInterval(500)
+        self._connection.prepare_connect(port_name)
         self._set(ScreenModel(AppState.CONNECTING, "正在确认设备身份并读取配置…", snapshot=self._model.snapshot))
-        self._gateway.connect_port(port_name)
+        self._connection.open(port_name)
 
     def shutdown(self) -> None:
-        self._usb_probe_timer.stop()
+        self.desktop_agents.shutdown()
+        self._connection.shutdown()
         self.host_tasks.attach(None)
         self.host_tasks.cancel_run()
         self.ble_name.detach()
@@ -1999,16 +2238,15 @@ class MainViewModel(QObject):
         self.claude_status.shutdown()
         if self._extension_platform is not None:
             self._extension_platform.shutdown()
-        self._reconnect_timer.stop()
         self.stop_lighting_preview(clear_candidate=True)
         self._prompt_device.unbind()
         self._write_deadline.stop()
-        self._firmware_status_timer.stop()
-        self._firmware_deadline.stop()
+        self._firmware.shutdown()
         self._remote_firmware_check_timer.stop()
         self._calibration_sample_timer.stop()
         self._calibration_activation_deadline.stop()
         self._diagnostic_capture_heartbeat.stop()
+        self._diagnostic_capture_deadline.stop()
         self._lighting_preview_debounce.stop()
         self._lighting_preview_heartbeat.stop()
         if self._firmware_release_source is not None:
@@ -2016,79 +2254,26 @@ class MainViewModel(QObject):
         self._automation_host.shutdown()
         self._gateway.shutdown()
 
-    def _on_candidates(self, candidates: tuple[PortCandidate, ...]) -> None:
-        if self._model.state is AppState.READ_FAILED and not (
-            self._firmware_update.is_busy or self._calibration.state is CalibrationState.UNKNOWN
-        ):
-            # A failed BLE link must not prevent a newly inserted USB cable from
-            # working, or silently retry the same failed connection every tick.
-            candidates = tuple(candidate for candidate in candidates
-                               if candidate.transport == "usb"
-                               and candidate.port_name not in self._failed_connection_ports)
-            if not candidates:
-                return
-        candidates = tuple(
-            replace(candidate, serial_number=self._known_device_names[candidate.port_name][0])
-            if candidate.transport == "bluetooth" and candidate.port_name in self._known_device_names else candidate
-            for candidate in candidates
-        )
-        if not candidates and self._firmware_update.is_busy:
-            self._set(ScreenModel(
-                AppState.DISCONNECTED,
-                "等待固件维护设备重新连接 USB…",
-                snapshot=self._model.snapshot,
-            ))
-            self._reconnect_timer.start()
-            return
-        if self._model.state is AppState.DISCONNECTED and not candidates:
-            return
-        if not candidates:
-            self._set(
-                ScreenModel(
-                    AppState.NO_DEVICE,
-                    "尚未连接 BORING 设备",
-                    "请插入 USB，或先在系统蓝牙设置中连接设备。",
-                    snapshot=self._model.snapshot,
-                )
-            )
-            if not self._reconnect_timer.isActive():
-                self._reconnect_timer.start()
-            return
-        if len(candidates) > 1:
-            self._reconnect_timer.stop()
-            self._set(
-                ScreenModel(
-                    AppState.MULTIPLE_DEVICES,
-                    "此电脑连接了多台 BORING 设备",
-                    "请选择要管理的设备。",
-                    candidates=candidates,
-                    snapshot=self._model.snapshot,
-                )
-            )
-            return
-        self.connect_candidate(candidates[0].port_name)
-
-    def _on_progress(self, message: str) -> None:
-        if self._model.state in {AppState.SCANNING, AppState.CONNECTING}:
-            self._set(
-                ScreenModel(
-                    self._model.state,
-                    message,
-                    candidates=self._model.candidates,
-                    snapshot=self._model.snapshot,
-                )
-            )
-
     def _on_snapshot(self, snapshot: DeviceSnapshot) -> None:
-        self._connection_port = snapshot.port_name
-        self._failed_connection_ports.clear()
+        if snapshot.maintenance_only:
+            self._enter_firmware_maintenance(snapshot)
+            return
+        if (
+            self._diagnostic_intent_device is not None
+            and self._diagnostic_intent_device
+            != self._diagnostic_device_identity(snapshot)
+        ):
+            self._diagnostic_capture_heartbeat.stop()
+            self._cancel_diagnostic_start(
+                clear_error=True,
+                discard_command_results=True,
+            )
+            self.diagnostics_changed.emit()
+        self._connection.adopt(snapshot, remember_name=snapshot.trust.is_authenticated)
         self._normal_agent_status_refresh = False
         self.ble_name.attach(snapshot)
         self.normal_agent.attach(snapshot)
-        if snapshot.trust.is_authenticated:
-            self._known_device_names[snapshot.port_name] = (str(snapshot.identity["serial"]), "")
         self._config_refresh = None
-        self._reconnect_timer.stop()
         if isinstance(snapshot, DeviceSnapshot):
             if self._contract is None:
                 raise ValueError("共享配置 Schema 不可用")
@@ -2145,6 +2330,7 @@ class MainViewModel(QObject):
         self.screen_icon.attach(snapshot, writable=state is AppState.READY)
         self.screen_glyphs.attach(snapshot, writable=state is AppState.READY)
         self._set(ScreenModel(state, snapshot.config_status_label, snapshot=snapshot))
+        self._record_connect_timing(snapshot)
         if isinstance(snapshot, DeviceSnapshot):
             self.codex_agent_focus.bind(snapshot)
         self._start_extension_platform_for_current_session()
@@ -2153,15 +2339,89 @@ class MainViewModel(QObject):
         self._reconcile_snapshot_after_write(snapshot)
         self.host_tasks.attach(snapshot, readback=True)
         self._reconcile_snapshot_after_calibration(snapshot)
-        self._reconcile_snapshot_after_firmware(snapshot)
+        self._firmware.reconcile_snapshot(snapshot)
         self._reset_remote_firmware_for_changed_device(snapshot)
         self.claude_status.bind(snapshot)
+        self.desktop_agents.bind(snapshot)
         if self.ble_name.supported and self.ble_name.connected:
             self.ble_name.read()
         if self.normal_agent.supported and self.normal_agent.connected:
             self.normal_agent.read()
         self._reconcile_remote_firmware_version(snapshot)
         self.auto_check_remote_firmware()
+
+    def _record_connect_timing(self, snapshot: DeviceSnapshot) -> None:
+        connect_timing = tuple(getattr(snapshot, "connect_timing", ()) or ())
+        if not connect_timing:
+            return
+        marks = (
+            *self._connection.take_discovery_timing(snapshot.port_name),
+            *connect_timing,
+            TimingMark("ui_ready", time.monotonic()),
+        )
+        self._diagnostics.record_connect_timing(marks)
+        # Measurement runs (SH-005) append each timeline to a JSON-lines file.
+        log_path = os.environ.get("BORING_CONNECT_TIMING_LOG")
+        if log_path:
+            try:
+                with open(log_path, "a", encoding="utf-8") as stream:
+                    stream.write(json.dumps(
+                        {"port": snapshot.port_name, **timing_report(marks)},
+                        ensure_ascii=False) + "\n")
+            except OSError:
+                pass
+
+    def _remember_confirmed_config(self, model: ScreenModel) -> None:
+        """Save the device's confirmed configuration (bootstrap, write
+        readback, calibration, external refresh) for the next handshake."""
+        snapshot = model.snapshot
+        if (self._config_cache is None or snapshot is None
+                or model.state not in {AppState.READY, AppState.READ_ONLY}
+                or not isinstance(snapshot, DeviceSnapshot)
+                or not snapshot.trust.is_authenticated or not snapshot.trust.serial):
+            return
+        serial = snapshot.trust.serial
+        revision = (snapshot.config_result.get("generation"), snapshot.config_result.get("digest"))
+        if self._cached_config_revision.get(serial) == revision:
+            return
+        if self._config_cache.store(serial, snapshot.config_result):
+            self._cached_config_revision[serial] = revision
+
+    def _enter_firmware_maintenance(self, snapshot: DeviceSnapshot) -> None:
+        self._connection.adopt(snapshot, remember_name=True)
+        self._config_refresh = None
+        # Old configuration/calibration results stay unknown until a normal
+        # readback can reconcile them. They must not keep sending requests or
+        # block the signed firmware recovery needed to obtain that readback.
+        self._write_deadline.stop()
+        self._calibration_sample_timer.stop()
+        self._calibration_activation_deadline.stop()
+        # Keep cached drafts, but expose no configuration or host automation in
+        # the restricted session. Only the firmware transaction may use USB.
+        self._draft = None
+        self.ble_name.detach()
+        self.normal_agent.detach()
+        self._normal_agent_status_refresh = False
+        self.screen_icon.attach(None)
+        self.screen_glyphs.attach(None)
+        self.codex_agent_focus.unbind()
+        self.claude_status.unbind()
+        self.desktop_agents.unbind()
+        self._prompt_device.unbind()
+        self._suspend_extension_platform("仅固件维护，配置尚未读取")
+        self._reset_lighting_preview(supported=False, message="仅固件维护，灯光预览不可用")
+        self._diagnostic_capture_heartbeat.stop()
+        self._cancel_diagnostic_start(clear_error=True, discard_command_results=True)
+        self._page = "firmware"
+        self._set(ScreenModel(
+            AppState.FIRMWARE_MAINTENANCE,
+            "设备已认证；配置未能读取，可通过 USB 安装官方签名固件。",
+            snapshot.maintenance_reason,
+            snapshot=snapshot,
+        ))
+        self._firmware.reconcile_snapshot(snapshot)
+        self._reset_remote_firmware_for_changed_device(snapshot)
+        self._reconcile_remote_firmware_version(snapshot)
 
     def _reconcile_remote_firmware_version(self, snapshot: DeviceSnapshot) -> None:
         current = self._remote_firmware
@@ -2195,7 +2455,7 @@ class MainViewModel(QObject):
         if self._firmware_release_source is not None:
             self._firmware_release_source.cancel()
         previous = self._remote_firmware
-        transaction = self._firmware_update
+        transaction = self._firmware.transaction
         online_package = previous.state is RemoteFirmwareState.DOWNLOADED or (
             previous.state is RemoteFirmwareState.CURRENT
             and transaction.state is FirmwareUpdateState.COMPLETED
@@ -2204,7 +2464,7 @@ class MainViewModel(QObject):
         # active transfer. Keep its failure explanation, but do not offer its
         # downloaded package or success message as belonging to the new device.
         if online_package and not transaction.is_busy:
-            self._set_firmware_update(
+            self._firmware.set_transaction(
                 replace(transaction, package=None)
                 if transaction.state is FirmwareUpdateState.FAILED
                 else FirmwareUpdateTransaction()
@@ -2224,14 +2484,28 @@ class MainViewModel(QObject):
         snapshot = self._model.snapshot
         if snapshot is None or self._model.state not in {AppState.READY, AppState.READ_ONLY}:
             return
+        # Writes, calibration and firmware maintenance pause the hub
+        # (_sync_prompt_polling); key reads only count on the leased port.
+        self.desktop_agents.consume_status(status, port_name=self._connection.port)
+        self._diagnostic_status_revision += 1
+        capture_start_confirmed = self._diagnostic_status_confirms_current_intent(
+            status
+        )
         self.codex_agent_focus.consume(
             status,
             allowed=(self._model.state is AppState.READY
                      and not self._write_transaction.blocks_editing
                      and not self._calibration.blocks_editing
-                     and not self._firmware_update.is_busy),
+                     and not self._firmware.transaction.is_busy),
         )
         if status == snapshot.status:
+            if capture_start_confirmed:
+                self._diagnostics.observe_status(
+                    snapshot.status,
+                    status,
+                    capture_start_confirmed=True,
+                )
+            self._reconcile_diagnostic_capture_status(status)
             self._maybe_refresh_device_config()
             return
         previous_engine = snapshot.status.get("action_engine")
@@ -2254,7 +2528,11 @@ class MainViewModel(QObject):
             )
         ):
             self.stop_lighting_preview()
-        self._diagnostics.observe_status(snapshot.status, status)
+        self._diagnostics.observe_status(
+            snapshot.status,
+            status,
+            capture_start_confirmed=capture_start_confirmed,
+        )
         presentation_fields = (
             "state",
             "active",
@@ -2285,12 +2563,7 @@ class MainViewModel(QObject):
             self._model = model
             self._mark_extension_context_changed()
         self.diagnostics_changed.emit()
-        capture = diagnostic_capture(status)
-        if capture.get("active") is True and self._page == "diagnostics":
-            if not self._diagnostic_capture_heartbeat.isActive():
-                self._diagnostic_capture_heartbeat.start()
-        elif self._diagnostic_capture_pending != "starting":
-            self._diagnostic_capture_heartbeat.stop()
+        self._reconcile_diagnostic_capture_status(status)
         self._reconcile_status_after_write(updated)
         self._reconcile_status_after_calibration(updated)
         self._maybe_refresh_device_config()
@@ -2303,7 +2576,7 @@ class MainViewModel(QObject):
         if (self._write_transaction.state not in {
                 ConfigTransactionState.IDLE, ConfigTransactionState.ACTIVE,
                 ConfigTransactionState.FAILED, ConfigTransactionState.CONFLICT}
-                or self._calibration.blocks_editing or self._firmware_update.blocks_editing):
+                or self._calibration.blocks_editing or self._firmware.transaction.blocks_editing):
             return
         active = snapshot.status.get("active")
         if not isinstance(active, dict) or snapshot.status.get("pending") is not None:
@@ -2370,8 +2643,8 @@ class MainViewModel(QObject):
         if self.ble_name.completed(command_name, payload):
             snapshot = self._model.snapshot
             if self.ble_name.connected and self.ble_name.result is not None and snapshot is not None:
-                self._known_device_names[snapshot.port_name] = (
-                    self.ble_name.serial, self.ble_name.result["active_name"]
+                self._connection.remember_device_name(
+                    snapshot.port_name, self.ble_name.serial, self.ble_name.result["active_name"]
                 )
             return
         if command_name == "GET_CONFIG" and self._config_refresh is not None:
@@ -2393,22 +2666,31 @@ class MainViewModel(QObject):
         if command_name.startswith("CALIBRATION_"):
             self._on_calibration_command_completed(command_name, payload)
             return
-        if command_name.startswith("FW_"):
-            self._on_firmware_command_completed(command_name, payload)
+        if self._firmware.handle_completed(command_name, payload):
             return
         if command_name == "DIAGNOSTIC_START":
-            self._diagnostic_capture_pending = ""
+            generation, kind = self._take_diagnostic_start_result()
+            if kind == "heartbeat":
+                return
+            if generation != self._diagnostic_intent_generation or not kind:
+                return
+            self._diagnostic_capture_pending = DiagnosticCapturePhase.AWAITING_ACTIVE
             self._diagnostic_capture_error = ""
-            if (
-                self._page == "diagnostics"
-                and not self._diagnostic_capture_heartbeat.isActive()
-            ):
-                self._diagnostic_capture_heartbeat.start()
+            self._diagnostic_capture_technical = ""
+            self._diagnostic_confirmation_after_revision = (
+                self._diagnostic_status_revision
+            )
+            self._diagnostic_capture_deadline.setInterval(
+                _DIAGNOSTIC_CONFIRM_TIMEOUT_MS
+            )
+            self._diagnostic_capture_deadline.start()
             self.diagnostics_changed.emit()
             return
         if command_name == "DIAGNOSTIC_STOP":
-            self._diagnostic_capture_pending = ""
+            self._diagnostic_capture_pending = DiagnosticCapturePhase.IDLE
             self._diagnostic_capture_error = ""
+            self._diagnostic_capture_technical = ""
+            self._diagnostic_capture_deadline.stop()
             self._diagnostic_capture_heartbeat.stop()
             self.diagnostics_changed.emit()
             return
@@ -2492,15 +2774,62 @@ class MainViewModel(QObject):
             return
         if self._prompt_device.handle_failed(command_name, error):
             return
+        if error.error_name == COMMAND_DROPPED:
+            # A-04: a queued command discarded by a closing link never ran.
+            # Calibration, firmware and configuration writes are reconciled by
+            # the failure/disconnect handler (read-back only); a dropped
+            # command must not downgrade an UNKNOWN write to FAILED.
+            return
         if command_name.startswith("CALIBRATION_"):
             self._on_calibration_command_failed(command_name, error)
             return
-        if command_name.startswith("FW_"):
-            self._on_firmware_command_failed(command_name, error)
+        if self._firmware.handle_failed(command_name, error):
             return
-        if command_name in {"DIAGNOSTIC_START", "DIAGNOSTIC_STOP"}:
-            self._diagnostic_capture_pending = ""
-            self._diagnostic_capture_error = error.technical or str(error)
+        if command_name == "DIAGNOSTIC_START":
+            generation, kind = self._take_diagnostic_start_result()
+            technical = error.technical or str(error)
+            if kind == "heartbeat":
+                self._diagnostic_capture_technical = technical
+                return
+            if generation != self._diagnostic_intent_generation or not kind:
+                return
+            if error.error_name == "BUSY" and kind == "initial":
+                # The start was issued in this page/device context. Keep that
+                # fact until retry, timeout or page exit so exit can still send
+                # the protocol's idempotent STOP cleanup.
+                self._diagnostic_start_was_sent = True
+                self._diagnostic_capture_pending = DiagnosticCapturePhase.WAITING_READY
+                self._diagnostic_capture_error = ""
+                self._diagnostic_capture_technical = technical
+                self._diagnostic_capture_deadline.setInterval(
+                    _DIAGNOSTIC_READY_TIMEOUT_MS
+                )
+                self._diagnostic_capture_deadline.start()
+                self.diagnostics_changed.emit()
+                return
+            self._finish_diagnostic_start_failure(
+                (
+                    "设备还在切换状态，请稍后重试。"
+                    if error.error_name == "BUSY"
+                    else "未能开始设备检查，请稍后重试。"
+                ),
+                technical,
+                may_still_activate=error.error_name in {"", "TRANSPORT_TIMEOUT"},
+            )
+            return
+        if command_name == "DIAGNOSTIC_STOP":
+            self._diagnostic_capture_pending = DiagnosticCapturePhase.IDLE
+            if self._page == "diagnostics" and self._model.state in {
+                AppState.READY,
+                AppState.READ_ONLY,
+            }:
+                self._diagnostic_capture_error = "未能结束设备检查；设备将在租约到期后恢复。"
+                self._diagnostic_capture_technical = error.technical or str(error)
+            else:
+                # Cleanup can finish after the user has already left the page.
+                # Do not carry that old context into a later diagnostics visit.
+                self._diagnostic_capture_error = ""
+                self._diagnostic_capture_technical = ""
             self._diagnostic_capture_heartbeat.stop()
             self.diagnostics_changed.emit()
             return
@@ -2516,7 +2845,26 @@ class MainViewModel(QObject):
                 )
             )
             return
+        if self._on_write_command_failed(command_name, error):
+            return
+        # M-12: a failure no session claimed is not a configuration write
+        # failure. Record it instead of failing whatever write state is shown.
+        self._diagnostics.record_link_warning(
+            "UNCLAIMED_COMMAND_FAILURE",
+            f"{command_name}: {error.technical or error}",
+        )
+        self.diagnostics_changed.emit()
+
+    def _on_write_command_failed(self, command_name: str, error: BootstrapError) -> bool:
+        """Failures of the configuration write commands (VALIDATE_CONFIG,
+        SET_CONFIG and the GET_CONFIG read-back)."""
         transaction = self._write_transaction
+        if command_name == "GET_CONFIG":
+            if transaction.state in {ConfigTransactionState.VERIFYING, ConfigTransactionState.UNKNOWN}:
+                self._finish_write(ConfigTransactionState.UNKNOWN, "无法读回设备配置完成对账", error.technical)
+            return True
+        if command_name not in {"VALIDATE_CONFIG", "SET_CONFIG"}:
+            return False
         if command_name == "SET_CONFIG" and error.error_name == "TRANSPORT_TIMEOUT":
             self._set_write_transaction(
                 replace(
@@ -2526,7 +2874,7 @@ class MainViewModel(QObject):
                     technical=error.technical,
                 )
             )
-            return
+            return True
         if error.error_name == "GENERATION_CONFLICT":
             current = error.details.get("current_generation", "未知")
             self._finish_write(
@@ -2534,30 +2882,27 @@ class MainViewModel(QObject):
                 "设备配置已被其他操作更新",
                 f"current_generation={current}",
             )
-            return
-        if command_name == "GET_CONFIG":
-            if transaction.state in {ConfigTransactionState.VERIFYING, ConfigTransactionState.UNKNOWN}:
-                self._finish_write(ConfigTransactionState.UNKNOWN, "无法读回设备配置完成对账", error.technical)
-            return
+            return True
         if command_name == "VALIDATE_CONFIG" and error.error_name == "TRANSPORT_TIMEOUT":
             self._finish_write(
                 ConfigTransactionState.FAILED,
                 "设备校验回复超时，配置尚未保存，请重试。",
                 error.technical,
             )
-            return
+            return True
         if command_name == "VALIDATE_CONFIG" and not error.error_name:
             self._finish_write(
                 ConfigTransactionState.FAILED,
                 "设备校验未完成，配置尚未保存，请查看详情后重试。",
                 error.technical,
             )
-            return
+            return True
         self._finish_write(
             ConfigTransactionState.FAILED,
             "设备拒绝候选配置" if command_name == "VALIDATE_CONFIG" else "设备写入失败",
             error.technical,
         )
+        return True
 
     def _on_lighting_preview_command_completed(
         self,
@@ -2695,20 +3040,23 @@ class MainViewModel(QObject):
         self._cancel_remote_firmware_request()
         self.screen_glyphs.attach(None)
         self.screen_icon.attach(None)
-        self._reconnect_timer.stop()
+        self._connection.stop_reconnect()
         self._suspend_extension_platform("设备认证或通信失败")
         self._reset_lighting_preview(
             supported=False,
             message="设备通信不可用，实时预览已停止",
         )
         self._diagnostic_capture_heartbeat.stop()
-        self._diagnostic_capture_pending = ""
+        self._cancel_diagnostic_start(
+            clear_error=True,
+            discard_command_results=True,
+        )
         self._diagnostics.record_connection_loss(technical or message)
         self.diagnostics_changed.emit()
         self._prompt_device.unbind()
-        firmware_was_busy = self._firmware_update.is_busy
+        firmware_was_busy = self._firmware.transaction.is_busy
         if firmware_was_busy:
-            self._pause_firmware_update("固件维护期间通信失败，重连后将先读取 FW_STATUS 对账", technical)
+            self._firmware.pause("固件维护期间通信失败，重连后将先读取 FW_STATUS 对账", technical)
         transaction_state = self._write_transaction.state
         if transaction_state in {
             ConfigTransactionState.WRITING,
@@ -2728,39 +3076,10 @@ class MainViewModel(QObject):
         calibration_was_blocking = self._calibration.blocks_editing
         if calibration_was_blocking:
             self._handle_calibration_connection_loss(technical)
-        if kind is BootstrapKind.FIRMWARE_UPDATE_REQUIRED:
-            state = AppState.FIRMWARE_UPDATE_REQUIRED
-        elif kind in {BootstrapKind.AUTHENTICATION_INTERRUPTED, BootstrapKind.DISCOVERY_INTERRUPTED}:
-            state = AppState.DISCONNECTED
-            if kind is BootstrapKind.DISCOVERY_INTERRUPTED:
-                message = "蓝牙连接检查暂未完成，正在自动重试。"
-        elif kind is BootstrapKind.INCOMPATIBLE:
-            state = AppState.INCOMPATIBLE
-        elif kind is BootstrapKind.AUTHENTICITY_FAILED:
-            state = AppState.AUTHENTICITY_FAILED
-        else:
-            state = AppState.READ_FAILED
-            if self._connection_port and self._model.state in {
-                AppState.CONNECTING, AppState.READY, AppState.READ_ONLY,
-            }:
-                self._failed_connection_ports.add(self._connection_port)
-            technical = "\n".join(part for part in (message, technical) if part)
-            message = "配置连接失败；可重新连接，或使用 USB 连接设备。"
-        self._set(ScreenModel(state, message, technical, snapshot=self._model.snapshot))
-        if (kind in {BootstrapKind.AUTHENTICATION_INTERRUPTED, BootstrapKind.DISCOVERY_INTERRUPTED}
-                and not self._reconnect_timer.isActive()):
-            # The failed worker closes after publishing this signal. Let the
-            # timer start a fresh scan after that cleanup instead of re-entering
-            # the same worker and canceling the replacement scan.
-            self._reconnect_timer.start(5000 if kind is BootstrapKind.DISCOVERY_INTERRUPTED else 500)
-        elif (kind not in {BootstrapKind.FIRMWARE_UPDATE_REQUIRED, BootstrapKind.AUTHENTICITY_FAILED}
-                and (state is AppState.READ_FAILED or firmware_was_busy
-                     or self._calibration.state is CalibrationState.UNKNOWN)
-                and not self._reconnect_timer.isActive()):
-            self._reconnect_timer.start()
+        self._connection.handle_failure(kind, message, technical, firmware_was_busy=firmware_was_busy)
 
     def _on_disconnected(self, technical: str) -> None:
-        self._reconnect_timer.setInterval(500)
+        self.desktop_agents.unbind()
         self._cancel_remote_firmware_request()
         self.screen_glyphs.attach(None)
         self.screen_icon.attach(None)
@@ -2771,7 +3090,10 @@ class MainViewModel(QObject):
             message="设备已断开，固件将恢复已保存的灯光",
         )
         self._diagnostic_capture_heartbeat.stop()
-        self._diagnostic_capture_pending = ""
+        self._cancel_diagnostic_start(
+            clear_error=True,
+            discard_command_results=True,
+        )
         self._diagnostics.record_connection_loss(technical)
         self.diagnostics_changed.emit()
         self._prompt_device.unbind()
@@ -2783,32 +3105,8 @@ class MainViewModel(QObject):
                 snapshot=self._model.snapshot,
             )
         )
-        if not self._reconnect_timer.isActive():
-            self._reconnect_timer.start()
-        self._scan_for_reconnect()
-        if self._firmware_update.is_busy:
-            if self._firmware_update.state in {
-                FirmwareUpdateState.FINALIZING,
-                FirmwareUpdateState.WAITING_RECONNECT,
-                FirmwareUpdateState.VERIFYING,
-            }:
-                self._set_firmware_update(
-                    replace(
-                        self._firmware_update,
-                        state=(
-                            FirmwareUpdateState.VERIFYING
-                            if self._firmware_update.state is FirmwareUpdateState.VERIFYING
-                            else FirmwareUpdateState.WAITING_RECONNECT
-                        ),
-                        message="设备正在重启；重新连接后将核对版本和 build_id",
-                        technical=technical,
-                    )
-                )
-            else:
-                self._pause_firmware_update(
-                    "传输期间连接中断；重连后将从设备报告的偏移继续，不会盲目重发",
-                    technical,
-                )
+        self._connection.handle_disconnected()
+        self._firmware.on_disconnected(technical)
         if self._write_transaction.state in {
             ConfigTransactionState.WRITING,
             ConfigTransactionState.PENDING,
@@ -2838,62 +3136,32 @@ class MainViewModel(QObject):
         if self._calibration.blocks_editing:
             self._handle_calibration_connection_loss(technical)
 
-    def _can_handoff_to_usb(self) -> bool:
+    def _connection_context(self) -> ConnectionContext:
+        return ConnectionContext(
+            model=self._model,
+            firmware_busy=self._firmware.transaction.is_busy,
+            calibration_unknown=self._calibration.state is CalibrationState.UNKNOWN,
+        )
+
+    def _usb_handoff_blocked(self) -> bool:
+        """Any session a BLE -> USB switch must not interrupt."""
         snapshot = self._model.snapshot
-        return (
-            self._model.state in {AppState.READY, AppState.READ_ONLY}
-            and snapshot is not None and snapshot.connection_kind == "bluetooth"
-            and snapshot.trust.is_authenticated
-            and not (self._write_transaction.blocks_editing
-                     or self._write_transaction.state is ConfigTransactionState.UNKNOWN
-                     or self._firmware_update.blocks_editing or self._calibration.blocks_editing
-                     or self._remote_firmware.state in {
-                         RemoteFirmwareState.CHECKING, RemoteFirmwareState.DOWNLOADING,
-                     }
-                     or self._config_refresh is not None
-                     or self.screen_icon.busy or self.screen_glyphs.busy
-                     or self._prompt_device.status.is_busy or self.ble_name.busy
-                     or self.normal_agent.busy or self.normal_agent.uncertain
-                     or self.diagnostic_capture_active or self._diagnostic_capture_pending
-                     or self.host_tasks.running or self._automation_host.running
-                     or self._workflow_host.running or snapshot.status.get("pending") is not None)
-        )
-
-    def _probe_usb_handoff(self) -> None:
-        probe = getattr(self._gateway, "probe_usb", None)
-        if callable(probe) and self._can_handoff_to_usb():
-            probe(str(self._model.snapshot.identity["serial"]))
-
-    def _on_usb_handoff_candidate(self, candidate: PortCandidate) -> None:
-        # A write may have started while enumeration was in flight. Retry later.
-        if (self._can_handoff_to_usb() and candidate.transport == "usb"
-                and candidate.serial_number == self._model.snapshot.identity["serial"]):
-            self.connect_candidate(candidate.port_name)
-
-    def _scan_for_reconnect(self) -> None:
-        if self._model.state is AppState.READ_FAILED and not (
-            self._firmware_update.is_busy or self._calibration.state is CalibrationState.UNKNOWN
-        ):
-            self._gateway.scan(usb_only=True)
-            return
-        reconnectable = self._model.state in {AppState.NO_DEVICE, AppState.DISCONNECTED} or (
-            self._model.state is AppState.READ_FAILED
-            and (
-                self._firmware_update.is_busy
-                or self._calibration.state is CalibrationState.UNKNOWN
-            )
-        )
-        if reconnectable:
-            usb_only = self._firmware_update.is_busy
-            snapshot = self._model.snapshot
-            preferred_port = str(getattr(snapshot, "port_name", "") or "")
-            targeted_scan = getattr(self._gateway, "scan_reconnect", None)
-            if preferred_port and callable(targeted_scan):
-                targeted_scan(preferred_port, usb_only=usb_only)
-            elif usb_only:
-                self._gateway.scan(usb_only=True)
-            else:
-                self._gateway.scan()
+        return (self._write_transaction.blocks_editing
+                or self._write_transaction.state is ConfigTransactionState.UNKNOWN
+                or self._firmware.transaction.blocks_editing or self._calibration.blocks_editing
+                or self._remote_firmware.state in {
+                    RemoteFirmwareState.CHECKING, RemoteFirmwareState.DOWNLOADING,
+                }
+                or self._config_refresh is not None
+                or self.screen_icon.busy or self.screen_glyphs.busy
+                or self._prompt_device.status.is_busy or self.ble_name.busy
+                or self.normal_agent.busy or self.normal_agent.uncertain
+                or self.diagnostic_capture_active
+                or self._diagnostic_capture_pending is not DiagnosticCapturePhase.IDLE
+                or self._diagnostic_start_was_sent
+                or self.host_tasks.running or self._automation_host.running
+                or self._workflow_host.running
+                or (snapshot is not None and snapshot.status.get("pending") is not None))
 
     def _set(self, model: ScreenModel) -> None:
         if model == self._model:
@@ -2909,14 +3177,10 @@ class MainViewModel(QObject):
                 message="连接已变化，请重新验证配置",
             )
         self._model = model
-        if (model.state in {AppState.READY, AppState.READ_ONLY}
-                and model.snapshot is not None
-                and model.snapshot.connection_kind == "bluetooth"):
-            if not self._usb_probe_timer.isActive():
-                self._usb_probe_timer.start()
-        else:
-            self._usb_probe_timer.stop()
+        self._remember_confirmed_config(model)
+        self._connection.sync_usb_probe(model)
         if model.state not in {AppState.READY, AppState.READ_ONLY}:
+            self.desktop_agents.unbind()
             self._normal_agent_status_refresh = False
             self.ble_name.detach()
             self.normal_agent.detach()
@@ -2924,7 +3188,27 @@ class MainViewModel(QObject):
             self.codex_agent_focus.unbind()
             self.claude_status.unbind()
         self._mark_extension_context_changed()
+        self._follow_connection_steps(model.state)
         self.changed.emit(model)
+
+    def _on_connect_step(self, step: str, detail: str) -> None:
+        self.connection_steps.step(step, detail, time.monotonic())
+        self.connection_steps_changed.emit()
+
+    def _follow_connection_steps(self, state: AppState) -> None:
+        """Done when the device is shown, failed on an error page. A Bluetooth
+        authentication retry passes through DISCONNECTED and carries on."""
+        steps, now = self.connection_steps, time.monotonic()
+        if state in {AppState.READY, AppState.READ_ONLY, AppState.FIRMWARE_MAINTENANCE}:
+            steps.finish(now)
+        elif state in {AppState.READ_FAILED, AppState.AUTHENTICITY_FAILED, AppState.INCOMPATIBLE,
+                       AppState.FIRMWARE_UPDATE_REQUIRED}:
+            steps.fail(now)
+        elif state in {AppState.NO_DEVICE, AppState.MULTIPLE_DEVICES} and steps.active:
+            steps.reset()
+        else:
+            return
+        self.connection_steps_changed.emit()
 
     def _start_extension_platform_for_current_session(self) -> None:
         platform = self._extension_platform
@@ -2962,7 +3246,7 @@ class MainViewModel(QObject):
 
     def _before_draft_change(self) -> None:
         self._ensure_icon_idle()
-        if self._firmware_update.blocks_editing:
+        if self._firmware.transaction.blocks_editing:
             raise ValueError("固件维护进行中，不能修改本地草稿")
         if self._calibration.blocks_editing:
             raise ValueError("摇杆校准进行中，不能修改本地草稿")
@@ -2978,10 +3262,7 @@ class MainViewModel(QObject):
         self._sync_prompt_polling()
         self.changed.emit(self._model)
 
-    def _set_firmware_update(self, transaction: FirmwareUpdateTransaction) -> None:
-        if transaction == self._firmware_update:
-            return
-        self._firmware_update = transaction
+    def _on_firmware_transaction_changed(self, transaction: FirmwareUpdateTransaction) -> None:
         self.claude_status.set_paused(transaction.blocks_editing)
         self._sync_prompt_polling()
         self.changed.emit(self._model)
@@ -3000,10 +3281,12 @@ class MainViewModel(QObject):
         self.changed.emit(self._model)
 
     def _sync_prompt_polling(self) -> None:
-        self.host_tasks.set_paused(self._write_transaction.is_busy or self._firmware_update.blocks_editing or self._calibration.blocks_editing)
+        self.desktop_agents.set_paused(self._write_transaction.blocks_editing
+            or self._firmware.transaction.blocks_editing or self._calibration.blocks_editing)
+        self.host_tasks.set_paused(self._write_transaction.is_busy or self._firmware.transaction.blocks_editing or self._calibration.blocks_editing)
         self._prompt_device.set_polling_paused(
             self._write_transaction.is_busy
-            or self._firmware_update.blocks_editing
+            or self._firmware.transaction.blocks_editing
             or self._calibration.blocks_editing
         )
 
@@ -3103,14 +3386,21 @@ class MainViewModel(QObject):
     def _apply_calibration_sample(self, sample: CalibrationSample) -> None:
         if sample.state == "CENTERING":
             state = CalibrationState.CENTERING
-        elif sample.travel_complete:
+        elif sample.ready_to_confirm:
             state = CalibrationState.READY_TO_CONFIRM
         else:
             state = CalibrationState.CAPTURING
         message = {
             CalibrationState.CENTERING: "请保持摇杆松开，正在采集中立点",
-            CalibrationState.CAPTURING: "请沿完整边缘缓慢转动摇杆",
-            CalibrationState.READY_TO_CONFIRM: "行程已完整；请松开摇杆回到中心，然后保存",
+            CalibrationState.CAPTURING: (
+                "四向行程已记录；请拨动并回中两次，每次保持片刻"
+                if sample.travel_complete else "请沿四向拨动摇杆，每次松手回中"
+            ),
+            CalibrationState.READY_TO_CONFIRM: (
+                "四向及回中采集已完成；保持松手并保存"
+                if sample.stable_returns_supported
+                else "行程已完整；请松开摇杆回到中心，然后保存"
+            ),
         }[state]
         current = self._calibration
         self._set_calibration(
@@ -3129,6 +3419,8 @@ class MainViewModel(QObject):
                 maximum_x=sample.maximum_x,
                 maximum_y=sample.maximum_y,
                 travel_complete=sample.travel_complete,
+                ready_to_confirm=sample.ready_to_confirm,
+                stable_returns_supported=sample.stable_returns_supported,
                 center_window_ms=sample.center_window_ms or current.center_window_ms,
                 timeout_ms=sample.timeout_ms or current.timeout_ms,
             )
@@ -3474,398 +3766,7 @@ class MainViewModel(QObject):
             )
         )
 
-    def _on_firmware_command_completed(self, command_name: str, payload: dict) -> None:
-        transaction = self._firmware_update
-        if not transaction.is_busy:
-            return
-        package = transaction.package
-        if package is None:
-            self._finish_firmware_update(
-                FirmwareUpdateState.FAILED,
-                "收到固件维护响应，但本地软件包上下文已经丢失",
-            )
-            return
-        try:
-            if command_name == "FW_STATUS":
-                status = FirmwareStatus.from_payload(payload)
-                if transaction.abort_requested:
-                    if status.state == "IDLE":
-                        self._finish_firmware_update(
-                            FirmwareUpdateState.PACKAGE_READY,
-                            "设备当前没有未完成的固件接收事务",
-                        )
-                    else:
-                        self._gateway.execute_command(firmware_abort_command())
-                    return
-                self._handle_firmware_status(status)
-                return
-            result = payload.get("result") if isinstance(payload, dict) else None
-            if not isinstance(result, dict):
-                raise FirmwarePackageError(f"{command_name} 响应缺少 result object")
-            if command_name == "FW_BEGIN":
-                if result.get("state") != "RECEIVING":
-                    raise FirmwarePackageError("FW_BEGIN 没有进入 RECEIVING")
-                offset = result.get("offset")
-                device_chunk = result.get("chunk_bytes")
-                if not isinstance(offset, int) or isinstance(offset, bool) or not 0 <= offset <= package.size:
-                    raise FirmwarePackageError("FW_BEGIN 返回的续传偏移无效")
-                if not isinstance(device_chunk, int) or isinstance(device_chunk, bool) or device_chunk <= 0:
-                    raise FirmwarePackageError("FW_BEGIN 返回的分片上限无效")
-                target = result.get("target_partition")
-                if target not in {"ota_0", "ota_1"}:
-                    raise FirmwarePackageError("FW_BEGIN 返回的目标分区无效")
-                updated = replace(
-                    transaction,
-                    state=(
-                        FirmwareUpdateState.ABORTING
-                        if transaction.abort_requested
-                        else FirmwareUpdateState.TRANSFERRING
-                    ),
-                    message=(
-                        "设备接收事务已建立，正在按用户请求中止"
-                        if transaction.abort_requested
-                        else "设备已准备接收固件"
-                    ),
-                    chunk_size=min(transaction.chunk_size, device_chunk),
-                    received_size=offset,
-                    target_partition=target,
-                )
-                self._set_firmware_update(updated)
-                if transaction.abort_requested:
-                    self._gateway.execute_command(firmware_abort_command())
-                else:
-                    self._send_next_firmware_chunk()
-                return
-            if command_name == "FW_DATA":
-                received = result.get("received_size")
-                expected = transaction.received_size + transaction.in_flight_size
-                if received != expected or result.get("state") != "RECEIVING":
-                    raise FirmwarePackageError("设备确认的固件分片偏移与本地传输进度不一致")
-                updated = replace(
-                    transaction,
-                    state=(
-                        FirmwareUpdateState.ABORTING
-                        if transaction.abort_requested
-                        else FirmwareUpdateState.TRANSFERRING
-                    ),
-                    message=(
-                        "当前分片已确认，正在按用户请求中止"
-                        if transaction.abort_requested
-                        else f"正在传输固件：{received} / {package.size} 字节"
-                    ),
-                    received_size=received,
-                    in_flight_size=0,
-                )
-                self._set_firmware_update(updated)
-                if transaction.abort_requested:
-                    self._gateway.execute_command(firmware_abort_command())
-                else:
-                    self._send_next_firmware_chunk()
-                return
-            if command_name == "FW_END":
-                state = result.get("state")
-                if result.get("version") != package.version or state not in {
-                    "FINALIZING",
-                    "READY_TO_REBOOT",
-                }:
-                    raise FirmwarePackageError("设备没有确认正在完成所选固件版本")
-                if state == "READY_TO_REBOOT":
-                    self._wait_for_firmware_reconnect()
-                else:
-                    self._start_firmware_finalization_wait()
-                return
-            if command_name == "FW_ABORT":
-                if result.get("state") != "IDLE":
-                    raise FirmwarePackageError("设备没有确认固件接收事务已中止")
-                self._finish_firmware_update(
-                    FirmwareUpdateState.PACKAGE_READY,
-                    "设备中的未完成固件接收已清除；可重新开始所选软件包",
-                )
-        except FirmwarePackageError as exc:
-            self._finish_firmware_update(FirmwareUpdateState.FAILED, "固件维护响应无效", str(exc))
-
-    def _handle_firmware_status(self, status: FirmwareStatus) -> None:
-        transaction = self._firmware_update
-        package = transaction.package
-        if package is None:
-            return
-        if transaction.state is FirmwareUpdateState.VERIFYING and status.state == "IDLE":
-            # After reboot target_partition names the NEXT update partition.
-            # Confirm this transaction against its saved destination instead.
-            snapshot = self._model.snapshot
-            versions = snapshot.versions if snapshot is not None else {}
-            if (
-                versions.get("firmware") != package.version
-                or (package.build_id and versions.get("build_id") != package.build_id)
-                or status.running_version != package.version
-                or transaction.target_partition not in {"ota_0", "ota_1"}
-                or status.running_partition != transaction.target_partition
-            ):
-                self._finish_firmware_update(
-                    FirmwareUpdateState.FAILED,
-                    "重连读回的版本、build_id 或运行分区与本次更新不一致；更新未生效或已经回滚",
-                )
-            elif status.rollback_pending is False:
-                self._finish_firmware_update(
-                    FirmwareUpdateState.COMPLETED,
-                    "设备已重新连接，版本、build_id 和目标分区读回一致，已确认无需回滚",
-                )
-            else:
-                self._set_firmware_update(
-                    replace(transaction, message="新固件已运行，正在等待设备完成启动自检并取消回滚")
-                )
-                self._firmware_status_timer.start()
-            return
-        target = transaction.target_partition or status.target_partition
-        if transaction.target_partition and status.target_partition and transaction.target_partition != status.target_partition:
-            self._finish_firmware_update(
-                FirmwareUpdateState.FAILED,
-                "设备在维护过程中改变了目标 OTA 分区",
-            )
-            return
-        base = replace(transaction, target_partition=target, restart_failed=False)
-        restart_failed = (
-            status.state == "FAILED"
-            and transaction.state is FirmwareUpdateState.CHECKING
-            and transaction.restart_failed
-            and status.reboot_pending is False
-        )
-        if status.state == "FAILED" and not restart_failed:
-            self._finish_firmware_update(
-                FirmwareUpdateState.FAILED,
-                "设备报告固件维护失败；请检查原因后点击重新安装，再建立接收事务",
-            )
-            return
-        if status.state == "IDLE" or restart_failed:
-            self._set_firmware_update(
-                replace(base, state=FirmwareUpdateState.BEGINNING, restart_failed=False,
-                        message="正在建立固件接收事务")
-            )
-            self._gateway.execute_command(package.begin_command())
-            return
-        if not status.matches(package):
-            if status.state == "RECEIVING":
-                self._set_firmware_update(
-                    replace(
-                        base,
-                        state=FirmwareUpdateState.NEEDS_ABORT,
-                        message="设备中存在另一份未完成的固件接收；必须由用户明确中止后才能继续",
-                    )
-                )
-            else:
-                self._finish_firmware_update(
-                    FirmwareUpdateState.FAILED,
-                    "设备正在完成另一份固件，不能用当前软件包接管",
-                )
-            return
-        if not 0 <= status.received_size <= package.size:
-            self._finish_firmware_update(FirmwareUpdateState.FAILED, "设备返回的固件续传偏移无效")
-            return
-        if status.state == "RECEIVING":
-            self._set_firmware_update(
-                replace(
-                    base,
-                    state=FirmwareUpdateState.TRANSFERRING,
-                    message=f"从设备确认的 {status.received_size} 字节位置继续传输",
-                    received_size=status.received_size,
-                    in_flight_size=0,
-                )
-            )
-            self._send_next_firmware_chunk()
-        elif status.state == "FINALIZING":
-            self._set_firmware_update(base)
-            self._start_firmware_finalization_wait()
-        elif status.state == "READY_TO_REBOOT":
-            self._set_firmware_update(base)
-            self._wait_for_firmware_reconnect()
-
-    def _send_next_firmware_chunk(self) -> None:
-        transaction = self._firmware_update
-        package = transaction.package
-        if package is None:
-            return
-        if transaction.received_size >= package.size:
-            self._set_firmware_update(
-                replace(transaction, state=FirmwareUpdateState.FINALIZING, message="镜像传输完成，正在让设备校验并准备重启")
-            )
-            self._gateway.execute_command(firmware_end_command())
-            return
-        try:
-            command, chunk_size = package.data_command(
-                transaction.received_size, transaction.chunk_size
-            )
-        except FirmwarePackageError as exc:
-            self._finish_firmware_update(FirmwareUpdateState.FAILED, "无法读取下一段固件镜像", str(exc))
-            return
-        self._set_firmware_update(
-            replace(
-                transaction,
-                state=FirmwareUpdateState.TRANSFERRING,
-                message=f"正在传输固件：{transaction.received_size} / {package.size} 字节",
-                in_flight_size=chunk_size,
-            )
-        )
-        self._gateway.execute_command(command)
-
-    def _start_firmware_finalization_wait(self) -> None:
-        self._set_firmware_update(
-            replace(
-                self._firmware_update,
-                state=FirmwareUpdateState.FINALIZING,
-                message="设备正在校验完整镜像并准备新的 OTA 分区",
-            )
-        )
-        if not self._firmware_deadline.isActive():
-            self._firmware_deadline.start()
-        self._firmware_status_timer.start()
-
-    def _wait_for_firmware_reconnect(self) -> None:
-        self._firmware_status_timer.stop()
-        self._set_firmware_update(
-            replace(
-                self._firmware_update,
-                state=FirmwareUpdateState.WAITING_RECONNECT,
-                message="设备已完成镜像校验，等待重启后核对版本和 build_id",
-            )
-        )
-        self._firmware_deadline.start()
-
-    def _poll_firmware_status(self) -> None:
-        if self._firmware_update.state in {
-            FirmwareUpdateState.FINALIZING,
-            FirmwareUpdateState.VERIFYING,
-        }:
-            self._gateway.execute_command(firmware_status_command())
-
-    def _on_firmware_deadline(self) -> None:
-        if self._firmware_update.state is FirmwareUpdateState.FINALIZING:
-            self._finish_firmware_update(
-                FirmwareUpdateState.FAILED,
-                "设备未在期限内完成固件镜像校验",
-            )
-        elif self._firmware_update.state is FirmwareUpdateState.WAITING_RECONNECT:
-            self._set_firmware_update(
-                replace(
-                    self._firmware_update,
-                    state=FirmwareUpdateState.VERIFYING,
-                    message="尚未观察到设备自动重连，正在重新扫描并核对运行版本",
-                )
-            )
-            self._firmware_deadline.start()
-            self.refresh()
-        elif self._firmware_update.state is FirmwareUpdateState.VERIFYING:
-            self._finish_firmware_update(
-                FirmwareUpdateState.FAILED,
-                "未在期限内确认新固件的运行分区和回滚状态；更新结果尚未确认",
-            )
-
-    def _on_firmware_command_failed(self, command_name: str, error: BootstrapError) -> None:
-        if command_name in {"FW_BEGIN", "FW_DATA"} and error.error_name == "TRANSPORT_TIMEOUT":
-            self._set_firmware_update(
-                replace(
-                    self._firmware_update,
-                    state=FirmwareUpdateState.CHECKING,
-                    message="固件命令 ACK 未确认，正在通过 FW_STATUS 对账续传位置",
-                    technical=error.technical,
-                    in_flight_size=0,
-                )
-            )
-            self._gateway.execute_command(firmware_status_command())
-            return
-        if command_name == "FW_END" and error.error_name == "TRANSPORT_TIMEOUT":
-            self._set_firmware_update(
-                replace(
-                    self._firmware_update,
-                    state=FirmwareUpdateState.VERIFYING,
-                    message="FW_END 结果未知；将通过重连后的版本和 FW_STATUS 对账，不重复开始传输",
-                    technical=error.technical,
-                )
-            )
-            self._firmware_deadline.start()
-            self.refresh()
-            return
-        self._finish_firmware_update(
-            FirmwareUpdateState.FAILED,
-            "设备拒绝固件维护命令",
-            f"{command_name}: {error.technical}",
-        )
-
-    def _pause_firmware_update(self, message: str, technical: str) -> None:
-        self._firmware_status_timer.stop()
-        state = self._firmware_update.state
-        if state in {FirmwareUpdateState.FINALIZING, FirmwareUpdateState.WAITING_RECONNECT}:
-            state = FirmwareUpdateState.WAITING_RECONNECT
-        elif state is not FirmwareUpdateState.VERIFYING:
-            state = FirmwareUpdateState.PAUSED
-        if state is FirmwareUpdateState.PAUSED:
-            self._firmware_deadline.stop()
-        elif not self._firmware_deadline.isActive():
-            self._firmware_deadline.start()
-        self._set_firmware_update(
-            replace(self._firmware_update, state=state, message=message, technical=technical, in_flight_size=0)
-        )
-
-    def _reconcile_snapshot_after_firmware(self, snapshot: DeviceSnapshot) -> None:
-        transaction = self._firmware_update
-        package = transaction.package
-        if package is None or transaction.state not in {
-            FirmwareUpdateState.PAUSED,
-            FirmwareUpdateState.CHECKING,
-            FirmwareUpdateState.BEGINNING,
-            FirmwareUpdateState.TRANSFERRING,
-            FirmwareUpdateState.WAITING_RECONNECT,
-            FirmwareUpdateState.VERIFYING,
-        }:
-            return
-        serial = snapshot.identity.get("serial")
-        if serial != transaction.serial:
-            self._finish_firmware_update(
-                FirmwareUpdateState.FAILED,
-                "重新连接的是另一台设备，已停止固件维护",
-            )
-            return
-        try:
-            chunk_size = package.validate_for_device(snapshot)
-        except FirmwarePackageError as exc:
-            self._finish_firmware_update(FirmwareUpdateState.FAILED, "重连设备与固件包不匹配", str(exc))
-            return
-        if transaction.state in {FirmwareUpdateState.WAITING_RECONNECT, FirmwareUpdateState.VERIFYING}:
-            self._set_firmware_update(
-                replace(
-                    transaction,
-                    state=FirmwareUpdateState.VERIFYING,
-                    chunk_size=chunk_size,
-                    message="设备已重连，正在核对运行版本、目标分区和回滚状态",
-                )
-            )
-            if not self._firmware_deadline.isActive():
-                self._firmware_deadline.start()
-        else:
-            self._set_firmware_update(
-                replace(transaction, state=FirmwareUpdateState.CHECKING, chunk_size=chunk_size)
-            )
-        self._gateway.set_status_poll_interval(60_000)
-        self._gateway.execute_command(firmware_status_command())
-
-    def _finish_firmware_update(
-        self,
-        state: FirmwareUpdateState,
-        message: str,
-        technical: str = "",
-    ) -> None:
-        self._firmware_status_timer.stop()
-        self._firmware_deadline.stop()
-        self._gateway.set_status_poll_interval(500)
-        self._set_firmware_update(
-            replace(
-                self._firmware_update,
-                state=state,
-                message=message,
-                technical=technical,
-                in_flight_size=0,
-                abort_requested=False,
-            )
-        )
+    def _on_firmware_finished(self, state: FirmwareUpdateState) -> None:
         if (
             state is FirmwareUpdateState.COMPLETED
             and self._remote_firmware.state is RemoteFirmwareState.DOWNLOADED

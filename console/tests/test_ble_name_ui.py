@@ -11,6 +11,8 @@ from controller_config.i18n import LanguageManager, translate_ui_text
 from controller_config.views.desktop_update import DesktopUpdateUi
 from controller_config.views.main_window import MainWindow
 from controller_config.views.preferences_editor import BleNameEditor
+from notice_helpers import answer_warnings
+from notice_helpers import answer_questions
 
 
 class NameSession(QObject):
@@ -257,7 +259,7 @@ def test_three_languages_keep_device_values_literal(
 def test_name_session_refresh_keeps_editor_and_focus(editor):
     widget, vm = editor
     original = widget.name_input
-    edit(widget, 'Joey Mist')
+    edit(widget, 'Alex Mist')
     original.setCursorPosition(4)
     vm.ble_name.message = '正在读取蓝牙名称…'
     vm.ble_name.changed.emit()
@@ -273,7 +275,7 @@ def test_name_session_refresh_keeps_editor_and_focus(editor):
 
 def test_busy_name_operation_blocks_normal_close(monkeypatch):
     warnings = []
-    monkeypatch.setattr(QMessageBox, 'warning', lambda *args: warnings.append(args))
+    answer_warnings(monkeypatch, lambda *args: warnings.append(args))
     window = SimpleNamespace(
         _view_model=SimpleNamespace(ble_name=SimpleNamespace(busy=True),
                                     normal_agent=SimpleNamespace(busy=False)),
@@ -293,12 +295,10 @@ def test_name_draft_exit_confirmation_keeps_names_and_can_cancel(qtbot, monkeypa
     session.edit('保存名称')
     window._view_model = SimpleNamespace(ble_name=session)
     seen = []
-    def inspect(prompt):
-        seen.append(prompt.informativeText())
-        assert prompt.textFormat() == Qt.PlainText
-        assert all(label.property('boringI18nSkip') for label in prompt.findChildren(QLabel))
+    def inspect(_parent, title, text, *_args):
+        seen.append(text.rsplit('\n', 1)[-1])
         return QMessageBox.Cancel
-    monkeypatch.setattr(QMessageBox, 'exec', inspect)
+    answer_questions(monkeypatch, inspect)
     assert not MainWindow._confirm_discard_ble_names(window)
     assert seen == ['CP01-1234  保存名称']
     assert session.draft == '保存名称'

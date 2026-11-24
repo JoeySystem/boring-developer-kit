@@ -13,6 +13,7 @@ from controller_config.update_recovery import UpdateRecoveryStore
 from controller_config.update_reminders import UpdateReminders
 from controller_config.views.main_window import _translated_application_display_name
 from test_session_recovery import session
+from notice_helpers import answer_warnings
 
 
 def test_build_identity_keeps_official_paths_and_separates_diy_paths() -> None:
@@ -133,10 +134,7 @@ def test_login_start_failure_restores_action_to_actual_state(
     action.setEnabled(True)
     action.setChecked(True)
     warnings = []
-    monkeypatch.setattr(
-        QMessageBox,
-        "warning",
-        lambda _parent, title, message: warnings.append((title, message)),
+    answer_warnings(monkeypatch, lambda _parent, title, message: warnings.append((title, message)),
     )
 
     try:

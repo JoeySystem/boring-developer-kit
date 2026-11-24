@@ -22,11 +22,27 @@ GESTURE = {
     "double_modifiers": [],
 }
 
+HOLD = {
+    "type": "key",
+    "usage": 104,
+}
+
 
 def test_gesture_schema_accepts_optional_modifiers_and_both_keyboard_chords(contract):
     contract.validate_action(GESTURE)
     contract.validate_action({"type": "key_gesture", "usage": 231, "double_usage": 4})
     contract.validate_action({**GESTURE, "double_modifiers": list(range(224, 232))})
+
+
+def test_codex_voice_schema_accepts_hold_action_from_current_firmware(
+    contract, load_fixture
+):
+    config = load_fixture("config-matrix12-power-v2-v1.json")
+    config["profiles"][0]["codex_voice"] = HOLD
+    contract.validate_config_response({
+        "command": "GET_CONFIG",
+        "result": {"generation": 1, "digest": "0" * 64, "config": config},
+    })
 
 
 @pytest.mark.parametrize("field", ["usage", "double_usage"])
@@ -104,7 +120,9 @@ def test_gesture_fields_and_description_preserve_each_chord(contract):
 def test_older_capabilities_hide_and_reject_gesture_without_mutating_draft(contract, load_fixture):
     config = load_fixture("config-matrix12-power-v2-v1.json")
     capabilities = load_fixture("capabilities-matrix12-power-v2-v1.json")["result"]
-    assert "key_gesture" not in capabilities["actions"]
+    # Current Power V2 firmware lists key_gesture; older firmware did not.
+    assert "key_gesture" in capabilities["actions"]
+    capabilities = {**capabilities, "actions": [a for a in capabilities["actions"] if a != "key_gesture"]}
     assert all(
         item.action_type != "key_gesture"
         for item in action_definitions(contract, tuple(capabilities["actions"]))

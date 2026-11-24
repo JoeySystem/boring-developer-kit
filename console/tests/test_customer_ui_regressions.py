@@ -2,11 +2,12 @@ from dataclasses import replace
 
 import pytest
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel, QPushButton, QScrollArea, QWidget
+from PySide6.QtWidgets import QDialog, QLabel, QPushButton, QScrollArea, QWidget
 
 from controller_config.models import AppState, ScreenModel
 from controller_config.transactions import ConfigTransaction, ConfigTransactionState
 from controller_config.views.action_editor import ShortcutRecorder
+from controller_config.views.mode_page import ModeStage
 from test_session_recovery import session
 
 
@@ -48,12 +49,8 @@ def test_encoder_direction_copy_keeps_existing_device_mapping(session, control_i
 def test_recorder_uses_host_names_and_capture_without_changing_device_platform(session, qtbot, monkeypatch, host, device, display, expected):
     window, vm, gateway, snapshot, _ = session
     monkeypatch.setattr('controller_config.views.main_window.sys.platform', host)
-    gateway.snapshot_ready.emit(replace(snapshot, status={
-        **snapshot.status,
-        'platform': device,
-        'operating_mode': 'normal',
-    }))
-    window._select_physical_control('key.8')
+    gateway.snapshot_ready.emit(replace(snapshot, status={**snapshot.status, 'platform': device}))
+    window._select_physical_control('key.9')
     recorder = window.findChild(ShortcutRecorder)
     recorder.set_action({'type': 'key', 'usage': 7, 'modifiers': [226, 227]})
     assert recorder._preview.text() == expected
@@ -89,9 +86,14 @@ def test_confirmation_editor_stays_usable_without_overflow(session, qtbot, tmp_p
     )
     qtbot.wait(30)
     assert window.grab().save(str(tmp_path / 'confirmation-narrow.png'))
+    stage = next(stage for stage in window.findChildren(ModeStage) if stage.isVisible())
     for width in (1800, 1100, 1800):
         window.resize(width, 900)
         qtbot.wait(80)
+        # Resizes this close together count as a drag of the window edge: the card's sizes
+        # wait until it stops (design decision). What must not overflow is the card once settled.
+        qtbot.waitUntil(lambda: not stage.resizing(), timeout=2000)
+        qtbot.wait(30)
         body = window.findChild(QScrollArea, 'mappingEditorBody')
         assert body.widget().width() <= body.viewport().width()
         assert window.findChild(QWidget, 'mappingEditorCard').isVisible()
@@ -102,25 +104,19 @@ def test_confirmation_editor_stays_usable_without_overflow(session, qtbot, tmp_p
     window._language_manager.set_language('zh_CN')
 
 
-def test_mode_status_updates_visible_header_on_other_pages(session, qtbot):
+def test_header_shows_device_status_not_mode(session, qtbot):
+    """顶条 v1 定稿: the “当前模式” line and BORING MIST are gone; one status capsule stays."""
     window, vm, gateway, snapshot, _ = session
     window.show()
     vm.navigate('settings')
-    expected_modes = {
-        'normal': '普通模式',
-        'codex': 'CODEX',
-        'claude_code': 'CC',
-    }
     for mode in ('normal', 'codex', 'claude_code'):
         gateway.status_updated.emit({**vm.model.snapshot.status, 'operating_mode': mode})
-        label = window.findChild(QLabel, 'deviceModeSummary')
-        assert label is not None and label.isVisible()
-        assert expected_modes[mode] in label.text()
-    assert '已切换至' in label.text()
-    window._mode_notice_timer.timeout.emit()
-    assert '当前模式' in label.text() and 'CC' in label.text()
+        assert window.findChild(QLabel, 'deviceModeSummary') is None
+        assert window._device_status.isVisible()
+        assert window._device_status.kind() in {'verified', 'dev'}
     gateway.disconnected.emit('test disconnect')
-    assert 'CC' not in window.findChild(QLabel, 'deviceModeSummary').text()
+    assert window._device_status.kind() == 'disconnected'
+    assert window._device_auth_summary.text() == '已断开'
 
 
 def _visible_label_texts(root: QWidget) -> set[str]:
@@ -163,25 +159,22 @@ def test_disconnected_view_has_one_connection_action_that_starts_scan(
 
 
 def test_primary_pages_keep_only_customer_action_copy(session, qtbot):
-    window, vm, gateway, snapshot, _ = session
-    gateway.snapshot_ready.emit(replace(snapshot, status={
-        **snapshot.status,
-        'operating_mode': 'normal',
-    }))
+    window, vm, *_ = session
     window.show()
 
     vm.navigate('overview')
     qtbot.wait(30)
-    inspector = window.findChild(QWidget, 'selectionInspectorCard')
-    assert inspector is not None
+    # The "你想设置什么？" card is gone; its shortcut entry lives on the bottom bar.
+    assert window.findChild(QWidget, 'selectionInspectorCard') is None
     assert window.findChild(QWidget, 'selectionInspectorDetails') is None
-    assert '点击设备上的控件开始设置。' in _visible_label_texts(inspector)
-    sync = window.findChild(QWidget, 'syncSummaryCard')
-    assert sync is not None
-    assert not sync.findChild(QLabel, 'syncDraftState').isVisible()
-    assert not sync.findChild(QLabel, 'syncChangeCount').isVisible()
+    stage = next(stage for stage in window.findChildren(ModeStage) if stage.isVisible())
+    assert stage.bar.bind.text() == '绑定软件快捷键'
+    # Nothing waiting: the bar says one plain thing (here: the device is in Codex), no count.
+    assert stage.bar.state().right == 'codex'
+    assert stage.bar.status_text.text() == '双击设备上的旋钮，切回普通模式'
+    assert not stage.bar.pending.isVisible() and not stage.bar.save.isVisible()
 
-    window._select_physical_control('key.8')
+    window._select_physical_control('key.9')
     recorder_message = window.findChild(QLabel, 'shortcutRecorderMessage')
     assert recorder_message is not None and not recorder_message.isVisible()
     window.findChild(QPushButton, 'shortcutRecordButton').click()
@@ -192,14 +185,22 @@ def test_primary_pages_keep_only_customer_action_copy(session, qtbot):
     qtbot.wait(30)
     labels = _visible_label_texts(window)
     assert '点击按键选择颜色；黑色表示关闭。' not in labels
-    assert '状态灯由 Codex 自动控制。' in labels
+    assert '不带键号的 6 颗是状态灯，由 Codex 自动控制。' in labels
     assert not any('本地效果示意' in text for text in labels)
     assert not any('此处不模拟状态颜色' in text for text in labels)
     preview_status = window.findChild(QLabel, 'lightingPreviewStatus')
     assert preview_status is not None and not preview_status.isVisible()
 
 
-def test_settings_and_advanced_pages_default_to_plain_language(session, qtbot):
+def _settings_page_now(window) -> QWidget:
+    """主窗口当前显示的那一页（换页后旧页还留在内存里，不算）。"""
+    layout = window._content_layout
+    return layout.itemAt(layout.count() - 1).widget()
+
+
+def test_settings_and_advanced_pages_default_to_plain_language(session, qtbot, monkeypatch):
+    from controller_config.views import settings_wall
+
     window, vm, *_ = session
     window.show()
     vm.navigate('settings')
@@ -208,38 +209,57 @@ def test_settings_and_advanced_pages_default_to_plain_language(session, qtbot):
     assert '在这里管理设备检查、固件维护和控制台显示语言。' not in labels
     assert window.findChild(QPushButton, 'openFirmwareSettings') is None
     assert window.findChild(QPushButton, 'openDiagnostics') is None
-    assert sum(
-        button.isVisible() and button.text() == '固件更新'
-        for button in window.findChildren(QPushButton, 'settingsGroup')
-    ) == 1
-    assert {
-        button.text()
-        for button in window.findChildren(QPushButton, 'settingsGroup')
-        if button.isVisible()
-    } == {'系统', '设备', '固件更新'}
-    assert window.findChild(QPushButton, 'claudeStatusDetailsToggle').text() == '更多信息'
-    assert window.findChild(QPushButton, 'enableClaudeStatus').isVisible()
-    assert not window.findChild(QPushButton, 'retryClaudeStatus').isVisible()
-    assert not window.findChild(QPushButton, 'manageClaudeStatus').isVisible()
+    page = _settings_page_now(window)
+    assert [
+        button.text() for button in page.findChildren(QPushButton, 'settingsGroup') if button.isVisible()
+    ] == ['设备与连接', 'AI 状态灯', '灯光与反馈', '通用', '更新']
 
+    # AI 状态灯：墙上只有开关和一句状态；排障、管理这些动作收在"了解更多"里，不直接摆出来。
+    window._select_settings_section('ai')
+    qtbot.wait(30)
+    page = _settings_page_now(window)
+    assert page.findChild(QWidget, 'claudeStatusEnabled').isVisible()
+    assert page.findChild(QPushButton, 'claudeStatusMore').text() == '了解更多 ›'
+    assert not page.findChild(QPushButton, 'claudeStatusFix').isVisible()
+    for name in ('enableClaudeStatus', 'retryClaudeStatus', 'manageClaudeStatus', 'claudeStatusDetailsToggle'):
+        assert page.findChild(QPushButton, name) is None
+
+    # 设备与连接：蓝牙名称、恢复出厂设置各是一块，入口直接看得见。
     window._select_settings_section('device')
     qtbot.wait(30)
-    ble_editor = window.findChild(QWidget, 'bleNameEditor')
-    assert ble_editor is not None
-    assert not window.findChild(QLabel, 'bleNameSerial').isVisible()
-    assert not window.findChild(QLabel, 'bleNameSaved').isVisible()
-    assert not window.findChild(QLabel, 'bleNameActive').isVisible()
-    assert not window.findChild(QLabel, 'bleNameRestart').isVisible()
-    assert window.findChild(QPushButton, 'bleNameDetailsToggle').text() == '更多信息'
-    advanced = window.findChild(QPushButton, 'deviceAdvancedToggle')
-    reset = window.findChild(QPushButton, 'factoryResetDevice')
-    diagnostics = window.findChild(QPushButton, 'openDeviceDiagnostics')
-    assert advanced is not None and reset is not None
-    assert diagnostics is not None and diagnostics.text() == '开始检查'
-    assert ble_editor.geometry().top() < advanced.geometry().top()
-    assert not reset.isVisible()
-    advanced.click()
-    assert reset.isVisible()
+    page = _settings_page_now(window)
+    rename = page.findChild(QPushButton, 'openBleNameEditor')
+    reset = page.findChild(QPushButton, 'factoryResetDevice')
+    assert rename is not None and rename.isVisible() and rename.text() == '改名'
+    assert reset is not None and reset.isVisible() and reset.text() == '恢复出厂…'
+    assert page.findChild(QPushButton, 'deviceDetailsToggle').text() == '更多信息'
+    assert page.findChild(QPushButton, 'deviceAdvancedToggle') is None  # 旧的折叠开关已经没有了
+    assert page.findChild(QWidget, 'bleNameEditor') is None  # 编辑器不摊在页面上，点"改名"才弹出
+    assert page.findChild(QPushButton, 'openDeviceDiagnostics') is None
+    assert window.findChild(QWidget, 'diagnosticsPage') is None
+    assert '设备检查' not in _visible_label_texts(window)
+    top = lambda widget: widget.mapTo(page, widget.rect().topLeft()).y()
+    assert top(rename) < top(reset)
+
+    # 点"改名"：弹出的还是原来的编辑器，技术信息默认收着。
+    seen = {}
+
+    def fake_exec(dialog):
+        dialog.show()
+        qtbot.wait(30)
+        editor = dialog.findChild(QWidget, 'bleNameEditor')
+        seen['editor'] = editor is not None
+        seen['hidden'] = [
+            dialog.findChild(QLabel, name).isVisible()
+            for name in ('bleNameSerial', 'bleNameSaved', 'bleNameActive', 'bleNameRestart')
+        ]
+        seen['toggle'] = dialog.findChild(QPushButton, 'bleNameDetailsToggle').text()
+        dialog.hide()
+        return 0
+
+    monkeypatch.setattr(settings_wall.CardDialog, 'exec', fake_exec)
+    rename.click()
+    assert seen == {'editor': True, 'hidden': [False] * 4, 'toggle': '更多信息'}
 
     window._select_settings_section('system')
     qtbot.wait(30)
@@ -248,16 +268,6 @@ def test_settings_and_advanced_pages_default_to_plain_language(session, qtbot):
         for text in _visible_label_texts(window)
     )
 
-    window._select_settings_section('device')
-    window.findChild(QPushButton, 'openDeviceDiagnostics').click()
-    qtbot.wait(30)
-    assert '设备检查' in _visible_label_texts(window)
-    assert not any('所有内容都来自当前读取链路' in text for text in _visible_label_texts(window))
-    assert not any('不等同于设备内部日志' in text for text in _visible_label_texts(window))
-    assert window.findChild(QPushButton, 'startDiagnosticCapture').isVisible()
-    assert window.findChild(QPushButton, 'stopDiagnosticCapture').isHidden()
-    assert window.findChild(QWidget, 'joystickCalibrationCard').isHidden()
-
     window._select_settings_section('firmware')
     qtbot.wait(30)
     package_card = window.findChild(QWidget, 'firmwarePackageCard')
@@ -265,7 +275,7 @@ def test_settings_and_advanced_pages_default_to_plain_language(session, qtbot):
     advanced = window.findChild(QPushButton, 'firmwarePackageToggle')
     assert package_card is not None and not package_card.isVisible()
     assert transaction_card is not None and not transaction_card.isVisible()
-    assert advanced is not None and advanced.text() == '高级选项 · 从文件安装固件'
+    assert advanced is not None and advanced.text() == '▸ 高级选项 · 自定义固件与详情'
     advanced.click()
     qtbot.wait(20)
     assert package_card.isVisible()
@@ -281,13 +291,13 @@ def test_prompt_and_automation_pages_remove_redundant_engineering_copy(session, 
     labels = _visible_label_texts(window)
     assert not any('点击方向编辑提示词' in text for text in labels)
     assert not any('UTF-8 字节' in text for text in labels)
-    event_card = window.findChild(QWidget, 'promptEventsCard')
-    assert event_card is not None and not event_card.isVisible()
-    event_toggle = window.findChild(QPushButton, 'promptEventDetailsToggle')
-    assert event_toggle is not None and event_toggle.text() == '操作记录'
-    event_toggle.click()
+    # 操作记录 waits in 诊断信息 (定稿 v1): not on the page, one click away.
+    log = window.findChild(QWidget, 'promptDiagnosticsLog')
+    assert log is not None and not log.isVisible()
+    window.findChild(QPushButton, 'promptStatusDiagnostics').click()
     qtbot.wait(20)
-    assert event_card.isVisible()
+    assert log.isVisible()
+    window.findChild(QDialog, 'promptDiagnosticsDialog').reject()
 
     vm.navigate('actions')
     qtbot.wait(30)
@@ -296,8 +306,10 @@ def test_prompt_and_automation_pages_remove_redundant_engineering_copy(session, 
     assert '组合保存文字、打开应用等电脑操作，由设备触发。' in labels
     assert window.findChild(QWidget, 'workflowWorkspace').isHidden()
     create = window.findChild(QPushButton, 'createAction')
+    tools = window.findChild(QPushButton, 'openActionTools')
     more = window.findChild(QPushButton, 'actionMore')
-    assert create.isVisible() and create.property('buttonRole') == 'primary'
+    assert create.isHidden()
+    assert tools.isHidden()
     assert more.isVisible() and more.menu() is not None
     assert any(action.text() == '导入自定义动作' for action in more.menu().actions())
     assert not window.findChildren(QPushButton, 'actionTab')

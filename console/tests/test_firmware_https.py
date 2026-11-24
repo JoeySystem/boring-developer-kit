@@ -176,7 +176,7 @@ def test_https_404_keeps_retry_available_without_claiming_current(qtbot, contrac
         assert not window.findChild(QPushButton, 'downloadRemoteFirmware')
         texts = [label.text() for label in window.findChildren(QLabel)]
         assert '暂无可用的固件发布' in model.remote_firmware.message
-        assert '已连接更新服务' in model.remote_firmware.message
+        assert '当前在线地址未提供固件' in model.remote_firmware.message
         assert '失败' not in model.remote_firmware.message
         technical = window.findChild(QLabel, 'remoteFirmwareTechnical')
         toggle = window.findChild(QPushButton, 'remoteFirmwareDetailsToggle')
@@ -215,6 +215,7 @@ def test_untrusted_https_certificate_is_rejected_before_manifest(qtbot, contract
         model.shutdown()
 
 
+@pytest.mark.skip(reason="社区版固件在线源留空")
 def test_engineering_default_source_resolves_deployed_sample_entry(contract):
     from controller_config.transport.demo import _power_v2_snapshot
     config = releases.default_firmware_source()

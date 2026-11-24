@@ -20,8 +20,8 @@ ONBOARDING_STEPS = (
     Step(
         ("打开 MIST", "Turn on MIST"),
         (
-            "长按旋钮，等屏幕亮起后松手。",
-            "Hold the knob until the screen lights up, then release.",
+            "长按旋钮，等屏幕亮起后松手。新设备第一次开机，屏幕会先出现 MAC／WIN，转旋钮选你的电脑系统，按下确认。",
+            "Hold the knob until the screen lights up, then release. On a new MIST's first start, the screen shows MAC / WIN first: turn the knob to pick your computer's system, then press to confirm.",
         ),
         "power-on",
         ("屏幕亮了，继续", "Continue"),
@@ -117,25 +117,36 @@ ONBOARDING_STEPS = (
     ),
 )
 
+# 引导蓝牙页正式稿 v0.3 (design decision): only the first pairing is demonstrated; switching
+# between paired computers is one sentence. Bluetooth has its own "device not found" answer.
 BLUETOOTH_STEP = Step(
-    ("切换到 Host 1", "Switch to Host 1"),
+    ("用蓝牙连接电脑", "Connect with Bluetooth"),
     (
-        "按住功能键，再短按语音键，切换到 Host 1。需要无线使用时，再到电脑的蓝牙设置中配对。",
-        "Hold the function key and tap the voice key to switch to Host 1. To use wireless mode, pair MIST in your computer's Bluetooth settings.",
+        "按住功能键，再按住语音键 2 秒，屏幕出现 NEW PC 后，到电脑的蓝牙设置里选 BORING。以后连过几台电脑，按住功能键再短按语音键，就能切到下一台。",
+        "Hold the function key, then hold the voice key for 2 seconds. When the screen shows NEW PC, choose BORING in your computer's Bluetooth settings. Once you've paired more than one computer, hold the function key and tap the voice key to switch to the next one.",
     ),
     "bluetooth-pair",
     ("已配对，继续", "Continue"),
-    ONBOARDING_STEPS[1].help,
-    ONBOARDING_STEPS[1].answer,
+    ("找不到设备？", "Device not found?"),
+    (
+        "电脑的蓝牙列表里没有 BORING？在设备上再按住功能键、按住语音键 2 秒，屏幕出现 NEW PC 后，3 分钟内在电脑上选它。BORING 正连着别的电脑时，新电脑搜不到它，也要先这样按。还是不行，先用数据线连接。",
+        "Don't see BORING in your Bluetooth list? On the device, hold the function key and hold the voice key for 2 seconds again. When the screen shows NEW PC, choose BORING on your computer within 3 minutes. While BORING is connected to another computer, new computers can't find it until you do this. Still stuck? Connect with a cable first.",
+    ),
 )
 
 # Times are authored demo inputs. They do not assert that a physical device responded.
 # The screen frames themselves are native firmware renders in timeline.json.
 CUES = {
     "power-on": [
-        (0, "hand-tap", "按住旋钮", "Hold the knob"),
-        (2950, "sun", "屏幕亮起，松开旋钮", "Screen on. Release the knob."),
-        (7300, "check", "开机完成", "Ready"),
+        (0, "hand-tap", "按住旋钮约 6 秒", "Hold the knob for about 6 s"),
+        (6300, "sun", "屏幕亮起，松开旋钮", "Screen on. Release the knob."),
+        (10650, "check", "开机完成", "Ready"),
+        (
+            11500,
+            "arrows-clockwise",
+            "第一次开机：转旋钮选电脑系统，按下确认",
+            "First start: turn to pick your computer's system, press to confirm",
+        ),
     ],
     "function-open": [
         (0, "hand-tap", "按住右上角功能键", "Hold the function key"),
@@ -167,18 +178,9 @@ CUES = {
         )
     ],
     "joystick-left-right": [
-        (0, "arrows-horizontal", "向右拨动摇杆", "Move the joystick right"),
+        (0, "arrows-horizontal", "向右拨一下，换到下一项", "Move right once for the next item"),
         (850, "check", "松手，摇杆回中", "Release to center"),
-        (1700, "arrows-horizontal", "向左拨动摇杆", "Move the joystick left"),
-        (
-            2300,
-            "check",
-            "松手，回到原来的设置项",
-            "Release. Original setting restored.",
-        ),
-    ],
-    "joystick-up-down": [
-        (0, "arrows-vertical", "上下拨动后松手", "Move up or down, then release")
+        (1700, "arrows-horizontal", "向左拨一下，回到上一项", "Move left once to go back"),
     ],
     "back-home": [
         (0, "hand-tap", "短按功能键，返回上一层", "Tap the function key to go back"),
@@ -186,8 +188,10 @@ CUES = {
         (3500, "check", "已回到首页", "Home screen"),
     ],
     "bluetooth-pair": [
-        (0, "hand-tap", "按住功能键，再短按语音键", "Hold Function, then tap Voice"),
-        (1300, "bluetooth", "已切换到 Host 1", "Switched to Host 1"),
+        (0, "hand-tap", "按住功能键，再按住语音键 2 秒", "Hold Function, then hold Voice for 2 s"),
+        (2650, "bluetooth", "等待新电脑，最多 3 分钟", "Waiting for a new computer (up to 3 min)"),
+        (5200, "bluetooth", "到电脑的蓝牙设置里选 BORING", "Choose BORING in your computer's Bluetooth settings"),
+        (6500, "check", "已连接", "Connected"),
     ],
     "usb-connect": [
         (0, "usb", "找到顶部的数据接口", "Find the port at the top"),

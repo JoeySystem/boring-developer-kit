@@ -235,7 +235,7 @@ def _reconnected_update(contract, tmp_path):
     gateway.snapshot_ready.emit(snapshot)
     package = view_model.load_firmware_package(_package(tmp_path, contract))
     view_model.start_firmware_update()
-    view_model._set_firmware_update(
+    view_model._firmware.set_transaction(
         replace(
             view_model.firmware_update,
             state=FirmwareUpdateState.WAITING_RECONNECT,
@@ -256,15 +256,15 @@ def test_reconnect_waits_for_explicit_rollback_confirmation(
     gateway.command_completed.emit("FW_STATUS", _booted_status(package, rollback_pending=rollback_pending))
 
     assert view_model.firmware_update.state is FirmwareUpdateState.VERIFYING
-    assert view_model._firmware_deadline.isActive()
-    assert view_model._firmware_status_timer.isActive()
-    view_model._poll_firmware_status()
+    assert view_model._firmware.deadline.isActive()
+    assert view_model._firmware.status_timer.isActive()
+    view_model._firmware.poll_status()
     assert gateway.commands[-1].name == "FW_STATUS"
 
     gateway.command_completed.emit("FW_STATUS", _booted_status(package))
     assert view_model.firmware_update.state is FirmwareUpdateState.COMPLETED
-    assert not view_model._firmware_deadline.isActive()
-    assert not view_model._firmware_status_timer.isActive()
+    assert not view_model._firmware.deadline.isActive()
+    assert not view_model._firmware.status_timer.isActive()
 
 
 def test_same_version_rollback_to_previous_partition_is_not_success(
@@ -296,7 +296,7 @@ def test_rollback_confirmation_times_out_and_late_status_cannot_restart_update(
 ) -> None:
     gateway, view_model, package = _reconnected_update(contract, tmp_path)
     gateway.command_completed.emit("FW_STATUS", _booted_status(package, rollback_pending=True))
-    view_model._on_firmware_deadline()
+    view_model._firmware.on_deadline()
 
     assert view_model.firmware_update.state is FirmwareUpdateState.FAILED
     assert "期限" in view_model.firmware_update.message
@@ -319,8 +319,8 @@ def test_connection_loss_during_confirmation_keeps_deadline(
         gateway.failure.emit(BootstrapKind.READ_FAILED, "read failed", "lost connection")
 
     assert view_model.firmware_update.state is FirmwareUpdateState.VERIFYING
-    assert view_model._firmware_deadline.isActive()
-    view_model._on_firmware_deadline()
+    assert view_model._firmware.deadline.isActive()
+    view_model._firmware.on_deadline()
     assert view_model.firmware_update.state is FirmwareUpdateState.FAILED
 
 
@@ -329,12 +329,12 @@ def test_reconnect_recovery_starts_bounded_verification(
     qtbot, contract, tmp_path, trigger
 ) -> None:
     gateway, view_model, _package = _reconnected_update(contract, tmp_path)
-    view_model._firmware_deadline.stop()
+    view_model._firmware.deadline.stop()
     if trigger == "reconnect_deadline":
-        view_model._set_firmware_update(
+        view_model._firmware.set_transaction(
             replace(view_model.firmware_update, state=FirmwareUpdateState.WAITING_RECONNECT)
         )
-        view_model._on_firmware_deadline()
+        view_model._firmware.on_deadline()
     else:
         gateway.command_failed.emit(
             "FW_END",
@@ -342,8 +342,8 @@ def test_reconnect_recovery_starts_bounded_verification(
         )
 
     assert view_model.firmware_update.state is FirmwareUpdateState.VERIFYING
-    assert view_model._firmware_deadline.isActive()
-    view_model._on_firmware_deadline()
+    assert view_model._firmware.deadline.isActive()
+    view_model._firmware.on_deadline()
     assert view_model.firmware_update.state is FirmwareUpdateState.FAILED
 
 
@@ -351,10 +351,10 @@ def test_firmware_recovery_keeps_scanning_after_empty_usb_scan(qtbot, contract, 
     gateway, view_model, package = _reconnected_update(contract, tmp_path)
     view_model.refresh()
     gateway.candidates_found.emit(())
-    assert view_model._reconnect_timer.isActive()
-    view_model._scan_for_reconnect()
+    assert view_model._connection.reconnect_timer.isActive()
+    view_model._connection.scan_for_reconnect()
     assert gateway.scans == [True, True]
-    assert view_model._firmware_deadline.isActive()
+    assert view_model._firmware.deadline.isActive()
     view_model.shutdown()
 
 

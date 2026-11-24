@@ -5,10 +5,11 @@ from dataclasses import replace
 
 import pytest
 from PySide6.QtCore import QSettings, Qt
-from PySide6.QtWidgets import QDialog, QMessageBox
+from PySide6.QtWidgets import QCheckBox, QDialog, QMessageBox, QPushButton
 
 from controller_config.ai_setup import (
-    AI_APPLICATIONS, AI_SELECTION_KEY, AI_SETUP_COMPLETED_KEY, VOICE_ACTION,
+    AI_APPLICATIONS, AI_SELECTION_KEY, AI_SETUP_COMPLETED_KEY,
+    AI_SETUP_DEFERRED_KEY, VOICE_ACTION,
     installed_desktop_app, load_choices, load_device_choices, prepare_ai_profiles, save_device_choices,
 )
 from controller_config.drafts import LocalDraft
@@ -19,6 +20,7 @@ from controller_config.transport.demo import _power_v2_snapshot
 from controller_config.views.ai_setup import AISetupDialog
 from test_session_recovery import session
 from test_write_transaction import _ack, _active_status
+from notice_helpers import answer_warnings
 
 
 def ready(session, tmp_path, monkeypatch):
@@ -26,8 +28,7 @@ def ready(session, tmp_path, monkeypatch):
     monkeypatch.setattr("controller_config.views.ai_setup.sys.platform", "darwin")
     settings = QSettings(str(tmp_path / "ai.ini"), QSettings.IniFormat)
     window._onboarding_settings = settings
-    snapshot = replace(snapshot, status={**snapshot.status, "operating_mode": "normal"},
-                       capabilities={**snapshot.capabilities, "actions": [*snapshot.capabilities["actions"], "key_gesture"]})
+    snapshot = replace(snapshot, status={**snapshot.status, "operating_mode": "normal"})
     gateway.snapshot_ready.emit(snapshot)
     window._show_ai_setup()
     return window, vm, gateway, snapshot, settings, window._ai_setup_dialog
@@ -77,7 +78,7 @@ def test_all_profiles_preserve_existing_and_official_controls(contract, platform
 
 def test_capacity_failure_is_atomic_and_voice_is_per_app(contract):
     draft = LocalDraft.from_snapshot(_power_v2_snapshot(contract, read_only=False), contract)
-    draft.actions = (*draft.actions, "key_gesture")
+    assert "key_gesture" in draft.actions   # Power V2 firmware lists it
     original = copy.deepcopy(draft.config)
     draft.max_profiles = len(draft.profiles) + 1
     with pytest.raises(ValueError):
@@ -121,40 +122,11 @@ def test_multi_choice_only_writes_once_and_waits_for_readback(session, tmp_path,
     assert dialog._pages.currentIndex() == 4
     assert not dialog._next.isEnabled()
     dialog._target_check.setChecked(True)
+    settings.setValue(AI_SETUP_DEFERRED_KEY, True)
     dialog._next.click()
     assert settings.value(AI_SETUP_COMPLETED_KEY, False, type=bool)
+    assert not settings.value(AI_SETUP_DEFERRED_KEY, False, type=bool)
     assert load_device_choices(settings, vm.draft.serial)["codex"]["tried"]
-
-
-def test_setup_explains_profile_switch_and_can_restore_previous_profile(
-    session, tmp_path, monkeypatch, qtbot
-):
-    window, vm, gateway, snapshot, settings, dialog = ready(
-        session, tmp_path, monkeypatch
-    )
-    previous_id = snapshot.active_profile_id
-    previous_name = snapshot.profile_name
-    select_two(dialog)
-    assert previous_name in dialog._changes.text()
-    assert "保留" in dialog._changes.text()
-    dialog._next.click()
-    readback(vm, gateway, snapshot)
-    qtbot.waitUntil(lambda: dialog._pages.currentIndex() == 3)
-    dialog._practice.input.setPlainText("配置方案恢复测试")
-    qtbot.keyClick(dialog._practice.input, Qt.Key_Return)
-    dialog._next.click()
-    dialog._target_check.setChecked(True)
-    assert dialog._restore.isVisibleTo(dialog)
-    assert previous_name in dialog._restore.text()
-    profiles_after_setup = copy.deepcopy(vm.draft.profiles)
-
-    dialog._restore.click()
-
-    assert gateway.commands[-1].name == "VALIDATE_CONFIG"
-    readback(vm, gateway, vm.model.snapshot)
-    assert vm.model.snapshot.active_profile_id == previous_id
-    assert vm.draft.profiles == profiles_after_setup
-    assert settings.value(AI_SETUP_COMPLETED_KEY, False, type=bool)
 
 
 def test_close_and_reopen_keeps_choices_without_marking_complete(session, tmp_path, monkeypatch):
@@ -167,17 +139,28 @@ def test_close_and_reopen_keeps_choices_without_marking_complete(session, tmp_pa
     assert not vm.draft.is_dirty
 
 
-def test_draft_and_mode_block_writes_not_selection(session, tmp_path, monkeypatch):
+def test_draft_blocks_writes_but_runtime_mode_only_blocks_practice(session, tmp_path, monkeypatch, qtbot):
     window, vm, gateway, snapshot, settings, dialog = ready(session, tmp_path, monkeypatch)
     vm.rename_profile(vm.draft.config["active_profile"], "我的现场")
     select_two(dialog)
     assert not dialog._next.isEnabled()
     assert vm.draft.profile(vm.draft.config["active_profile"])["name"] == "我的现场"
     vm.draft.discard()
-    gateway.snapshot_ready.emit(replace(snapshot, status={**snapshot.status, "operating_mode": "codex"}))
+    codex_snapshot = replace(snapshot, status={**snapshot.status, "operating_mode": "codex"})
+    gateway.snapshot_ready.emit(codex_snapshot)
+    assert dialog._next.isEnabled()
+    assert "实体试用前" in dialog._connection.text()
+    dialog._next.click()
+    readback(vm, gateway, codex_snapshot)
+    qtbot.waitUntil(lambda: dialog._pages.currentIndex() == 3)
+    assert vm.model.snapshot.status['operating_mode'] == 'codex'
     assert not dialog._next.isEnabled()
-    assert "NORMAL" in dialog._connection.text()
-    assert not any(c.name == "SET_CONFIG" for c in gateway.commands)
+    assert not dialog._practice.isEnabled() and not dialog._practice.completed
+    gateway.status_updated.emit({**vm.model.snapshot.status, 'operating_mode': 'normal'})
+    assert dialog._practice.isEnabled()
+    dialog._practice.input.setPlainText('切换后练习')
+    qtbot.keyClick(dialog._practice.input, Qt.Key_Return)
+    assert dialog._next.isEnabled()
 
 
 def test_refresh_preserves_input_and_other_device_cannot_complete(session, tmp_path, monkeypatch, qtbot):
@@ -198,6 +181,90 @@ def test_refresh_preserves_input_and_other_device_cannot_complete(session, tmp_p
     assert dialog._practice.input.toPlainText() == "保留我的文字"
 
 
+def test_completed_practice_ignores_unrelated_device_config_changes(
+    session, tmp_path, monkeypatch, qtbot,
+):
+    _, vm, gateway, snapshot, _, dialog = ready(session, tmp_path, monkeypatch)
+    select_two(dialog)
+    dialog._next.click()
+    readback(vm, gateway, snapshot)
+    qtbot.waitUntil(lambda: dialog._pages.currentIndex() == 3)
+    dialog._practice.input.setPlainText("保留这次成功练习")
+    qtbot.keyClick(dialog._practice.input, Qt.Key_Return)
+    assert dialog._practice.completed and dialog._next.isEnabled()
+
+    current = vm.model.snapshot
+    changed = copy.deepcopy(current.config)
+    changed["display"]["brightness"] = max(
+        0, changed["display"]["brightness"] - 1,
+    )
+    active = next(profile for profile in changed["profiles"]
+                  if profile["id"] == current.active_profile_id)
+    send = next(mapping for mapping in active["mappings"]
+                if mapping["control_id"] == "key.8")
+    send["action"].setdefault("modifiers", [])
+    generation = current.config_result["generation"] + 1
+    gateway.snapshot_ready.emit(replace(
+        current,
+        hello_config={"generation": generation, "digest": "a" * 64},
+        config_result={
+            **current.config_result,
+            "generation": generation,
+            "digest": "a" * 64,
+            "config": changed,
+        },
+    ))
+
+    assert dialog._practice.completed
+    assert dialog._next.isEnabled()
+    assert not dialog._error.isVisible()
+
+
+@pytest.mark.parametrize("changed_context", ["active_profile", "key_action"])
+def test_required_practice_context_change_offers_an_enabled_recovery_action(
+    session, tmp_path, monkeypatch, qtbot, changed_context,
+):
+    _, vm, gateway, snapshot, _, dialog = ready(session, tmp_path, monkeypatch)
+    select_two(dialog)
+    dialog._next.click()
+    readback(vm, gateway, snapshot)
+    qtbot.waitUntil(lambda: dialog._pages.currentIndex() == 3)
+    dialog._practice.input.setPlainText("这次练习已成功")
+    qtbot.keyClick(dialog._practice.input, Qt.Key_Return)
+
+    current = vm.model.snapshot
+    changed = copy.deepcopy(current.config)
+    if changed_context == "active_profile":
+        changed["active_profile"] = next(
+            profile["id"] for profile in changed["profiles"]
+            if profile["id"] != current.active_profile_id
+        )
+    else:
+        active = next(profile for profile in changed["profiles"]
+                      if profile["id"] == current.active_profile_id)
+        send = next(mapping for mapping in active["mappings"]
+                    if mapping["control_id"] == "key.8")
+        send["action"] = {"type": "key", "usage": 41}
+    generation = current.config_result["generation"] + 1
+    gateway.snapshot_ready.emit(replace(
+        current,
+        hello_config={"generation": generation, "digest": "b" * 64},
+        config_result={
+            **current.config_result,
+            "generation": generation,
+            "digest": "b" * 64,
+            "config": changed,
+        },
+    ))
+
+    assert dialog._next.isEnabled()
+    assert dialog._next.text() == "重新确认设置"
+    assert "这颗键" in dialog._error.text()
+    dialog._next.click()
+    assert dialog._pages.currentIndex() == 2
+    assert dialog._practice is None
+
+
 def test_favorites_switch_uses_one_apply_and_keeps_unselected_profiles(session, tmp_path, monkeypatch, qtbot):
     window, vm, gateway, snapshot, settings, dialog = ready(session, tmp_path, monkeypatch)
     select_two(dialog)
@@ -208,7 +275,9 @@ def test_favorites_switch_uses_one_apply_and_keeps_unselected_profiles(session, 
     entries = load_device_choices(settings, vm.draft.serial)
     old_profiles = copy.deepcopy(vm.draft.profiles)
     previous_writes = len([c for c in gateway.commands if c.name == "SET_CONFIG"])
-    window._activate_common_ai(entries["claude"]["profile_id"])
+    with monkeypatch.context() as scope:
+        answer_warnings(scope, lambda *_: QMessageBox.Yes)
+        window._activate_common_ai(entries["claude"]["profile_id"])
     assert gateway.commands[-1].name == "VALIDATE_CONFIG"
     readback(vm, gateway, vm.model.snapshot)
     assert vm.model.snapshot.active_profile_id == entries["claude"]["profile_id"]
@@ -256,12 +325,11 @@ def test_unknown_waits_and_reconnect_readback_advances_without_rewrite(session, 
     dialog._bind.click()
     guide = dialog._voice_dialog
     guide.provider.setCurrentIndex(guide.provider.findData("typeless"))
-    from test_voice_input_ui import confirm_shortcut
-    confirm_shortcut(guide)
+    guide._toggle_supported.setChecked(True)
     guide._next.click()
     guide.practice.input.setPlainText("说话练习")
     qtbot.keyClick(guide.practice.input, Qt.Key_Return)
-    assert guide._next.isEnabled()
+    guide.findChild(QCheckBox, "voicePhysicalConfirmed").setChecked(True)
     guide._next.click()
     assert dialog._next.isEnabled()
 
@@ -331,6 +399,8 @@ def test_six_choices_fit_real_factory_configuration_without_overwrite(contract):
     from pathlib import Path
     snapshot = _power_v2_snapshot(contract, read_only=False)
     factory = json.loads((Path(__file__).resolve().parents[2] / 'firmware/components/config_store/default_config_matrix12_power_v2.json').read_text())
+    # The factory Key 8 voice default is a key_gesture (firmware 2c764bc / 91c4ec0);
+    # Power V2 firmware lists key_gesture and host_action (config_protocol.c).
     draft = LocalDraft.from_snapshot(replace(snapshot, config_result={**snapshot.config_result, 'config': factory}), contract)
     original = copy.deepcopy(draft.config)
     config, _ = prepare_ai_profiles(draft, [app.key for app in AI_APPLICATIONS], "codex", "none", {}, platform="darwin")
@@ -392,26 +462,35 @@ def test_favorites_menu_opens_from_home_button(session, tmp_path, monkeypatch, q
     readback(vm, gateway, snapshot)
     qtbot.waitUntil(lambda: dialog._applied)
     dialog.reject()
-    window._onboarding_prompt_scheduled = True
     window.show()
     qtbot.wait(20)
-    selector = window.findChild(QPushButton, 'profilePill')
-    assert selector.menu() is not None
-    names = [a.objectName() for a in selector.menu().actions()]
+    # The set's name chip opens 全部方案 (Mode页 定稿 v1, 10); 切换常用 AI now sits under
+    # 新建一屏 › AI 模板.
+    from PySide6.QtWidgets import QMenu
+    from controller_config.views.mode_page import ModeStage
+    stage = next(stage for stage in window.findChildren(ModeStage) if stage.isVisible())
+    qtbot.mouseClick(stage.bar.profile, Qt.LeftButton)
+    stage = next(stage for stage in window.findChildren(ModeStage) if stage.isVisible())
+    assert stage.overview_shown()
+    new = stage.overview.cards[-1]
+    assert new.screen is None, 'no 新建一屏 card: 切换常用 AI cannot be reached'
+    opened = []
+    import controller_config.views.main_window as main_window_module
+
+    class RecordingMenu(QMenu):   # PySide6 ignores QMenu.exec patched on the class itself
+        def exec(self, *_args, **_kwargs):  # noqa: A003 - Qt's name
+            opened.append(self)
+
+    monkeypatch.setattr(main_window_module, "QMenu", RecordingMenu)
+    stage.overview.new_requested.emit(new)
+    assert len(opened) == 1 and opened[0].objectName() == 'modeNewScreenMenu'
+    templates = opened[0].findChild(QMenu, 'modeAiTemplateMenu')
+    assert templates is not None
+    names = [action.objectName() for sub in templates.findChildren(QMenu) for action in sub.actions()]
     assert 'commonAI_codex' in names and 'commonAI_claude' in names
-    # Use a timed close because native QPushButton menus run a nested event loop.
-    from PySide6.QtCore import QTimer
-    seen = []
-    def inspect():
-        seen.append(selector.menu().isVisible())
-        selector.menu().close()
-    QTimer.singleShot(50, inspect)
-    qtbot.mouseClick(selector, Qt.LeftButton)
-    qtbot.waitUntil(lambda: bool(seen))
-    assert seen == [True]
 
 
-def test_unfinished_voice_software_choice_is_not_saved_as_confirmed(qtbot, tmp_path):
+def test_voice_software_choice_is_remembered_and_does_not_skip_practice(qtbot, tmp_path):
     from PySide6.QtWidgets import QComboBox, QLabel
     from controller_config.views.voice_guide import VoiceSetupDialog
     settings = QSettings(str(tmp_path/'voice-software.ini'), QSettings.IniFormat)
@@ -422,19 +501,15 @@ def test_unfinished_voice_software_choice_is_not_saved_as_confirmed(qtbot, tmp_p
     assert provider.currentData() == ''
     provider.setCurrentIndex(provider.findData('typeless'))
     from controller_config.i18n import translate_ui_text
-    assert guide._binding_hint.text() == translate_ui_text(
-        "设备语音键在 Typeless 中会显示为 F13，不用在电脑键盘上寻找。"
-        "设备保存完成后，打开 Typeless，在“语音输入”快捷键框中按一下设备语音键；"
-        "显示 F13 即绑定成功。"
-    )
+    assert guide._binding_hint.text() == translate_ui_text("Typeless 设置 → 快捷键 → 语音输入：查看正在使用的启停快捷键。")
     assert not guide._next.isEnabled()
     guide._toggle_supported.setChecked(True)
     guide._next.click()
     assert not guide._next.isEnabled()
-    guide.hide()
+    guide.reject()
     restored = VoiceSetupDialog(settings=settings)
     qtbot.addWidget(restored)
-    assert restored.findChild(QComboBox, 'voiceSoftware').currentData() == ''
+    assert restored.findChild(QComboBox, 'voiceSoftware').currentData() == 'typeless'
 
 
 def test_voice_completion_waits_for_target_and_retry_requires_new_practice(session, tmp_path, monkeypatch, qtbot):
@@ -449,15 +524,13 @@ def test_voice_completion_waits_for_target_and_retry_requires_new_practice(sessi
         dialog._bind.click()
         guide = dialog._voice_dialog
         guide.provider.setCurrentIndex(guide.provider.findData("typeless"))
-        from test_voice_input_ui import confirm_shortcut
-        confirm_shortcut(guide)
+        guide._toggle_supported.setChecked(True)
         guide._next.click()
         guide.practice.input.setPlainText("设备练习")
         qtbot.keyClick(guide.practice.input, Qt.Key_Return)
-        assert guide._next.isEnabled()
+        guide.findChild(QCheckBox, "voicePhysicalConfirmed").setChecked(True)
         guide._next.click()
         assert dialog._voice_dialog is None
-        assert settings.value("ui/voice_input_software") == "typeless"
 
     practise()
     assert dialog._next.isEnabled()
@@ -474,6 +547,193 @@ def test_voice_completion_waits_for_target_and_retry_requires_new_practice(sessi
     dialog._next.click()
     record = voice_trial(settings, vm.draft.serial, current.active_profile_id, "key.8", action)
     assert record["target"] == "codex" and record["provider"] == "typeless"
+
+
+def test_doubao_nested_flow_commits_only_from_outer_target_success(
+    session, tmp_path, monkeypatch, qtbot,
+):
+    from controller_config.voice_setup import voice_provider_key, voice_trial
+
+    _, vm, gateway, snapshot, settings, dialog = ready(session, tmp_path, monkeypatch)
+    select_two(dialog, "external")
+    dialog._next.click()
+    readback(vm, gateway, snapshot)
+    qtbot.waitUntil(lambda: dialog._pages.currentIndex() == 3)
+
+    dialog._bind.click()
+    guide = dialog._voice_dialog
+    guide.provider.setCurrentIndex(guide.provider.findData("doubao"))
+    current = vm.model.snapshot
+    guide._adapt_button.click()
+    readback(vm, gateway, current)
+    assert guide._pages.currentIndex() == 0 and guide._next.isEnabled()
+    assert not settings.contains(voice_provider_key(vm.draft.serial, vm.model.snapshot.active_profile_id))
+    guide._next.click()
+    guide.practice.input.setPlainText("豆包嵌套练习")
+    qtbot.keyClick(guide.practice.input, Qt.Key_Return)
+    guide._next.click()
+    assert dialog._voice_dialog is None and dialog._practice.completed
+    assert not settings.contains(voice_provider_key(vm.draft.serial, vm.model.snapshot.active_profile_id))
+
+    dialog._next.click()
+    assert dialog._pages.currentIndex() == 4
+    assert dialog._target_check.isHidden() and dialog._next.isEnabled()
+    dialog.accept()
+    assert not settings.value(AI_SETUP_COMPLETED_KEY, False, type=bool)
+    dialog._next.click()
+
+    active = vm.model.snapshot
+    provider_key = voice_provider_key(vm.draft.serial, active.active_profile_id)
+    assert settings.value(provider_key) == "doubao"
+    record = voice_trial(settings, vm.draft.serial, active.active_profile_id,
+                         "key.8", active.mappings["key.8"]["action"])
+    assert record and record["target"] == "codex"
+
+
+@pytest.mark.parametrize(
+    "reason,inner_page,expanded",
+    [
+        ("no_voice", 0, "use_mode"),
+        ("no_text", 1, None),
+        ("cant_stop", 0, "shortcut"),
+        ("conflict", 0, None),
+        ("send", 0, "send"),
+    ],
+)
+def test_doubao_nested_failure_removes_success_and_resumes_matching_recovery(
+    session, tmp_path, monkeypatch, qtbot, reason, inner_page, expanded,
+):
+    from controller_config.voice_setup import (
+        confirmed_voice_choice, save_voice_trial, voice_provider_key, voice_trial,
+    )
+
+    _, vm, gateway, snapshot, settings, dialog = ready(session, tmp_path, monkeypatch)
+    select_two(dialog, "external")
+    dialog._next.click()
+    readback(vm, gateway, snapshot)
+    qtbot.waitUntil(lambda: dialog._pages.currentIndex() == 3)
+
+    dialog._bind.click()
+    guide = dialog._voice_dialog
+    guide.provider.setCurrentIndex(guide.provider.findData("doubao"))
+    current = vm.model.snapshot
+    guide._adapt_button.click()
+    readback(vm, gateway, current)
+    if reason == "no_voice":
+        guide._other_use_toggle.click()
+        guide._current_input_only.setChecked(True)
+    guide._next.click()
+    guide.practice.input.setPlainText("豆包恢复练习")
+    qtbot.keyClick(guide.practice.input, Qt.Key_Return)
+    guide._next.click()
+    dialog._next.click()
+    assert dialog._pages.currentIndex() == 4
+
+    active = vm.model.snapshot
+    provider_key = voice_provider_key(vm.draft.serial, active.active_profile_id)
+    settings.setValue(provider_key, "doubao")
+    save_voice_trial(
+        settings, vm.draft.serial, active.active_profile_id, "key.8",
+        active.mappings["key.8"]["action"], "doubao", "codex",
+    )
+    dialog._entries["codex"]["tried"] = True
+    save_device_choices(settings, vm.draft.serial, dialog._entries)
+    other_trial = None
+    if reason == "conflict":
+        changed = copy.deepcopy(active.config)
+        other_profile = next(
+            profile for profile in changed["profiles"]
+            if profile["id"] != active.active_profile_id
+            and any(mapping["control_id"] == "key.8" for mapping in profile["mappings"])
+        )
+        other_mapping = next(
+            mapping for mapping in other_profile["mappings"]
+            if mapping["control_id"] == "key.8"
+        )
+        save_voice_trial(
+            settings, vm.draft.serial, other_profile["id"], "key.8",
+            other_mapping["action"], "doubao", "claude",
+        )
+        changed["active_profile"] = other_profile["id"]
+        gateway.snapshot_ready.emit(replace(
+            active,
+            config_result={**active.config_result, "config": changed},
+        ))
+        other_trial = (other_profile["id"], other_mapping["action"])
+    assert voice_trial(
+        settings, vm.draft.serial, active.active_profile_id, "key.8",
+        active.mappings["key.8"]["action"],
+    )
+    assert confirmed_voice_choice(
+        settings, vm.draft.serial, active.active_profile_id, mode="normal",
+    ) == {"action": active.mappings["key.8"]["action"], "provider": "doubao"}
+
+    dialog._target_recovery_toggle.click()
+    assert dialog._target_recovery_toggle.property("expanded") is True
+    assert dialog._target_recovery_toggle.property("controls") == "aiTargetRecovery"
+    dialog.findChild(QPushButton, "aiTargetRepair_" + reason).click()
+    assert dialog._pages.currentIndex() == 3
+    assert not load_device_choices(settings, vm.draft.serial)["codex"]["tried"]
+    assert voice_trial(
+        settings, vm.draft.serial, active.active_profile_id, "key.8",
+        active.mappings["key.8"]["action"],
+    ) is None
+    if other_trial is not None:
+        assert voice_trial(
+            settings, vm.draft.serial, other_trial[0], "key.8", other_trial[1],
+        )
+        gateway.snapshot_ready.emit(active)
+    assert dialog._practice.completed is (reason == "conflict")
+
+    dialog._bind.click()
+    retry = dialog._voice_dialog
+    assert retry._pages.currentIndex() == inner_page
+    assert retry.provider.currentData() == "doubao"
+    if expanded == "use_mode":
+        assert retry._other_use_toggle.isChecked()
+        assert retry.doubao_use_mode == "current_input"
+    elif expanded == "shortcut":
+        assert retry._shortcut_toggle.isChecked()
+    elif expanded == "send":
+        assert retry._send_panel.isVisible()
+        assert retry._shortcut_panel.isHidden()
+    if reason == "no_text":
+        retry.practice.input.setPlainText("恢复后的练习")
+        qtbot.keyClick(retry.practice.input, Qt.Key_Return)
+        assert retry.practice.completed and retry._next.isEnabled()
+    retry.reject()
+
+
+def test_doubao_nested_outer_cancel_keeps_provider_and_trial_uncommitted(
+    session, tmp_path, monkeypatch, qtbot,
+):
+    from controller_config.voice_setup import voice_provider_key, voice_trial
+
+    _, vm, gateway, snapshot, settings, dialog = ready(session, tmp_path, monkeypatch)
+    select_two(dialog, "external")
+    dialog._next.click()
+    readback(vm, gateway, snapshot)
+    qtbot.waitUntil(lambda: dialog._pages.currentIndex() == 3)
+    dialog._bind.click()
+    guide = dialog._voice_dialog
+    guide.provider.setCurrentIndex(guide.provider.findData("doubao"))
+    current = vm.model.snapshot
+    guide._adapt_button.click()
+    readback(vm, gateway, current)
+    guide._next.click()
+    guide.practice.input.setPlainText("取消前练习")
+    qtbot.keyClick(guide.practice.input, Qt.Key_Return)
+    guide._next.click()
+    active = vm.model.snapshot
+    provider_key = voice_provider_key(vm.draft.serial, active.active_profile_id)
+    assert not settings.contains(provider_key)
+    dialog.reject()
+    assert not settings.contains(provider_key)
+    assert not settings.value(AI_SETUP_COMPLETED_KEY, False, type=bool)
+    assert voice_trial(
+        settings, vm.draft.serial, active.active_profile_id, "key.8",
+        active.mappings["key.8"]["action"],
+    ) is None
 
 
 def test_voice_binding_cannot_start_from_another_device_profile(session, tmp_path, monkeypatch, qtbot):

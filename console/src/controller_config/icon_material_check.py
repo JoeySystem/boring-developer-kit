@@ -8,11 +8,12 @@ from PySide6.QtCore import QCoreApplication, QObject, QProcess, QTimer, Signal
 from PySide6.QtGui import QImage
 
 from controller_config.screen_icon import IconImageError, MAX_IMAGE_PIXELS, load_icon_image
+from controller_config.program_path import program_executable
 
 
 def worker_arguments(path: str) -> tuple[str, ...]:
     if getattr(sys, "frozen", False) or "__compiled__" in globals():
-        return sys.executable, "--check-icon-material", path
+        return program_executable(), "--check-icon-material", path
     return sys.executable, "-m", "controller_config.app", "--check-icon-material", path
 
 

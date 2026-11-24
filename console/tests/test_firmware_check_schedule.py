@@ -79,7 +79,7 @@ def test_due_background_check_waits_for_busy_work(setup, monkeypatch, busy):
     if busy in {"checking", "downloading", "downloaded"}:
         vm._remote_firmware = RemoteFirmwareCheck(state=RemoteFirmwareState(busy))
     elif busy in {"ota", "needs_abort"}:
-        vm._firmware_update = replace(vm.firmware_update, state=FirmwareUpdateState.TRANSFERRING if busy == "ota" else FirmwareUpdateState.NEEDS_ABORT)
+        vm._firmware.replace_silently(replace(vm.firmware_update, state=FirmwareUpdateState.TRANSFERRING if busy == "ota" else FirmwareUpdateState.NEEDS_ABORT))
     elif busy in {"config", "unknown_config"}:
         vm._write_transaction = replace(vm.write_transaction, state=ConfigTransactionState.WRITING if busy == "config" else ConfigTransactionState.UNKNOWN)
     elif busy == "calibration":

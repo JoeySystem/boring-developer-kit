@@ -92,16 +92,19 @@ class ClaudeSessionRegistry:
         # Global hooks also run in subagents.  Their Stop/SessionEnd must not
         # finish or release the main session, and their tool events must not
         # replace a main-agent approval/reply state.
+        agent_id = event.get("agent_id")
         if hook in {"SubagentStart", "SubagentStop"}:
-            agent_id = event.get("agent_id")
             if session_id in self._sessions and isinstance(agent_id, str) and agent_id:
                 agents = self._subagents.setdefault(session_id, set())
                 if hook == "SubagentStart":
                     agents.add(agent_id)
                 else:
                     agents.discard(agent_id)
+                self._renew_from_subagent(session_id, now)
             return self._update(before)
-        if event.get("agent_id"):
+        if agent_id:
+            if isinstance(agent_id, str) and session_id in self._sessions:
+                self._renew_from_subagent(session_id, now)
             return self._update(before)
         if hook == "SessionEnd":
             self._release(session_id, "session_ended")
@@ -146,9 +149,12 @@ class ClaudeSessionRegistry:
                 if alive is True:
                     # An idle CLI can remain alive after a user interrupt.
                     # Liveness alone is never evidence of an ongoing task.
-                    self._sessions[session_id] = replace(
-                        view, state="idle", reason="stale_no_events", stale=True
-                    )
+                    # completed/approval/reply/error wait for the user: keep
+                    # them until this session's next event, SessionEnd or exit.
+                    if view.state == "working":
+                        self._sessions[session_id] = replace(
+                            view, state="idle", reason="stale_no_events", stale=True
+                        )
                 else:
                     # Without reliable process identity, retaining dead slots
                     # forever would eventually prevent all new sessions.
@@ -161,6 +167,17 @@ class ClaudeSessionRegistry:
         self._pending_clear.difference_update(indices)
         self._assign_waiting()
         return self._update(before)
+
+    def _renew_from_subagent(self, session_id: str, now: float) -> None:
+        # A subagent's hooks prove its main session is still running, so they
+        # renew the 120-second silence timer. They never set or replace the
+        # main state; only a working light that went stale while the subagent
+        # was quiet comes back. A subagent silent for 120 seconds still lets
+        # working go idle, as for the main agent (no light stuck forever).
+        view = self._sessions[session_id]
+        if view.stale and view.state == "idle" and view.reason == "stale_no_events":
+            view = replace(view, state="working", reason="subagent_activity", stale=False)
+        self._sessions[session_id] = replace(view, last_event_at=now)
 
     def _owner_status(self, view: ClaudeSessionView) -> bool | None:
         if (

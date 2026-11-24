@@ -87,7 +87,7 @@ def test_downloaded_or_completed_package_is_not_assigned_to_next_device(context,
     vm, gateway, source, snapshot = context
     _download(vm, source, contract)
     if already_completed:
-        vm._finish_firmware_update(FirmwareUpdateState.COMPLETED, "Device A verified")
+        vm._firmware.finish(FirmwareUpdateState.COMPLETED, "Device A verified")
     gateway.snapshot_ready.emit(_other(snapshot))
     assert vm.remote_firmware.state is RemoteFirmwareState.CHECKING
     assert vm.remote_firmware.release is None
@@ -102,7 +102,7 @@ def test_same_device_reboot_retains_package_and_completes_confirmation(context, 
     _download(vm, source, contract)
     package = vm.firmware_update.package
     vm.start_firmware_update()
-    vm._set_firmware_update(replace(
+    vm._firmware.set_transaction(replace(
         vm.firmware_update, state=FirmwareUpdateState.WAITING_RECONNECT,
         target_partition="ota_1",
     ))
@@ -122,7 +122,7 @@ def test_different_device_during_reboot_stops_transfer_then_rechecks(context, co
     vm, gateway, source, snapshot = context
     _download(vm, source, contract)
     vm.start_firmware_update()
-    vm._set_firmware_update(replace(
+    vm._firmware.set_transaction(replace(
         vm.firmware_update, state=FirmwareUpdateState.WAITING_RECONNECT,
         target_partition="ota_1",
     ))

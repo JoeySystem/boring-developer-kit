@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 from PySide6.QtCore import QSettings, QTimer
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import QFileDialog, QLabel, QMessageBox
+from PySide6.QtWidgets import QFileDialog, QLabel, QMessageBox, QPushButton
 
 from controller_config.background_helper import PromptBackgroundController
 from controller_config.automation import AutomationStore
@@ -23,6 +23,9 @@ from controller_config.views.main_window import MainWindow
 from controller_config.views.prompt_library_editor import PromptLibraryEditor
 from controller_config.workflows import WorkflowStore
 from test_write_transaction import FakeWriteGateway, _ack
+from notice_helpers import answer_information, answer_warnings
+from notice_helpers import pick
+from notice_helpers import answer_dialogs
 
 
 @pytest.fixture
@@ -42,10 +45,17 @@ def session(qtbot, qapp, contract, tmp_path):
         initial_language=SIMPLIFIED_CHINESE,
     )
     window = MainWindow(view_model, language_manager=language)
-    language.setParent(window)
+    window.show()
+    qtbot.waitUntil(window._content.isVisible, timeout=1000)
+    # Most session tests edit normal mappings. Choose that workspace explicitly;
+    # the fake device can keep running Codex without retargeting the editor.
+    window._select_configuration_mode("normal")
 
     def cleanup_window(_window):
         # pytest-qt closes widgets before fixture finalizers run.
+        # Update prompts are tested explicitly; teardown must not open a modal.
+        if window._desktop_update_ui is not None:
+            window._desktop_update_ui.restart_prepared = True
         view_model._write_transaction = ConfigTransaction()
         view_model.navigate("overview")
         # The fake gateway never answers automatic icon reads. Detach those
@@ -57,7 +67,7 @@ def session(qtbot, qapp, contract, tmp_path):
         window._selected_control_id = None
         window._pending_mapping_editing_state = None
         window.render(view_model.model)
-        window._confirm_leave_page = lambda: True
+        window._confirm_leave_page = lambda **_kwargs: True
         window._confirm_discard_screen_icons = lambda: True
         window._confirm_discard_ble_names = lambda: True
         view_model.pending_dirty_workspaces = lambda: ()
@@ -126,16 +136,9 @@ def _disconnect_during_write(view_model, gateway):
 
 
 def _choose_export(monkeypatch):
-    real_exec = QMessageBox.exec
-
-    def choose(prompt):
-        button = next(button for button in prompt.buttons() if "导出" in button.text())
-        QTimer.singleShot(50, button.click)
-        return real_exec(prompt)
-
-    monkeypatch.setattr(QMessageBox, "exec", choose)
-    monkeypatch.setattr(QMessageBox, "information", lambda *_args: QMessageBox.Ok)
-    monkeypatch.setattr(QMessageBox, "warning", lambda *_args: QMessageBox.Cancel)
+    pick(monkeypatch, lambda _title, _text, keys: "export" if "export" in keys else "cancel")
+    answer_information(monkeypatch, lambda *_args: QMessageBox.Ok)
+    answer_warnings(monkeypatch, lambda *_args: QMessageBox.Cancel)
 
 
 def test_offline_unknown_write_can_export_and_exit_without_replaying(
@@ -200,7 +203,7 @@ def test_unresolved_exit_cancel_keeps_transaction(session, monkeypatch):
     _disconnect_during_write(view_model, gateway)
     transaction = view_model.write_transaction
     _choose_export(monkeypatch)
-    monkeypatch.setattr(QMessageBox, "clickedButton", lambda _prompt: None)
+    pick(monkeypatch, lambda _title, _text, _keys: "cancel")
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *_args: pytest.fail("Must not export"))
 
     event = QCloseEvent()
@@ -338,27 +341,23 @@ def test_another_device_cannot_resolve_or_relabel_unresolved_write(
 
 @pytest.mark.parametrize("language", [SIMPLIFIED_CHINESE, ENGLISH])
 def test_unresolved_exit_dialog_explains_unknown_result_in_both_languages(
-    session, qapp, tmp_path, language
+    session, qapp, tmp_path, language, monkeypatch
 ):
     window, view_model, gateway, _snapshot, _store = session
     _disconnect_during_write(view_model, gateway)
     window._language_manager.set_language(language)
     observed = []
 
-    def inspect_dialog():
-        dialog = qapp.activeModalWidget()
-        try:
-            assert isinstance(dialog, QMessageBox)
-            label = dialog.findChild(QLabel, "qt_msgbox_label")
-            observed.append((label.text(), [button.text() for button in dialog.buttons()]))
-            for button in dialog.buttons():
-                assert button.width() > button.fontMetrics().horizontalAdvance(button.text())
-            assert dialog.grab().save(str(tmp_path / f"unresolved-exit-{language}.png"))
-        finally:
-            if isinstance(dialog, QMessageBox):
-                dialog.reject()
+    def inspect_dialog(info):
+        dialog = info["dialog"]
+        dialog.show()
+        observed.append((info["text"], list(info["buttons"].values())))
+        for button in dialog.findChildren(QPushButton):
+            assert button.width() >= button.fontMetrics().horizontalAdvance(button.text())
+        assert dialog.grab().save(str(tmp_path / f"unresolved-exit-{language}.png"))
+        return None
 
-    QTimer.singleShot(100, inspect_dialog)
+    answer_dialogs(monkeypatch, inspect_dialog)
     event = QCloseEvent()
     window.closeEvent(event)
     assert not event.isAccepted()
@@ -387,9 +386,9 @@ def test_failed_ble_link_accepts_new_usb_without_retrying_failed_ports(session, 
     monkeypatch.setattr(gateway, "connect_port", connections.append)
     view_model.connect_candidate("ble:known")
     gateway.failure.emit(BootstrapKind.READ_FAILED, "蓝牙配置读取失败", "services unavailable")
-    assert view_model._reconnect_timer.isActive()
+    assert view_model._connection.reconnect_timer.isActive()
     failed = view_model.model
-    view_model._scan_for_reconnect()
+    view_model._connection.scan_for_reconnect()
     assert scans == [{"usb_only": True}]
     gateway.candidates_found.emit(())
     gateway.candidates_found.emit((PortCandidate("ble:known", transport="bluetooth"),))
@@ -408,7 +407,7 @@ def test_failed_ble_link_accepts_new_usb_without_retrying_failed_ports(session, 
     assert connections.count("/dev/cu.usbmodem-new") == 2
     gateway.snapshot_ready.emit(replace(snapshot, port_name="/dev/cu.usbmodem-new"))
     assert view_model.model.state is AppState.READY
-    assert not view_model._reconnect_timer.isActive()
+    assert not view_model._connection.reconnect_timer.isActive()
 
 
 @pytest.mark.parametrize("scan_state", ["disconnected", "refresh"])
@@ -424,7 +423,7 @@ def test_bluetooth_query_failure_does_not_blacklist_previous_usb(session, monkey
     else:
         view_model.refresh()
     gateway.failure.emit(BootstrapKind.READ_FAILED, "无法读取系统蓝牙连接状态", "Bluetooth unavailable")
-    assert snapshot.port_name not in view_model._failed_connection_ports
+    assert snapshot.port_name not in view_model._connection.failed_ports
     gateway.candidates_found.emit((PortCandidate(snapshot.port_name),))
     assert connections == [snapshot.port_name]
 
@@ -443,16 +442,16 @@ def test_discovery_timeout_retries_bluetooth_and_keeps_draft(session, monkeypatc
     gateway.failure.emit(BootstrapKind.DISCOVERY_INTERRUPTED, "query delayed", "timeout")
 
     assert view_model.model.state is AppState.DISCONNECTED
-    assert view_model._reconnect_timer.isActive()
-    assert view_model._reconnect_timer.interval() == 5000
+    assert view_model._connection.reconnect_timer.isActive()
+    assert view_model._connection.reconnect_timer.interval() == 5000
     assert not scans  # Retry after a delay, not inside the failed callback.
-    view_model._scan_for_reconnect()
+    view_model._connection.scan_for_reconnect()
     assert scans == [("ble:known", {"usb_only": False})]
     gateway.candidates_found.emit((PortCandidate("ble:known", transport="bluetooth"),))
     assert connections == ["ble:known"]
     gateway.snapshot_ready.emit(snapshot)
     assert view_model.model.state is AppState.READY
-    assert not view_model._reconnect_timer.isActive()
+    assert not view_model._connection.reconnect_timer.isActive()
     assert view_model.draft is original_draft and original_draft.is_dirty
     assert not any(command.name == "SET_CONFIG" for command in gateway.commands)
 
@@ -464,8 +463,8 @@ def test_discovery_timeout_manual_retry_does_not_wait_for_timer(session, monkeyp
     gateway.failure.emit(BootstrapKind.DISCOVERY_INTERRUPTED, "query delayed", "timeout")
     view_model.refresh()
     assert scans == [{}]
-    assert not view_model._reconnect_timer.isActive()
-    assert view_model._reconnect_timer.interval() == 500
+    assert not view_model._connection.reconnect_timer.isActive()
+    assert view_model._connection.reconnect_timer.interval() == 500
 
 
 def test_failed_connection_retry_preserves_visible_prompt_edits(session, monkeypatch):
@@ -482,7 +481,7 @@ def test_failed_connection_retry_preserves_visible_prompt_edits(session, monkeyp
     gateway.failure.emit(BootstrapKind.READ_FAILED, "读取失败", "GET_CONFIG timeout")
     retry = window.findChild(QPushButton, "connectionRetry")
     assert not retry.isHidden()
-    assert window._device_auth_summary.text() == "配置连接失败"
+    assert window._device_auth_summary.text() == "配置未读取"
     retry.click()
     assert scans == [{}]
     gateway.snapshot_ready.emit(snapshot)
@@ -495,15 +494,16 @@ def test_authenticity_failure_never_schedules_automatic_retry(session, monkeypat
     scans = []
     monkeypatch.setattr(gateway, "scan", lambda **kwargs: scans.append(kwargs))
     gateway.failure.emit(BootstrapKind.AUTHENTICITY_FAILED, "认证失败", "invalid signature")
-    assert not view_model._reconnect_timer.isActive()
-    view_model._scan_for_reconnect()
+    assert not view_model._connection.reconnect_timer.isActive()
+    view_model._connection.scan_for_reconnect()
     assert not scans
 
 
+# The top-bar capsule says 配置未读取 for a read failure (the designer 顶条认证标 v1, the firmware owner 11-19).
 @pytest.mark.parametrize("language, expected_title, expected_retry", [
-    ("zh_CN", "配置连接失败", "重新连接"),
-    ("en_US", "Configuration Connection Failed", "Reconnect"),
-    ("ja_JP", "設定用接続に失敗しました", "再接続"),
+    ("zh_CN", "配置未读取", "重新连接"),
+    ("en_US", "Configuration not read", "Reconnect"),
+    ("ja_JP", "設定未読み込み", "再接続"),
 ])
 def test_connection_failure_labels_are_translated(session, language, expected_title, expected_retry):
     window, _view_model, gateway, _snapshot, _store = session
@@ -512,5 +512,5 @@ def test_connection_failure_labels_are_translated(session, language, expected_ti
     assert window._device_auth_summary.text() == expected_title
     assert window._connection_retry.text() == expected_retry
     if language != "zh_CN":
-        assert "配置连接失败" not in window._connection_message.text()
+        assert "配置" not in window._connection_message.text()
     window._language_manager.set_language(SIMPLIFIED_CHINESE)

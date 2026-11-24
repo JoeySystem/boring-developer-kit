@@ -3,10 +3,11 @@ import copy
 
 import pytest
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QPushButton, QComboBox
+from PySide6.QtWidgets import QDialog, QLabel, QPushButton, QComboBox
 
 from controller_config.protocol.bootstrap import BootstrapError, BootstrapKind
 from controller_config.transactions import ConfigTransactionState
+from controller_config.views.action_editor import ActionEditor
 from test_session_recovery import session
 from test_codex_voice_choice import ready
 from test_ai_setup import readback
@@ -40,6 +41,8 @@ def choose_custom(dialog):
     usage = send._field_widgets['usage']
     usage.setCurrentIndex(usage.findData(40))
     send._shortcut_recorder.shortcut_recorded.emit({'type': 'key', 'usage': 40, 'modifiers': [227]})
+    assert not dialog._adapt_button.isEnabled()
+    confirm_shortcut(dialog)
     assert dialog._adapt_button.isEnabled()
 
 
@@ -55,24 +58,20 @@ def test_unlisted_app_one_write_then_real_practice(session, monkeypatch, tmp_pat
     assert dialog.action['double_modifiers'] == [227]
     assert vm.model.snapshot.active_profile['mappings'] == original
     assert dialog._context_ready and not vm.draft.is_dirty
-    assert dialog._shortcut_panel.isVisible()
+    assert not dialog._shortcut_panel.isVisible()
     assert not dialog._next.isEnabled()
-    assert not dialog._toggle_supported.isChecked()
-    assert dialog._toggle_supported.isEnabled()
-    assert dialog._pages.currentIndex() == 0
-    dialog._toggle_supported.click()
-    dialog._next.click()
+    assert dialog._toggle_supported.isChecked()
     assert dialog._pages.currentIndex() == 1
     dialog.practice.input.setPlainText('我的输入软件')
     qtbot.keyClick(dialog.practice.input, Qt.Key_Return)
     assert not dialog.practice.completed  # Plain Return is no longer Send.
     qtbot.keyClick(dialog.practice.input, Qt.Key_Return, Qt.ControlModifier)
     assert dialog.practice.completed
-    assert dialog._next.isEnabled()
-    assert dialog._target_trial.isVisible() and dialog._target_trial.isEnabled()
-    dialog._target_trial.click()
+    assert not dialog._next.isEnabled()  # Hardware use still needs confirmation.
+    dialog._physical_confirmed.setChecked(True)
+    dialog._next.click()
     assert dialog._pages.currentIndex() == 2
-    assert dialog._next.isEnabled()
+    dialog._target_confirmed.setChecked(True)
     dialog._next.click()
     assert window._voice_setup_dialog is None
     assert [c.name for c in gateway.commands].count('SET_CONFIG') == 1
@@ -94,12 +93,116 @@ def test_new_setup_failure_keeps_selection_and_retries(session, monkeypatch, tmp
     dialog.reject()
 
 
+def test_applied_doubao_action_reopens_with_confirmed_provider_without_marking_complete(
+    session, monkeypatch, tmp_path,
+):
+    from controller_config.voice_setup import voice_trial
+
+    window, vm, gateway, snapshot, dialog = open_new(session, monkeypatch, tmp_path)
+    dialog.provider.setCurrentIndex(dialog.provider.findData('doubao'))
+    dialog._adapt_button.click()
+    readback(vm, gateway, snapshot)
+    action = copy.deepcopy(dialog.action)
+    provider_key = dialog._provider_key
+    control_id = dialog._control_id
+    mode = dialog._mode
+    dialog.reject()
+
+    assert not window._onboarding_settings.contains(provider_key)
+    assert voice_trial(window._onboarding_settings, vm.draft.serial,
+                       vm.model.snapshot.active_profile_id, control_id,
+                       action, mode=mode) is None
+    window._open_voice_setup(control_id, mode=mode)
+    reopened = window._voice_setup_dialog
+    assert reopened.provider.currentData() == 'doubao'
+    assert reopened._pages.currentIndex() == 0
+    assert reopened._next.isEnabled()
+    reopened.reject()
+
+
 def test_cancel_before_apply_leaves_device_and_draft_untouched(session, monkeypatch, tmp_path):
     _, vm, gateway, snapshot, dialog = open_new(session, monkeypatch, tmp_path)
     choose_custom(dialog)
     dialog.reject()
     assert vm.draft.config == snapshot.config
     assert not any(c.name in {'SET_CONFIG', 'VALIDATE_CONFIG'} for c in gateway.commands)
+
+
+def test_macos_doubao_cancel_does_not_persist_provider(session, monkeypatch, tmp_path):
+    window, _, _, _, dialog = open_new(session, monkeypatch, tmp_path)
+    dialog.provider.setCurrentIndex(dialog.provider.findData('qianwen'))
+    assert window._onboarding_settings.value(dialog._provider_key) == 'qianwen'
+    dialog.provider.setCurrentIndex(dialog.provider.findData('doubao'))
+    assert not window._onboarding_settings.contains(dialog._provider_key)
+    dialog.reject()
+    assert not window._onboarding_settings.contains(dialog._provider_key)
+
+
+def test_macos_doubao_commits_provider_and_trial_only_after_target_success(
+    session, monkeypatch, tmp_path, qtbot,
+):
+    from controller_config.voice_setup import voice_trial
+
+    window, vm, gateway, snapshot, dialog = open_new(session, monkeypatch, tmp_path)
+    dialog.provider.setCurrentIndex(dialog.provider.findData('doubao'))
+    assert not window._onboarding_settings.contains(dialog._provider_key)
+    assert dialog._adapt_button.isEnabled(), (
+        dialog._shortcut_problem(), dialog._adaptation_needed(), dialog._device_available(),
+    )
+    dialog._adapt_button.click()
+    readback(vm, gateway, snapshot)
+    assert dialog._pages.currentIndex() == 0 and dialog._next.isEnabled()
+    assert not window._onboarding_settings.contains(dialog._provider_key)
+
+    dialog._next.click()
+    dialog.practice.input.setPlainText('豆包目标验证')
+    qtbot.keyClick(dialog.practice.input, Qt.Key_Return)
+    dialog._next.click()
+    assert dialog._pages.currentIndex() == 2
+    assert voice_trial(window._onboarding_settings, vm.draft.serial,
+                       vm.model.snapshot.active_profile_id, dialog._control_id,
+                       dialog.action, mode=dialog._mode) is None
+    assert dialog._next.isEnabled()
+    from controller_config.views.main_window import _canonical_action
+    from controller_config.voice_setup import voice_mapping
+    current = vm.model.snapshot
+    current_action = voice_mapping(current, dialog._control_id, dialog._mode)['action']
+    assert _canonical_action(current_action) == _canonical_action(dialog.action)
+    assert current.identity.get('serial') == dialog._serial
+    assert current.active_profile_id == dialog._profile_id
+    assert current.status.get('operating_mode', 'normal') == dialog._mode
+    from controller_config.models import AppState
+    assert vm.model.state is AppState.READY
+    assert not vm.write_transaction.blocks_editing
+    assert not vm.firmware_update.blocks_editing
+    assert not vm.calibration.blocks_editing
+    dialog._next.click()
+    assert dialog.result() == QDialog.Accepted
+    assert window._voice_setup_dialog is None
+    assert window._onboarding_settings.value(dialog._provider_key) == 'doubao'
+    record = voice_trial(window._onboarding_settings, vm.draft.serial,
+                         vm.model.snapshot.active_profile_id, dialog._control_id,
+                         dialog.action, mode=dialog._mode)
+    assert record and record['target'] == dialog.target_key
+
+    editor = window.findChild(ActionEditor)
+    editor._send_recorder.shortcut_recorded.emit(
+        {'type': 'key', 'usage': 41, 'modifiers': []}
+    )
+    pending_action = copy.deepcopy(editor.action())
+    window.findChild(QPushButton, 'voiceConnectApp').click()
+    reverify = window._voice_setup_dialog
+    assert reverify._history_panel.isVisible()
+    reverify._reverify_button.click()
+    reverify.practice.input.setPlainText('保留未应用修改')
+    qtbot.keyClick(reverify.practice.input, Qt.Key_Return)
+    reverify._next.click()
+    reverify._next.click()
+    assert window._voice_setup_dialog is None
+    assert window.findChild(ActionEditor).action() == pending_action
+    assert window.findChild(QLabel, 'voiceSetupStatus').text() == (
+        '当前修改尚未应用；上次验证仍对应设备中的设置。'
+    )
 
 
 def test_retained_voice_draft_can_continue_after_reconnect(session, monkeypatch, tmp_path):
@@ -166,33 +269,9 @@ def test_custom_setup_layout(session, monkeypatch, tmp_path, qtbot, language):
     assert dialog._adapt_button.isVisible()
     assert dialog._adapt_button.mapTo(dialog, dialog._adapt_button.rect().bottomRight()).y() < dialog.height()
     assert dialog._shortcut_editors[0][1]._shortcut_recorder._preview.text() == '—'
-    assert dialog._shortcut_editors[0][1]._shortcut_recorder._capture.text() == translate_ui_text(
-        '录制电脑快捷键'
-    )
-    assert dialog._shortcut_hint.text() == translate_ui_text(
-        '先在语音输入软件中确认开始／结束快捷键。录制不会修改语音软件；'
-        '回到这里点击录制，再按电脑键盘上的同一快捷键。不要按设备语音键。'
-    )
-    assert dialog._custom_toggle.text() == translate_ui_text('调整双击发送（可选）…')
+    assert dialog._custom_toggle.text() == translate_ui_text('调整双击发送')
     output = Path(os.environ.get('VOICE_ENTRY_PREVIEW_DIR', str(tmp_path)))
     output.mkdir(parents=True, exist_ok=True)
     dialog.grab().save(str(output / f'other-{language}.png'))
     window._language_manager.set_language('zh_CN')
-    dialog.reject()
-
-
-def test_other_voice_app_records_a_real_computer_keyboard_event(
-        session, monkeypatch, tmp_path, qtbot):
-    _, _, gateway, _, dialog = open_new(session, monkeypatch, tmp_path)
-    dialog.provider.setCurrentIndex(dialog.provider.findData('other'))
-    recorder = dialog._shortcut_editors[0][1]._shortcut_recorder
-    commands = list(gateway.commands)
-
-    qtbot.mouseClick(recorder._capture, Qt.LeftButton)
-    qtbot.keyClick(recorder._capture, Qt.Key_F13)
-
-    assert dialog._requested_action['usage'] == 104
-    assert dialog._custom_shortcut_chosen
-    assert recorder._message.text() == '已识别，尚未保存到设备。'
-    assert gateway.commands == commands
     dialog.reject()

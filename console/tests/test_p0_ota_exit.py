@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QMessageBox
 from controller_config.firmware_update import FirmwareUpdateState, FirmwareUpdateTransaction
 from test_session_recovery import session
 from test_firmware_transaction import _package, _status, trust_test_signing_key
+from notice_helpers import answer_questions, answer_warnings
 
 
 def pause_offline(vm, gateway, contract, tmp_path):
@@ -20,8 +21,8 @@ def test_paused_offline_can_exit_without_aborting_device(session, contract, tmp_
     window, vm, gateway, snapshot, _ = session
     package = pause_offline(vm, gateway, contract, tmp_path)
     questions = []
-    monkeypatch.setattr(QMessageBox, "warning", lambda *args: QMessageBox.Ok)
-    monkeypatch.setattr(QMessageBox, "question", lambda *args: questions.append(args[2]) or QMessageBox.Yes)
+    answer_warnings(monkeypatch, lambda *args: QMessageBox.Ok)
+    answer_questions(monkeypatch, lambda *args: questions.append(args[2]) or QMessageBox.Yes)
     before = len(gateway.commands)
     try:
         event = QCloseEvent()
@@ -32,7 +33,7 @@ def test_paused_offline_can_exit_without_aborting_device(session, contract, tmp_
         assert vm.firmware_update.state is not FirmwareUpdateState.COMPLETED
         assert vm.firmware_update.package is package
     finally:
-        vm._firmware_update = FirmwareUpdateTransaction()
+        vm._firmware.replace_silently(FirmwareUpdateTransaction())
 
 
 @pytest.mark.parametrize("reconnect", [False, True])
@@ -44,8 +45,8 @@ def test_offline_exit_cancel_or_reconnection_keeps_transaction(session, contract
             gateway.snapshot_ready.emit(snapshot)
             return QMessageBox.Yes
         return QMessageBox.No
-    monkeypatch.setattr(QMessageBox, "question", answer)
-    monkeypatch.setattr(QMessageBox, "warning", lambda *args: QMessageBox.Ok)
+    answer_questions(monkeypatch, answer)
+    answer_warnings(monkeypatch, lambda *args: QMessageBox.Ok)
     try:
         event = QCloseEvent()
         window.closeEvent(event)
@@ -53,7 +54,7 @@ def test_offline_exit_cancel_or_reconnection_keeps_transaction(session, contract
         assert vm.firmware_update.state is (FirmwareUpdateState.CHECKING if reconnect else FirmwareUpdateState.PAUSED)
         assert not any(c.name == "FW_ABORT" for c in gateway.commands)
     finally:
-        vm._firmware_update = FirmwareUpdateTransaction()
+        vm._firmware.replace_silently(FirmwareUpdateTransaction())
 
 
 def test_stop_wait_then_reconnect_reads_status_before_resuming(session, contract, tmp_path):
@@ -70,4 +71,4 @@ def test_stop_wait_then_reconnect_reads_status_before_resuming(session, contract
         assert gateway.commands[-1].name == "FW_DATA"
         assert vm.firmware_update.received_size == 100
     finally:
-        vm._firmware_update = FirmwareUpdateTransaction()
+        vm._firmware.replace_silently(FirmwareUpdateTransaction())

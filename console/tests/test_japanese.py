@@ -4,10 +4,11 @@ import re
 
 import pytest
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QMenu, QPushButton
+from PySide6.QtWidgets import QLabel, QMenu, QPushButton
 
 from controller_config.i18n import JAPANESE, normalize_language
 from controller_config.text_catalog import TextCatalog
+from controller_config.views.mode_page import ModeStage
 from test_session_recovery import session
 
 
@@ -38,6 +39,7 @@ def test_japanese_setting_is_selectable_persisted_and_keeps_user_names(session, 
     manager = window._language_manager
     window.show()
     vm.navigate('settings')
+    window._select_settings_section('system')   # the language keys live under 通用
     japanese = next(b for b in window.findChildren(QPushButton, 'settingsLanguageButton')
                     if b.text() == '日本語')
     japanese.click()
@@ -46,16 +48,20 @@ def test_japanese_setting_is_selectable_persisted_and_keeps_user_names(session, 
     assert window.findChild(QMenu, 'languageMenu').title() == '言語'
     assert manager._settings.value('ui/language') == JAPANESE
     assert window.findChild(QAction, 'languageAction_ja_JP').isChecked()
-    assert window._nav_buttons['overview'].accessibleName() == 'キー設定'
+    assert window._nav_buttons['overview'].accessibleName() == 'Mode'
     assert {
         button.text()
         for button in window.findChildren(QPushButton, 'settingsGroup')
-    } == {'システム', 'デバイス', 'ファームウェア更新'}
+    } == {'デバイスと接続', 'AI ステータスライト', 'ライトとフィードバック', '一般', '更新'}
     vm.rename_profile(snapshot.active_profile_id, '设置・私の設定')
     vm.navigate('overview')
-    for language, name in [('en_US', 'Key Mapping'), ('zh_CN', '按键配置'), ('ja_JP', 'キー設定')]:
+    window._mode_show_overview(True)   # 全部方案 lists every set by its own name (Mode页 定稿 v1, 10)
+    for language, name in [('en_US', 'Mode'), ('zh_CN', 'Mode'), ('ja_JP', 'Mode')]:
         manager.set_language(language)
         assert window._nav_buttons['overview'].accessibleName() == name
-        action = window.findChild(QAction, f'profileSelectAction_{snapshot.active_profile_id}')
-        assert action.text() == '设置・私の設定'
+        stage = next(s for s in window.findChildren(ModeStage) if s.isVisible())
+        assert stage.overview_shown()
+        card = next(c for c in stage.overview.cards
+                    if c.screen is not None and c.screen.key == ('normal', snapshot.active_profile_id))
+        assert card.findChild(QLabel, 'modeOverviewName').text() == '设置・私の設定'
     vm.discard_draft()

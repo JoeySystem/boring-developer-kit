@@ -1,12 +1,16 @@
 import pytest
 from PySide6.QtCore import Qt, QRect
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QWidget, QPushButton, QMessageBox, QLabel
 
 from controller_config.prompt_device import PromptListenerStatus
 from controller_config.prompt_library import PromptEntry, PromptLibrary
-from controller_config.views.prompt_library_editor import PromptLibraryEditor, PromptDevicePreview
-from controller_config.views.device_silhouette import DeviceModelCanvas
+from controller_config.views.prompt_library_editor import PromptLibraryEditor
+from controller_config.style import tokens
+from controller_config.views.ui import DeviceTopView, Menu, StepNumber
 from test_session_recovery import session
+from notice_helpers import answer_questions
+from notice_helpers import answer_warnings
 
 
 @pytest.fixture(autouse=True)
@@ -17,6 +21,7 @@ def restore_language(session):
 
 @pytest.mark.parametrize("width,language", [(1440, "zh_CN"), (1280, "zh_CN"), (1280, "en_US"), (1280, "ja_JP")])
 def test_prompt_workspace_layout_and_selection(session, qtbot, tmp_path, monkeypatch, width, language):
+    """One wall (the designer Prompt 页定稿 v1): the line on top, the cross left, the editor right."""
     window, vm, gateway, snapshot, store = session
     window._language_manager.set_language(language)
     window.resize(width, 900)
@@ -25,11 +30,13 @@ def test_prompt_workspace_layout_and_selection(session, qtbot, tmp_path, monkeyp
     window.resize(width, 900)  # Exercise the requested layout after screen-bound startup.
     qtbot.wait(200)
     editor = window._content.findChild(PromptLibraryEditor)
-    left = editor.findChild(QWidget, "promptLeftColumn")
-    right = editor.findChild(QWidget, "promptRightColumn")
-    stage = editor.findChild(QWidget, "promptDirectionStage")
-    assert left.geometry().right() < stage.geometry().left()
-    assert stage.geometry().right() < right.geometry().left()
+    cross = editor.findChild(QWidget, "promptChoicesCard")
+    focus = editor.findChild(QWidget, "promptFocusCard")
+    top = editor.findChild(QWidget, "promptStatusBar")
+    assert cross.geometry().right() < focus.geometry().left()
+    assert cross.span == (2, 2) and focus.span == (2, 2)
+    assert top.mapTo(editor, top.rect().bottomLeft()).y() < cross.mapTo(editor, cross.rect().topLeft()).y()
+    assert top.width() == editor._wall.width()
     assert not editor.findChild(QPushButton, "savePromptDraft").isVisible()
     assert editor.findChild(QPushButton, "writePromptDevice").isVisible()
     assert editor.findChild(QPushButton, "writePromptDevice").text() == (
@@ -37,97 +44,61 @@ def test_prompt_workspace_layout_and_selection(session, qtbot, tmp_path, monkeyp
         else "本体に保存" if language == "ja_JP" else "保存到设备"
     )
     if language == "en_US":
-        assert "does not send it automatically" in editor._body.placeholderText()
+        assert "Enter is not pressed automatically" in editor._body.placeholderText()
     assert window.grab().save(str(tmp_path / "prompts-wide.png"))
-    preview = editor.findChild(PromptDevicePreview)
-    canvas = preview.findChild(DeviceModelCanvas, "deviceModelCanvas")
-    assert canvas is not None
-    assert canvas._preset == "prompt"
-    assert canvas.modelYaw == -90.0
     before = len(gateway.commands)
-    canvas.activateControl("joystick.right")
-    assert editor._selected_prompt_id() == 2
-    key_target = canvas._springs["key.1"].target
-    canvas.activateControl("key.1")
-    canvas.activateControl("encoder.press")
-    canvas.activateControl("joystick.press")
-    assert canvas._springs["key.1"].target == key_target
-    assert canvas._springs["encoder.press"].target == 0.0
-    assert canvas._springs["joystick.press"].target == 0.0
-    for prompt_id, button in editor._preview_buttons.items():
-        # Direction buttons are QWidget overlays anchored to the full 3D model.
-        point = button.mapTo(preview, button.rect().center())
-        assert preview.rect().contains(point)
-        qtbot.mouseClick(button, Qt.LeftButton)
+    for prompt_id in (2, 3, 4, 1):
+        editor._select_direction(prompt_id)
         assert editor._selected_prompt_id() == prompt_id
-        assert editor._direction_buttons[prompt_id].property("selected") is True
+        assert editor._cross.selected() == prompt_id
     assert len(gateway.commands) == before
     editor._name.setText("审查")
     editor._body.setPlainText("中文\nEnglish")
-    monkeypatch.setattr(
-        "controller_config.views.prompt_library_editor.confirm_local_draft",
-        lambda *_: QMessageBox.Cancel,
-    )
-    editor._preview_buttons[1].click()
+    asked = []
+    # 「审查」还没存进设备: the page asks before leaving the edits (定稿 v1 第 4 张).
+    monkeypatch.setattr(editor, "_ask_before_switching", lambda: asked.append(True) or editor._save())
+    editor._select_direction(4)
+    assert asked == [True]
     assert editor._selected_prompt_id() == 4
-    monkeypatch.setattr(
-        QMessageBox,
-        "warning",
-        lambda *_: pytest.fail("保存到设备不应再要求二次确认"),
+    assert store.load(snapshot.identity["serial"]).draft_entry(1).body == "中文\nEnglish"
+    editor._select_direction(1)
+    answer_warnings(monkeypatch, lambda *_: pytest.fail("保存到设备不应再要求二次确认"),
     )
     editor.findChild(QPushButton, "writePromptDevice").click()
     if gateway.commands[-1].name == "GET_PROMPT_EVENT":
         gateway.command_completed.emit(
             "GET_PROMPT_EVENT",
-            {
-                "command": "GET_PROMPT_EVENT",
-                "result": {"poll_after_ms": 100, "event": None},
-            },
+            {"command": "GET_PROMPT_EVENT", "result": {"poll_after_ms": 100, "event": None}},
         )
-    entry = store.load(snapshot.identity["serial"]).draft_entry(4)
+    entry = store.load(snapshot.identity["serial"]).draft_entry(1)
     assert entry is not None
     assert gateway.commands[-1].name == "SET_PROMPT"
-    gateway.command_completed.emit(
-        "SET_PROMPT",
-        {
-            "command": "SET_PROMPT",
-            "result": {
-                "prompt_id": 4,
-                "name": entry.name,
-                "body_bytes": entry.body_bytes,
-            },
-        },
-    )
+    gateway.command_completed.emit("SET_PROMPT", {
+        "command": "SET_PROMPT",
+        "result": {"prompt_id": 1, "name": entry.name, "body_bytes": entry.body_bytes},
+    })
     assert gateway.commands[-1].name == "GET_PROMPT"
-    gateway.command_completed.emit(
-        "GET_PROMPT",
-        {
-            "command": "GET_PROMPT",
-            "result": {
-                "prompt_id": 4,
-                "name": entry.name,
-                "body": entry.body,
-                "body_bytes": entry.body_bytes,
-            },
-        },
-    )
+    gateway.command_completed.emit("GET_PROMPT", {
+        "command": "GET_PROMPT",
+        "result": {"prompt_id": 1, "name": entry.name, "body": entry.body, "body_bytes": entry.body_bytes},
+    })
     assert not vm.prompt_device.status.is_busy
     assert vm.prompt_device.status.technical == ""
     editor = window._content.findChild(PromptLibraryEditor)
-    assert store.load(snapshot.identity["serial"]).draft_entry(4).body == "中文\nEnglish"
-    assert vm.prompt_library.confirmed_entry(4).body == "中文\nEnglish"
-    assert editor.findChild(QPushButton, "writePromptDevice").text() == (
+    assert vm.prompt_library.confirmed_entry(1).body == "中文\nEnglish"
+    assert not editor.findChild(QPushButton, "writePromptDevice").isEnabled()
+    assert editor.findChild(QLabel, "promptSyncState").text() == (
         "Saved to device" if language == "en_US"
-        else "本体に保存済み" if language == "ja_JP" else "已保存到设备"
+        else "本体に保存済み" if language == "ja_JP" else "已存进设备"
     )
-    assert editor.findChild(QPushButton, "deletePromptDevice").isVisible()
-    assert not editor.findChild(QPushButton, "discardPromptDraft").isVisible()
+    assert editor.findChild(QAction, "deletePromptDevice").isVisible()
+    assert not editor.findChild(QAction, "discardPromptDraft").isVisible()
     editor._body.setPlainText("未保存")
     assert editor.findChild(QLabel, "promptSyncState").text() == (
-        "Editing — not saved" if language == "en_US"
-        else "編集中・未保存" if language == "ja_JP" else "正在编辑，尚未保存"
+        "Changes not saved to device yet" if language == "en_US"
+        else "変更あり・本体に未保存" if language == "ja_JP" else "有修改，还没存进设备"
     )
-    assert editor.findChild(QPushButton, "discardPromptDraft").isVisible()
+    assert editor.findChild(QAction, "discardPromptDraft").isVisible()
     window._fit_window_to_available_area(QRect(0, 0, 900, 800))
     qtbot.wait(150)
     assert editor._body.toPlainText() == "未保存"
@@ -155,25 +126,30 @@ def test_existing_prompt_actions_distinguish_device_and_draft(qtbot, monkeypatch
     )
     qtbot.addWidget(editor)
     editor.show()
-    assert editor.findChild(QLabel, "promptQuickCount").text() == "设备已保存 1/4"
-    assert editor.findChild(QPushButton, "writePromptDevice").text() == "已保存到设备"
+    assert [editor._cross.state(prompt_id) for prompt_id in (1, 2, 3, 4)] == ["saved", "dirty", "empty", "empty"]
+    assert editor.findChild(QPushButton, "writePromptDevice").text() == "保存到设备"
+    assert editor.findChild(QLabel, "promptSyncState").text() == "已存进设备"
     assert not editor.findChild(QPushButton, "writePromptDevice").isEnabled()
-    assert editor.findChild(QPushButton, "deletePromptDevice").isVisible()
-    assert not editor.findChild(QPushButton, "deletePromptDraft").isVisible()
+    assert editor.findChild(QAction, "deletePromptDevice").isVisible()
+    assert not editor.findChild(QAction, "deletePromptDraft").isVisible()
     editor._body.setPlainText("尚未保存的输入")
-    assert editor.findChild(QPushButton, "writePromptDevice").text() == "保存更改到设备"
-    assert editor.findChild(QPushButton, "discardPromptDraft").isVisible()
-    monkeypatch.setattr(QMessageBox, "question", lambda *_: QMessageBox.StandardButton.Cancel)
-    editor.findChild(QPushButton, "refreshPromptDevice").click()
+    assert editor.findChild(QPushButton, "writePromptDevice").text() == "保存到设备"
+    assert editor.findChild(QLabel, "promptSyncState").text() == "有修改，还没存进设备"
+    assert editor.findChild(QPushButton, "writePromptDevice").isEnabled()
+    assert editor.findChild(QAction, "discardPromptDraft").isVisible()
+    answer_questions(monkeypatch, lambda *_: QMessageBox.StandardButton.Cancel)
+    editor.findChild(QPushButton, "promptStatusRefresh").click()
     assert calls == []
     assert editor._body.toPlainText() == "尚未保存的输入"
     editor._load_direction(2)
-    assert editor.findChild(QPushButton, "writePromptDevice").text() == "将草稿保存到设备"
-    assert editor.findChild(QPushButton, "deletePromptDraft").isVisible()
-    assert not editor.findChild(QPushButton, "deletePromptDevice").isVisible()
+    assert editor.findChild(QPushButton, "writePromptDevice").text() == "保存到设备"
+    assert editor.findChild(QLabel, "promptSyncState").text() == "有修改，还没存进设备"
+    assert editor.findChild(QAction, "deletePromptDraft").isVisible()
+    assert not editor.findChild(QAction, "deletePromptDevice").isVisible()
 
 
 def test_prompt_operation_demo_preserves_draft_and_never_sends(session, qtbot, monkeypatch):
+    """看演示 swaps the cross for the device and three steps; it never sends or edits."""
     window, vm, gateway, _snapshot, _store = session
     vm.navigate("prompts")
     window.show()
@@ -183,25 +159,34 @@ def test_prompt_operation_demo_preserves_draft_and_never_sends(session, qtbot, m
     editor._body.setPlainText("未保存正文")
     monkeypatch.setattr(
         "controller_config.views.prompt_library_editor.confirm_local_draft",
-        lambda *_: pytest.fail("模型演示不应离开当前编辑"),
+        lambda *_: pytest.fail("演示不应离开当前编辑"),
     )
-    canvas = editor.findChild(DeviceModelCanvas, "deviceModelCanvas")
+    editor.show_demo(True)
+    assert editor.findChild(QWidget, "promptOperationGuide").isVisible()
+    assert not editor.findChild(QWidget, "promptCrossPage").isVisible()
+    device = editor.findChild(DeviceTopView, "promptDemoDevice")
     steps = editor.findChildren(QPushButton, "promptOperationStep")
     assert [button.property("guideControl") for button in steps] == [
         "key.12", "joystick.up", "encoder.press"
     ]
     assert all(button.isVisible() and button.isEnabled() for button in steps)
-    assert editor.findChild(QWidget, "promptPaletteInstructions").isHidden()
+    marks = editor.findChildren(StepNumber, "promptStepNumber")
+    assert [mark.text() for mark in marks] == ["1", "2", "3"]
+    assert editor._demo_timer.interval() == 2000  # 每步亮 2.0 秒（design decision）
     commands = list(gateway.commands)
-    scroll = editor.verticalScrollBar().value()
-    for button, expected_control in zip(steps, ("key.12", "joystick", "encoder")):
+    for index, button in enumerate(steps):
         button.click()
-        assert canvas.selectedControlId == expected_control
+        assert button.property("current") is True
+        assert [mark.is_current() for mark in marks] == [position == index for position in range(3)]
+        # 第 1 步标 12 号键；第 2 步标摇杆（橙框＋朝上箭头）；第 3 步标旋钮（橙环＋变深）。
+        assert device.selected() == ("key.12" if index == 0 else None)
+        assert device.part_mark() == (None, "joystick.up", "encoder.press")[index]
         assert editor._selected_prompt_id() == 4
         assert editor._name.text() == "未保存名称"
         assert editor._body.toPlainText() == "未保存正文"
-        assert editor.verticalScrollBar().value() == scroll
         assert gateway.commands == commands
+    editor.findChild(QPushButton, "promptDemoBack").click()
+    assert editor.findChild(QWidget, "promptCrossPage").isVisible()
     editor._name.clear()
     editor._body.clear()
 
@@ -251,11 +236,74 @@ def test_prompt_operation_guide_matches_hardware(qtbot, hardware_id):
         assert [button.property("guideControl") for button in steps] == [
             "key.12", "joystick.up", "encoder.press"
         ]
-        assert "Key12" in guide_text or "12 号按键" in guide_text
+        assert "12 号键" in guide_text
         assert editor.findChild(QLabel, "promptDirectTriggerGuide") is None
     else:
         assert not steps
         assert editor.findChild(QLabel, "promptDirectTriggerGuide") is not None
         assert "Key12" not in guide_text and "12 号" not in guide_text
         assert "长按" not in guide_text
-        assert "直接触发" in guide_text
+        assert "拨一下就打出来" in guide_text
+
+
+def test_prompt_more_menu_and_save_button_follow_the_draft(session, qtbot, monkeypatch):
+    """「···」菜单照定稿 .menu；按不了的「保存到设备」是灰底浅字（design decision）。"""
+    window, vm, _gateway, _snapshot, _store = session
+    vm.navigate("prompts")
+    window.show()
+    editor = window._content.findChild(PromptLibraryEditor)
+    editor._select_direction(4)
+    editor._name.clear()
+    editor._body.clear()
+    qtbot.wait(50)
+
+    save = editor.findChild(QPushButton, "writePromptDevice")
+    assert not save.isEnabled()
+    assert save.height() == tokens.CONTROL_HEIGHT
+    assert save.grab().toImage().pixelColor(save.width() // 2, 3).name().upper() == tokens.PROMPT_SAVE_OFF
+    editor._name.setText("翻译成英文")
+    editor._body.setPlainText("请翻译")
+    assert save.isEnabled()
+    assert save.grab().toImage().pixelColor(save.width() // 2, 3).name().upper() == tokens.ACCENT
+
+    menu = editor._more_menu
+    assert isinstance(menu, Menu) and isinstance(editor._example_menu, Menu)
+    draft = editor.findChild(QAction, "deletePromptDraft")
+    device = editor.findChild(QAction, "deletePromptDevice")
+    assert draft.text() == "放弃这次修改"
+    device.setVisible(True)
+    device.setEnabled(True)
+    assert Menu.item_color(device) == tokens.MENU_TEXT_DANGER
+    actions = menu.actions()
+    assert actions[actions.index(device) - 1].isSeparator()  # 「从设备删除」上面一条细线
+    editor._discard_action.setVisible(True)
+    editor._discard_action.setEnabled(False)
+    assert Menu.item_color(editor._discard_action) == tokens.MENU_TEXT_DISABLED
+    editor._more_button.click()
+    qtbot.waitUntil(menu.isVisible)
+    card = menu.card_rect()
+    assert card.width() >= tokens.MENU_WIDTH
+    assert all(menu.actionGeometry(action).height() == tokens.MENU_ITEM_HEIGHT
+               for action in actions if action.isVisible() and not action.isSeparator())
+    menu.hide()
+
+    asked = []
+    monkeypatch.setattr("controller_config.views.prompt_library_editor.confirm",
+                        lambda _parent, title, text, *_a, **_k: asked.append((title, text)) or False)
+    editor._delete()
+    assert asked == [("放弃这次修改", "这台电脑上还没存进设备的修改会丢掉，设备里的内容不变。确定放弃吗？")]
+    editor._refresh_primary_action()
+    editor._name.clear()
+    editor._body.clear()
+
+
+def test_english_translate_example_button_is_short_and_keeps_the_prompt_name():
+    """design decision 第 3 件: the three example buttons are as wide as their words; the
+    English "translate" button says "To English" so the row fits (zh text unchanged)."""
+    from controller_config.text_catalog import get_text_catalog
+    from controller_config.views.prompt_library_editor import PROMPT_EXAMPLE_CHIPS
+    catalog = get_text_catalog()
+    short = PROMPT_EXAMPLE_CHIPS[1][0]
+    assert catalog.translate(short, "zh_CN") == "翻译成英文"
+    assert catalog.translate(short, "en_US") == "To English"
+    assert PROMPT_EXAMPLE_CHIPS[1][1] == "翻译成英文"   # the prompt's name stays
