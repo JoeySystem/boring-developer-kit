@@ -12,6 +12,8 @@
 | pytest / pytest-qt | 开发测试 | [pytest](https://github.com/pytest-dev/pytest/blob/main/LICENSE) / [pytest-qt](https://github.com/pytest-dev/pytest-qt/blob/master/LICENSE) |
 | setuptools | SDK 和控制台源码 wheel 构建 | [上游许可证](https://github.com/pypa/setuptools/blob/main/LICENSE) |
 
+新手引导里的图标来自 [Phosphor Icons](https://github.com/phosphor-icons/core)（MIT），许可文本随附在 `console/src/controller_config/assets/onboarding/icons/LICENSE`。
+
 准确依赖版本和平台条件见 [控制台 pyproject.toml](console/pyproject.toml) 与 [SDK pyproject.toml](sdk/python/pyproject.toml)。原生安装包工具所引入的依赖也需要保留其实际版本的许可；源码 wheel 构建与原生安装包交付是不同步骤。
 
 社区构建调用操作系统已有字体，不再分发内部 BORING 5R 字库或官方应用图标。系统字体的存在不授予提取、打包或再分发字体文件的权利。

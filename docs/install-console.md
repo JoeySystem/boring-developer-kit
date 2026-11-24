@@ -1,11 +1,13 @@
 # Console 安装包下载
 
-当前官方版本：macOS **0.2.3**，Windows **0.2.1**。
+当前官方版本 **0.3.0**，安装包在 GitHub Release [console-v0.3.0](https://github.com/JoeySystem/boring-developer-kit/releases/tag/console-v0.3.0)：
 
-- [macOS Apple Silicon DMG 0.2.1](https://github.com/JoeySystem/boring-developer-kit/releases/download/v0.1.0-preview.10/BORING-Console-0.2.1-macOS-arm64.dmg)：安装后应用会通过官方更新源自动升到 0.2.3（修复蓝牙连接时配置较多会读取超时的问题），已装 0.2.1 的 Mac 同样会自动收到。
-- [Windows x86_64 Setup EXE 0.2.1](https://github.com/JoeySystem/boring-developer-kit/releases/download/v0.1.0-preview.10/BORING-Console-0.2.1-Windows-x86_64-Setup.exe)：Windows 暂无 0.2.3；遇到蓝牙读配置超时时请先用 USB 连接。
+- [macOS Apple Silicon DMG](https://github.com/JoeySystem/boring-developer-kit/releases/download/console-v0.3.0/BORING-Console-0.3.0-macOS-arm64.dmg)：M 系列芯片，macOS 13 及以上，不适用于 Intel Mac。
+- [Windows 64 位安装包 EXE](https://github.com/JoeySystem/boring-developer-kit/releases/download/console-v0.3.0/BORING-Console-0.3.0-Windows-x86_64-Setup.exe)：Windows 10 1809 及以上或 Windows 11，仅 x64。
 
-这是官方安装版，与本仓库社区构建分别交付。当前包尚无正式平台签名，系统可能提示未知开发者或发布者。macOS 更新后如快捷键无反应，请在“系统设置 → 隐私与安全性 → 辅助功能”中移除旧 BORING 条目，重新添加应用，再退出并重开控制台。Windows 0.2.1 已验证公开下载与更新签名，本轮未进行 Windows 实机安装测试。
+已装 0.2.x 的电脑会在软件内收到 0.3.0 更新。配套固件为 20261123.01（20261118.01 也可用），固件更新需要 USB 数据线。
+
+这是官方安装版，与本仓库社区构建分别交付。Mac 包为自签名、未经 Apple 公证，首次打开被拦时到“系统设置 → 隐私与安全性”点“仍要打开”；Windows 安装包没有代码签名，SmartScreen 提示时点“更多信息 → 仍要运行”。已知限制见 Release 说明。
 
 下面保留 0.1.13 的历史安装记录，仅供查阅。
 

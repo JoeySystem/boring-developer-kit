@@ -25,7 +25,7 @@ TOOL = Path(__file__).resolve().parents[2] / 'firmware/tools/pack_custom_firmwar
 
 
 def custom_manifest(tmp_path, contract):
-    path = _write_package(tmp_path, contract, build_id='custom-joey-20260912.01')
+    path = _write_package(tmp_path, contract, build_id='custom-demo-20260912.01')
     raw = json.loads(path.read_text())
     image = path.parent / raw['image']
     data = bytearray(image.read_bytes())
@@ -48,7 +48,7 @@ def test_packager_roundtrip_and_no_overwrite(tmp_path, contract):
     assert package.manifest['origin'] == 'custom'
     assert package.manifest['validation_state'] == 'built'
     assert 'signature' not in package.manifest
-    assert package.build_id == 'custom-joey-20260912.01'
+    assert package.build_id == 'custom-demo-20260912.01'
     original = output.read_bytes()
     assert subprocess.run(args, capture_output=True).returncode != 0
     assert output.read_bytes() == original
@@ -82,7 +82,7 @@ def test_official_import_requires_signature_and_never_falls_back(tmp_path, contr
 
 def test_custom_build_not_compared_as_official_even_with_higher_offer(contract):
     snapshot = _power_v2_snapshot(contract, read_only=False)
-    snapshot = replace(snapshot, versions={**snapshot.versions, 'build_id':'custom-joey-1'})
+    snapshot = replace(snapshot, versions={**snapshot.versions, 'build_id':'custom-demo-1'})
     release = RemoteFirmwareRelease(dict(version='999.0.0',build_id='20260912.05-gabc'), '', '')
     with pytest.raises(FirmwareReleaseError, match='自定义固件'):
         release_is_newer(release, snapshot)
@@ -134,7 +134,7 @@ def test_custom_install_needs_confirmation_and_keeps_existing_pipeline(qtbot, co
 def test_official_restoration_requires_confirmation(qtbot, contract, tmp_path, monkeypatch):
     gateway = FirmwareGateway();vm = MainViewModel(gateway, contract)
     snapshot = _power_v2_snapshot(contract, read_only=False)
-    gateway.snapshot_ready.emit(replace(snapshot, versions={**snapshot.versions,'build_id':'custom-joey-1'}))
+    gateway.snapshot_ready.emit(replace(snapshot, versions={**snapshot.versions,'build_id':'custom-demo-1'}))
     window = MainWindow(vm);qtbot.addWidget(window)
     vm.load_firmware_package(_package(tmp_path, contract))
     dialogs=[]
@@ -171,7 +171,7 @@ def test_custom_device_never_shows_cached_official_current_status(qtbot, contrac
     from controller_config.firmware_release import RemoteFirmwareCheck, RemoteFirmwareState
     gateway = FirmwareGateway(); vm = MainViewModel(gateway, contract)
     snapshot = _power_v2_snapshot(contract, read_only=False)
-    gateway.snapshot_ready.emit(replace(snapshot, versions={**snapshot.versions,'build_id':'custom-joey-1'}))
+    gateway.snapshot_ready.emit(replace(snapshot, versions={**snapshot.versions,'build_id':'custom-demo-1'}))
     window = MainWindow(vm); qtbot.addWidget(window)
     vm._remote_firmware = RemoteFirmwareCheck(state=RemoteFirmwareState.CURRENT, message='已是最新版本')
     vm.navigate('firmware'); window.show()

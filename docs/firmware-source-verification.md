@@ -1,5 +1,11 @@
 # 固件源码公开验证
 
+## 20261123.01 · Power V2 样机权威包与公开应用源码
+
+日期：2026-11-24。官方维护 ZIP `Firmware-BORING-20261123.01.zip`（SHA-256 `2f1233e9…1d31e7`）的 Build ID 为 `20261123.01-ga7323e48`，等于 20261118.01 加功能中心 SETTINGS 截字修复（只改 `components/board/mist_glyph_pages.c`）。公开文件与私有 `a7323e48` 的该文件逐字节一致。
+
+在打过配对保留补丁的 ESP-IDF 6.0.2 下，从干净的公开提交构建 `matrix12-power-v2-codex-usb --custom-name pubsync` 成功，0 条编译警告，只生成 `custom-` 包。固件主机测试 511 项通过。本轮没有用公开源码刷写实体设备；官方包的样机验收范围见[维护包说明](official-firmware-20261123.01.md)。
+
 ## 20261118.01 · Power V2 样机权威包与公开应用源码
 
 日期：2026-11-23。官方维护 ZIP `Firmware-BORING-20261118.01.zip`（SHA-256 `7358fae4…dc86e`）的 Build ID 为 `20261118.01-gf1f54815`，目标硬件 `WMP-S3-MATRIX12-POWER-V2`。用公开的 0.2.3 控制台代码加载该 ZIP，镜像内容、设备标识和发布签名校验通过，结果为 `official / sample-verified`。

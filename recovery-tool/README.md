@@ -1,6 +1,6 @@
 # BORING MIST 固件更新与校准工具
 
-适用于 WMP-S3-MATRIX12-POWER-V2（BORING MIST）。内置官方签名固件 **20261118.01-gf1f54815**，有 Apple 芯片 Mac 和 Windows 64 位两个版本。
+适用于 WMP-S3-MATRIX12-POWER-V2（BORING MIST）。官方打包版（run37）内置签名固件 **20261118.01-gf1f54815**，有 Apple 芯片 Mac 和 Windows 64 位两个版本。目前没有内置 20261123.01 的新打包；用完工具后可在 Console 0.3.0 的固件页升到 20261123.01（只多 SETTINGS 文字截断修复）。
 
 [下载 Mac / Windows 版](https://github.com/JoeySystem/boring-developer-kit/releases/tag/mist-recovery-20261118.01) · [故障排查](TROUBLESHOOTING.md) · [交给 AI 的提示词](AI-RECOVERY-PROMPT.md)
 
@@ -35,13 +35,13 @@
 
 ## 源码运行与构建
 
-需要 Python 3.12 或 3.13。工具运行时要一份完整的固件包目录（含 `bootloader/`、`partition_table/`、`ota_data_initial.bin`、应用镜像、`firmware-manifest.json`，以及 `online/` 下带发布签名的 `Firmware-BORING-*.zip`），从 Release 的 `BORING-MIST-20261118.01-firmware-package.zip` 解压得到 `matrix12-power-v2-20261118.01-sample-verified/` 目录。
+需要 Python 3.12 或 3.13。工具运行时要一份完整的固件包目录（含 `bootloader/`、`partition_table/`、`ota_data_initial.bin`、应用镜像、`firmware-manifest.json`，以及 `online/` 下带发布签名的 `Firmware-BORING-*.zip`），从[固件 Release](https://github.com/JoeySystem/boring-developer-kit/releases/tag/firmware-20261123.01) 的 `BORING-MIST-20261123.01-firmware-package.zip` 解压得到 `matrix12-power-v2-20261123.01-sample-verified/` 目录；这样从源码运行或自己打包的工具会写入 20261123.01。
 
 ```sh
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements-authority-update.txt
 .venv/bin/python packaging/macos/prepare_bundle.py --tool-root . --output . \
-  --authority /path/to/matrix12-power-v2-20261118.01-sample-verified
+  --authority /path/to/matrix12-power-v2-20261123.01-sample-verified
 .venv/bin/python authority_update_app.py
 ```
 

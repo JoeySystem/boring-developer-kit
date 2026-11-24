@@ -12,7 +12,7 @@
 
 下载并解压 [preview.11 源码开发包](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.11)，按 [console/README.md](console/README.md) 安装 Python 依赖，运行 `python -m controller_config --demo ready`。请保留开发包完整目录，特别是 `protocol/` 和 `sdk/`。
 
-社区源码对应 Console 0.2.3，使用独立设置、系统字体和简化设备示意，不附官方品牌动画或产品模型。源码运行不需要生产凭据，不加入官方软件更新渠道。
+社区源码对应 Console 0.3.0，使用独立设置、系统字体和简化设备示意，不附官方品牌动画、连接动画、产品模型或豆包联动。源码运行不需要生产凭据，不加入官方软件更新渠道。
 
 ## 编写扩展
 
@@ -20,6 +20,6 @@
 
 ## 固件
 
-`firmware/` 对应官方签名固件 20261118.01 的应用源码。编译 Power V2 蓝牙目标前要先给 ESP-IDF 6.0.2 打[配对保留补丁](firmware/BLE-BOND-PATCH.md)。源码 ZIP 不能当作维护包导入。请先阅读 [DIY 边界](firmware/DIY-GUIDE.md)。
+`firmware/` 对应官方签名固件 20261123.01 的应用源码。编译 Power V2 蓝牙目标前要先给 ESP-IDF 6.0.2 打[配对保留补丁](firmware/BLE-BOND-PATCH.md)。源码 ZIP 不能当作维护包导入。请先阅读 [DIY 边界](firmware/DIY-GUIDE.md)。
 
-原创部分使用 [非商业许可](LICENSING.md)。验证与已知限制见 [本次记录](docs/verification-sync-20261123.md)。
+原创部分使用 [非商业许可](LICENSING.md)。验证与已知限制见 [本次记录](docs/verification-sync-20261124.md)。
