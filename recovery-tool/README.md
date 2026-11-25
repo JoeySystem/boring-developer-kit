@@ -1,8 +1,8 @@
 # BORING MIST 固件更新与校准工具
 
-适用于 WMP-S3-MATRIX12-POWER-V2（BORING MIST）。官方打包版（run37）内置签名固件 **20261118.01-gf1f54815**，有 Apple 芯片 Mac 和 Windows 64 位两个版本。目前没有内置 20261123.01 的新打包；用完工具后可在 Console 0.3.0 的固件页升到 20261123.01（只多 SETTINGS 文字截断修复）。
+适用于 WMP-S3-MATRIX12-POWER-V2（BORING MIST）。官方打包版 **20261123.01** 内置签名固件 **20261123.01-ga7323e48**，有 Apple 芯片 Mac 和 Windows 64 位两个版本。
 
-新版 Mac / Windows 工具正在准备公开发布（内置 20261123.01），发布后链接放在这里；急用请先看[旧版 USB 恢复工具 20261007.01](https://github.com/JoeySystem/boring-developer-kit/releases/tag/mist-recovery-20261007.01)（仅 Apple 芯片 Mac，只写入固件） · [故障排查](TROUBLESHOOTING.md) · [交给 AI 的提示词](AI-RECOVERY-PROMPT.md)
+[下载 Mac / Windows 版](https://github.com/JoeySystem/boring-developer-kit/releases/tag/mist-recovery-20261123.01) · [故障排查](TROUBLESHOOTING.md) · [交给 AI 的提示词](AI-RECOVERY-PROMPT.md)
 
 ## 它会做什么
 
@@ -21,7 +21,7 @@
 2. 用支持数据传输的 USB 线连接一台**正常开机**的 BORING MIST。
 3. Mac：解压 ZIP，打开 `BORING-MIST-BLE-Recovery.app`；首次被系统拦截时右键选“打开”。Windows：把整个 ZIP 解压到短路径（例如 `C:\BORING`），打开文件夹里的 `BORING-MIST-BLE-Recovery.exe`，不要把 EXE 单独拖出来。
 4. 窗口显示“已识别 1 台 BORING MIST”后点“开始更新”，按提示完成摇杆校准。
-5. 看到“本台已完成”即可拔线。ZIP 里另附 `Firmware-BORING-20261118.01.zip`，换电脑使用时可在 BORING Console 的“导入官方固件”里选它，让 Console 显示官方固件。
+5. 看到“本台已完成”即可拔线。ZIP 里另附 `Firmware-BORING-20261123.01.zip`，换电脑使用时可在 BORING Console 的“导入官方固件”里选它，让 Console 显示官方固件。
 
 同一时间只能开一个工具窗口，一次只接一台设备。固件写入期间窗口无法关闭。
 
@@ -30,7 +30,8 @@
 - 需要设备能正常开机，并能通过 USB 数据通道通信。屏幕不亮、只有灯闪时可以先试，但完全没有 USB 响应的设备无法靠电脑端工具救回，请联系售后。
 - 校准期间关闭窗口：工具会先取消未保存的校准再退出，设备保留原配置。
 - Mac 版为本地临时签名，未做 Apple 公证；Windows 版未做程序签名，首次运行出现 SmartScreen 提示时选“仍要运行”。这与固件的 BORING 官方发布签名是两回事。
-- 20261118.01 是样机权威包（sample-verified），已在 Power V2 样机上通过 Console 导入和旧版升级验证；不代表所有设备、平台和长期运行都已验收。
+- 20261123.01 是样机权威包（sample-verified），已在 Power V2 样机上通过 Console 导入和从 20261118.01 经 USB 升级验证；不代表所有设备、平台和长期运行都已验收。
+- ZIP 内附 `THIRD-PARTY-NOTICES.txt` 和 `licenses/`，列出打包进程序的第三方组件（Python、pyserial、pywebview、PyInstaller 等）及其许可原文。
 - 操作记录保存在本机：Mac 为 `~/Library/Application Support/Codex Micro Firmware Provisioner/history`，Windows 为 `%LOCALAPPDATA%\Codex Micro Firmware Provisioner\history`，不会自动上传。
 
 ## 源码运行与构建

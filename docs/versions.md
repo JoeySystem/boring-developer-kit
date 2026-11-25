@@ -7,7 +7,7 @@
 | SDK / 本地扩展 API | 1.1.0 / 1.1，兼容原有 API 1.0 用法 |
 | 官方安装包 | 0.3.0（macOS arm64、Windows x86_64），见 [console-v0.3.0](https://github.com/JoeySystem/boring-developer-kit/releases/tag/console-v0.3.0) |
 | 固件源码 | 20261123.01-ga7323e48 应用源码（样机权威包，sample-verified），见 [来源](../firmware/SOURCE.md) |
-| 固件更新与校准工具 | run37，内置固件 20261118.01（Apple 芯片 Mac、Windows x64），见 [工具说明](../recovery-tool/README.md) |
+| 固件更新与校准工具 | 20261123.01，内置固件 20261123.01-ga7323e48（Apple 芯片 Mac、Windows x64），见 [工具说明](../recovery-tool/README.md) |
 | Python / Qt | Python >=3.12,<3.14；PySide6 6.11.1；本次使用 macOS / Python 3.12 |
 
 控制台、SDK、固件与开发包分别编号。新版 SDK 不代表设备支持全部新功能；控制台依据设备报告的能力开放操作。固件源码 ZIP、官方签名维护 ZIP、控制台安装包用途不同，不能互相导入。
@@ -16,4 +16,4 @@
 
 本轮公开源码没有新增 Windows 安装、实体按键、BLE 重连、固件刷写或长期压力验收；固件 20261123.01 的样机验收来自官方包本身。此前官方安装版的历史结果不能代替社区构建验收。详见 [本次验证](verification-sync-20261124.md) 和 [历史记录](verification.md)。
 
-[preview.11 Release](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.11) 提供完整源码开发包、SDK wheel 和四个示例 ZIP；[固件 Release](https://github.com/JoeySystem/boring-developer-kit/releases/tag/firmware-20261123.01) 提供官方签名固件 ZIP 和完整固件包；新版 Mac / Windows 工具正在准备公开发布（旧版 USB 恢复工具见 [20261007.01](https://github.com/JoeySystem/boring-developer-kit/releases/tag/mist-recovery-20261007.01)）；安装包在 [console-v0.3.0](https://github.com/JoeySystem/boring-developer-kit/releases/tag/console-v0.3.0)。历史官方固件维护包仍在原 Release。
+[preview.11 Release](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.11) 提供完整源码开发包、SDK wheel 和四个示例 ZIP；[固件 Release](https://github.com/JoeySystem/boring-developer-kit/releases/tag/firmware-20261123.01) 提供官方签名固件 ZIP 和完整固件包；[工具 Release](https://github.com/JoeySystem/boring-developer-kit/releases/tag/mist-recovery-20261123.01) 提供 Mac / Windows 工具；安装包在 [console-v0.3.0](https://github.com/JoeySystem/boring-developer-kit/releases/tag/console-v0.3.0)。历史官方固件维护包仍在原 Release。
