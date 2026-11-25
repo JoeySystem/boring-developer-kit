@@ -8,10 +8,11 @@ from __future__ import annotations
 import math
 
 from PySide6.QtCore import QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import QFrame, QWidget
 
 from controller_config.appearance import V4_RADIUS, V4_TOKENS
+from controller_config.style import tokens
 
 
 class V4Card(QFrame):
@@ -40,7 +41,7 @@ class V4Card(QFrame):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         focus = self._role == "focus"
         body = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
-        colour = V4_TOKENS["focus"] if focus else "#242320" if self._role == "widget" else V4_TOKENS["baseDark"]
+        colour = V4_TOKENS["focus"] if focus else tokens.SURFACE_WIDGET if self._role == "widget" else V4_TOKENS["baseDark"]
         painter.setBrush(QColor(colour))
         edge = QColor(V4_TOKENS["information"])
         edge.setAlpha(16)
@@ -77,78 +78,6 @@ class V4Card(QFrame):
             painter.drawPixmap(0, 0, self._dot_layer)
         painter.setPen(QPen(QColor(255, 255, 255, 46 if focus else 31), 1))
         painter.drawLine(body.left() + V4_RADIUS, body.top() + 1, body.right() - V4_RADIUS, body.top() + 1)
-
-
-class UsageRings(QWidget):
-    """Concentric, clockwise remaining quota: seven-day outer/five-hour inner."""
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.seven_day: float | None = None
-        self.five_hour: float | None = None
-        self._labels = ("7D", "5H")
-        # The surrounding card may compress vertically in a short window.
-        # Keep the dial's layout box square so the quota meter never appears
-        # stretched or clipped during responsive relayouts.
-        self.setFixedSize(self.sizeHint())
-        self.set_usage(seven_day=None, five_hour=None)
-
-    def sizeHint(self) -> QSize:
-        return QSize(112, 112)
-
-    def set_labels(self, seven_day: str, five_hour: str) -> None:
-        self._labels = (seven_day, five_hour)
-        self._update_accessibility()
-        self.update()
-
-    def set_usage(self, *, seven_day: float | None, five_hour: float | None) -> None:
-        def percent(value):
-            if value is None:
-                return None
-            if not math.isfinite(value) or not 0 <= value <= 100:
-                raise ValueError("Remaining quota must be between 0 and 100, or None")
-            return float(value)
-        self.seven_day = percent(seven_day)
-        self.five_hour = percent(five_hour)
-        self._update_accessibility()
-        self.update()
-
-    @staticmethod
-    def _text(value: float | None) -> str:
-        return "—" if value is None else f"{value:g}%"
-
-    def _update_accessibility(self) -> None:
-        self.setAccessibleName(f"{self._labels[0]} {self._text(self.seven_day)} · {self._labels[1]} {self._text(self.five_hour)}")
-        self.setToolTip(self.accessibleName())
-
-    def paintEvent(self, event) -> None:
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        side = min(self.width(), self.height(), 140)
-        painter.translate((self.width() - side) / 2, (self.height() - side) / 2)
-        painter.scale(side / 112, side / 112)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        for inset, value, name in ((6, self.seven_day, "information"), (20, self.five_hour, "agent")):
-            rect = QRectF(inset, inset, 112 - inset * 2, 112 - inset * 2)
-            track = QColor(V4_TOKENS[name])
-            track.setAlpha(41)
-            painter.setPen(QPen(track, 9, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-            painter.drawEllipse(rect)
-            if value is not None and value > 0:
-                painter.setPen(QPen(QColor(V4_TOKENS[name]), 9, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-                if value == 100:
-                    painter.drawEllipse(rect)
-                else:
-                    painter.drawArc(rect, 90 * 16, -round(value / 100 * 360 * 16))
-        painter.setPen(QColor(V4_TOKENS["information"]))
-        font = QFont(self.font())
-        font.setPixelSize(16)
-        font.setWeight(QFont.Weight.DemiBold)
-        painter.setFont(font)
-        painter.drawText(QRectF(28, 38, 56, 22), Qt.AlignmentFlag.AlignCenter, self._text(self.seven_day))
-        font.setPixelSize(10)
-        painter.setFont(font)
-        painter.setPen(QColor(V4_TOKENS["muted"]))
-        painter.drawText(QRectF(28, 59, 56, 16), Qt.AlignmentFlag.AlignCenter, self._labels[0])
 
 
 # Candidate geometric marks from the handoff descriptions, not font glyphs or

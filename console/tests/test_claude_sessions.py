@@ -95,6 +95,57 @@ def test_subagent_end_cannot_complete_main_but_known_subagent_keeps_stop_working
     assert registry.states()[0] == "completed"
 
 
+def test_main_session_running_only_a_subagent_stays_working_past_120_seconds() -> None:
+    # H19: the main agent waits on a subagent for 5 minutes; only the
+    # subagent's own tool hooks arrive. The light must keep showing working.
+    registry = ClaudeSessionRegistry(owner_alive=lambda _pid, _started: True)
+    registry.consume(event("UserPromptSubmit", owner_pid=41, owner_started=1.0), now=0)
+    registry.consume(event("PreToolUse", tool_name="Task"), now=1)
+    registry.consume(event("SubagentStart", agent_id="child"), now=2)
+    for second in range(30, 300, 30):
+        registry.consume(event("PreToolUse", agent_id="child", tool_name="Read"), now=second)
+        registry.expire(now=second + 20)
+        assert registry.states()[0] == "working"
+    registry.expire(now=300)
+    assert registry.states()[0] == "working"
+    assert not registry.sessions[0].stale
+    registry.consume(event("SubagentStop", agent_id="child"), now=310)
+    registry.consume(event("Stop", stop_hook_active=False), now=311)
+    assert registry.states()[0] == "completed"
+
+
+def test_subagent_start_and_stop_alone_renew_main_session() -> None:
+    registry = ClaudeSessionRegistry(owner_alive=lambda _pid, _started: True)
+    registry.consume(event("UserPromptSubmit", owner_pid=41, owner_started=1.0), now=0)
+    registry.consume(event("SubagentStart", agent_id="a"), now=100)
+    registry.expire(now=200)
+    assert registry.states()[0] == "working"
+    registry.consume(event("SubagentStop", agent_id="a"), now=210)
+    registry.expire(now=320)
+    assert registry.states()[0] == "working"
+
+
+def test_silent_subagent_still_lets_working_go_idle_and_activity_brings_it_back() -> None:
+    # No light stuck forever: a subagent quiet for 120 s is treated like a
+    # quiet main agent. Its next hook shows the session is working again.
+    registry = ClaudeSessionRegistry(owner_alive=lambda _pid, _started: True)
+    registry.consume(event("UserPromptSubmit", owner_pid=41, owner_started=1.0), now=0)
+    registry.consume(event("SubagentStart", agent_id="child"), now=1)
+    registry.expire(now=121)
+    assert registry.states()[0] == "idle" and registry.sessions[0].stale
+    registry.consume(event("PostToolUse", agent_id="child", tool_name="Bash"), now=130)
+    assert registry.states()[0] == "working"
+    assert registry.sessions[0].reason == "subagent_activity"
+    assert not registry.sessions[0].stale
+
+
+def test_subagent_hooks_of_unknown_session_create_nothing() -> None:
+    registry = ClaudeSessionRegistry()
+    registry.consume(event("PreToolUse", "ghost", agent_id="child"), now=0)
+    registry.consume(event("SubagentStart", "ghost", agent_id="child"), now=1)
+    assert not registry.sessions and not registry.overflow
+
+
 def test_repeated_hooks_do_not_change_snapshot_or_slot_owner() -> None:
     registry = ClaudeSessionRegistry()
     registry.consume(event("PermissionRequest"), now=0)
@@ -121,11 +172,15 @@ def test_child_hooks_do_not_complete_release_or_replace_main_session_state() -> 
     registry.consume(event("PermissionRequest"), now=0)
     for hook in ("Stop", "StopFailure", "SessionEnd", "PostToolUse", "PreToolUse"):
         update = registry.consume(event(hook, agent_id="child"), now=1)
-        assert not update.changed
+        assert update.states[0] == "approval"
+        assert update.owner_changed_slots == () and update.cleared_slots == ()
+    # Child hooks only prove the main session is alive (H19); malformed
+    # subagent events without an agent id do not even do that.
+    assert registry.sessions[0].last_event_at == 1
     for hook in ("SubagentStart", "SubagentStop"):
         registry.consume(event(hook), now=2)
     assert registry.states()[0] == "approval"
-    assert registry.sessions[0].last_event_at == 0
+    assert registry.sessions[0].last_event_at == 1
 
 
 def test_seventh_session_waits_and_reuse_requires_an_idle_ack() -> None:
@@ -195,6 +250,54 @@ def test_live_process_does_not_keep_stale_working_after_unreported_interrupt() -
     assert registry.states()[0] == "working"
     assert not registry.sessions[0].stale
     assert registry.sessions[0].owner_pid == 41
+
+
+@pytest.mark.parametrize("hook,fields,state", [
+    ("Stop", {"stop_hook_active": False}, "completed"),
+    ("PermissionRequest", {}, "approval"),
+    ("Notification", {"notification_type": "permission_prompt"}, "approval"),
+    ("PreToolUse", {"tool_name": "AskUserQuestion"}, "reply"),
+    ("Notification", {"notification_type": "elicitation_dialog"}, "reply"),
+])
+def test_states_waiting_for_the_user_do_not_expire_while_owner_lives(hook, fields, state) -> None:
+    owners = {(41, 1.25): True}
+    registry = ClaudeSessionRegistry(owner_alive=lambda pid, started: owners[(pid, started)])
+    registry.consume(event(hook, owner_pid=41, owner_started=1.25, **fields), now=0)
+    assert registry.states()[0] == state
+    registry.expire(now=120)
+    registry.expire(now=3600)
+    assert registry.states()[0] == state
+    assert not registry.sessions[0].stale
+    # The next event of the same session moves it on.
+    registry.consume(event("UserPromptSubmit"), now=3601)
+    assert registry.states()[0] == "working"
+    registry.consume(event(hook, **fields), now=3602)
+    registry.consume(event("SessionEnd"), now=3603)
+    assert registry.states()[0] == "idle" and not registry.sessions
+    registry.consume(event(hook, "other", owner_pid=41, owner_started=1.25, **fields), now=3604)
+    owners[(41, 1.25)] = False
+    registry.expire(now=3605)
+    assert not registry.sessions
+    assert registry.last_cleared_reason == "owner_exited"
+
+
+def test_working_still_goes_idle_after_120_seconds_while_approval_stays() -> None:
+    registry = ClaudeSessionRegistry(owner_alive=lambda _pid, _started: True)
+    registry.consume(event("UserPromptSubmit", "busy", owner_pid=41, owner_started=1.0), now=0)
+    registry.consume(event("PermissionRequest", "asks", owner_pid=42, owner_started=2.0), now=0)
+    registry.expire(now=120)
+    assert registry.states()[:2] == ("idle", "approval")
+    assert registry.sessions[0].reason == "stale_no_events"
+
+
+def test_approval_without_reliable_owner_keeps_original_release_rule() -> None:
+    registry = ClaudeSessionRegistry()
+    registry.consume(event("PermissionRequest"), now=0)
+    registry.expire(now=119)
+    assert registry.states()[0] == "approval"
+    registry.expire(now=120)
+    assert not registry.sessions
+    assert registry.last_cleared_reason == "stale_owner_unknown"
 
 
 def test_unreliable_owner_expires_and_does_not_permanently_occupy_six_slots() -> None:

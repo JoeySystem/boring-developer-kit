@@ -22,17 +22,19 @@ def stage(assets: Path, bundle: Path | None = None) -> None:
         raise ValueError('macOS packaging requires an explicit official or custom build origin') from exc
     if origin not in {'official', 'custom'}:
         raise ValueError('macOS packaging requires an explicit official or custom build origin')
+    # Internal development package: updates stay off, whatever the environment.
+    dev = json.loads(identity_path.read_text(encoding='utf-8')).get('dev') is not None
 
     source = assets / 'app-update-source.json'
     config = json.loads(source.read_text(encoding='utf-8-sig'))
     mac = config['macos']
-    if origin == 'custom':
+    if origin == 'custom' or dev:
         if mac.get('feed_url') or mac.get('public_key'):
             raise ValueError(
-                'Custom macOS update configuration must be cleared by stage_app_build.py'
+                'Custom or development macOS update configuration must be cleared by stage_app_build.py'
             )
     configured_key = mac['public_key']
-    if origin == 'official':
+    if origin == 'official' and not dev:
         mac['feed_url'] = os.environ.get('BORING_MACOS_UPDATE_FEED_URL', mac['feed_url']).strip()
         mac['public_key'] = os.environ.get('BORING_MACOS_UPDATE_PUBLIC_KEY', mac['public_key']).strip()
     if configured_key and mac['public_key'] != configured_key:
@@ -41,7 +43,7 @@ def stage(assets: Path, bundle: Path | None = None) -> None:
     channel = mac.get('channel', 'stable')
     if channel not in {'trial', 'stable'}:
         raise ValueError('macOS update channel must be trial or stable')
-    if origin == 'official' and channel == 'trial' and not enabled:
+    if origin == 'official' and not dev and channel == 'trial' and not enabled:
         raise ValueError('Trial macOS updates require a feed URL and public key')
     framework = os.environ.get('BORING_SPARKLE_FRAMEWORK', '')
     if enabled:

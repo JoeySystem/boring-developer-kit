@@ -10,6 +10,7 @@ from controller_config.views.actions import ActionsPage
 from controller_config.workflow_runtime import WorkflowRunLog
 from controller_config.workflows import LocalWorkflow, WorkflowStep, WorkflowStore
 from test_workflow_ui import FakeHostServices
+from notice_helpers import answer_questions
 
 
 def workspace(qtbot, contract, tmp_path):
@@ -80,11 +81,11 @@ def test_cancel_switching_action_retains_unsaved_fields(qtbot, contract, tmp_pat
     editor = page._workflow_page
     editor._name.setText("正在编辑")
     page._back.click()
-    monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.Cancel)
+    answer_questions(monkeypatch, lambda *a, **kw: QMessageBox.Cancel)
     page._my_actions._edit.click()
     assert page._stack.currentIndex() == ActionsPage.MY_ACTIONS
     assert editor._name.text() == "正在编辑"
-    monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.Discard)
+    answer_questions(monkeypatch, lambda *a, **kw: QMessageBox.Discard)
     page._my_actions._edit.click()
     assert page._stack.currentIndex() == ActionsPage.EDIT_ACTION
     assert editor._selected_id == saved.workflow_id
@@ -133,11 +134,11 @@ def test_script_new_draft_is_not_lost_when_opening_saved_script(qtbot, contract,
     editor._new_definition()
     editor._name.setText("未保存的新脚本")
     page._back.click()
-    monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.Cancel)
+    answer_questions(monkeypatch, lambda *a, **kw: QMessageBox.Cancel)
     page._my_actions._edit.click()
     assert editor._name.text() == "未保存的新脚本"
     assert page._stack.currentIndex() == ActionsPage.MY_ACTIONS
-    monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.Discard)
+    answer_questions(monkeypatch, lambda *a, **kw: QMessageBox.Discard)
     page._my_actions._edit.click()
     assert editor._selected_id == "a"
     assert editor._name.text() == "已保存脚本"

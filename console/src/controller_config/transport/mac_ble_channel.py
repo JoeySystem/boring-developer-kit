@@ -4,13 +4,14 @@ Subscribe through CoreBluetooth instead of Qt's descriptor-value discovery,
 which can time out on the HID + WMP peripheral despite a valid CCCD.
 The existing SerialWorker still owns framing, authentication and readback.
 """
+import threading
 from collections import deque
 
 import CoreBluetooth as CB
 import objc
 from dispatch import dispatch_queue_create, DISPATCH_QUEUE_SERIAL
 from Foundation import NSData, NSObject
-from PySide6.QtCore import QByteArray, QEventLoop, QObject, QTimer, QUuid, Signal, Slot, Qt
+from PySide6.QtCore import QByteArray, QObject, QTimer, QUuid, Signal, Slot, Qt
 from PySide6.QtSerialPort import QSerialPort
 
 SERVICE = "7e2f0001-7a91-4a5b-9c2d-6e8f4b524731"
@@ -50,6 +51,11 @@ class _WmpPeripheralDelegate(NSObject):
         self._dispatch("_characteristics_ready", peripheral, service, error)
 
     def peripheral_didUpdateNotificationStateForCharacteristic_error_(self, peripheral, characteristic, error):
+        # Runs on the CoreBluetooth serial queue: wake a close() waiting for
+        # the unsubscribe acknowledgement without needing a Qt event loop.
+        stopped = getattr(self, "unsubscribed", None)
+        if stopped is not None and (error is not None or not characteristic.isNotifying()):
+            stopped.set()
         self._dispatch("_subscription_ready", characteristic, error)
 
     def peripheral_didUpdateValueForCharacteristic_error_(self, peripheral, characteristic, error):
@@ -247,19 +253,6 @@ class MacBleChannel(QObject):
         self._incoming.extend(bytes(characteristic.value() or b"") if data is None else data)
         self._response_batch.start()
 
-    def waitForBytesWritten(self, timeout_ms):
-        if not self._chunks and not self._inflight:
-            return True
-        loop = QEventLoop()
-        deadline, poll = QTimer(), QTimer()
-        deadline.setSingleShot(True)
-        deadline.timeout.connect(loop.quit)
-        poll.timeout.connect(lambda: loop.quit() if self._closing or (not self._chunks and not self._inflight) else None)
-        poll.start(5)
-        deadline.start(max(0, timeout_ms))
-        loop.exec()
-        return not self._chunks and not self._inflight and not self._error
-
     def _fail(self, message, error=None):
         if self._closing:
             return
@@ -280,16 +273,15 @@ class MacBleChannel(QObject):
         if self._subscribed and self._peripheral is not None and self._tx is not None:
             # macOS may keep the physical HID connection alive after cancel.
             # Firmware releases its BLE configuration owner on CCCD unsubscribe;
-            # wait for that acknowledgement before a caller opens USB.
-            loop, deadline = QEventLoop(), QTimer()
-            deadline.setSingleShot(True)
-            deadline.timeout.connect(loop.quit)
-            self.subscriptionStopped.connect(loop.quit)
-            deadline.start(1500)
+            # wait for that acknowledgement before a caller opens USB. A-05:
+            # block only the BLE worker thread on a threading.Event set from the
+            # CoreBluetooth queue; no nested Qt event loop can re-enter close().
+            stopped = threading.Event()
+            if self._delegate is not None:
+                self._delegate.unsubscribed = stopped
             self._peripheral.setNotifyValue_forCharacteristic_(False, self._tx)
-            loop.exec()
-            deadline.stop()
-            self.subscriptionStopped.disconnect(loop.quit)
+            stopped.wait(1.5)
+            self._subscribed = False
         if self._delegate is not None:
             self._delegate.owner = None
         if self._peripheral is not None:

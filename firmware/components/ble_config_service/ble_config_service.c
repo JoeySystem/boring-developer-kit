@@ -140,6 +140,18 @@ static esp_err_t protocol_tx(const uint8_t *data, size_t length, void *context)
     return result;
 }
 
+/* Sent by codex_micro once per bonded host after a firmware change. */
+static esp_err_t send_service_changed(const uint8_t address[6], void *context)
+{
+    (void)context;
+    if (s_gatts_if == ESP_GATT_IF_NONE || address == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    uint8_t remote[ESP_BD_ADDR_LEN];
+    memcpy(remote, address, sizeof(remote));
+    return esp_ble_gatts_send_service_change_indication(s_gatts_if, remote);
+}
+
 static void set_subscribed(bool subscribed)
 {
     if (subscribed == atomic_load(&s_subscribed)) {
@@ -172,6 +184,7 @@ static bool gatts_event(int raw_event, uint16_t raw_gatts_if,
         }
         if (parameter->reg.status != ESP_GATT_OK) {
             ESP_LOGE(TAG, "GATT registration failed: %d", parameter->reg.status);
+            codex_micro_release_advertising_hold();
             return true;
         }
         s_gatts_if = gatts_if;
@@ -181,6 +194,7 @@ static bool gatts_event(int raw_event, uint16_t raw_gatts_if,
         if (result != ESP_OK) {
             ESP_LOGE(TAG, "could not create GATT table: %s",
                      esp_err_to_name(result));
+            codex_micro_release_advertising_hold();
         }
         return true;
     }
@@ -196,6 +210,8 @@ static bool gatts_event(int raw_event, uint16_t raw_gatts_if,
                 ESP_LOGE(TAG, "GATT service start failed: %d",
                          parameter->start.status);
             }
+            /* The database is complete: hosts may discover it now. */
+            codex_micro_release_advertising_hold();
         }
         break;
     case ESP_GATTS_CREAT_ATTR_TAB_EVT:
@@ -203,23 +219,31 @@ static bool gatts_event(int raw_event, uint16_t raw_gatts_if,
             parameter->add_attr_tab.num_handle == ATTR_COUNT) {
             memcpy(s_handles, parameter->add_attr_tab.handles,
                    sizeof(s_handles));
-            (void)esp_ble_gatts_start_service(s_handles[ATTR_SERVICE]);
+            if (esp_ble_gatts_start_service(s_handles[ATTR_SERVICE]) !=
+                ESP_OK) {
+                codex_micro_release_advertising_hold();
+            }
+        } else {
+            ESP_LOGE(TAG, "GATT table creation failed: %d",
+                     parameter->add_attr_tab.status);
+            codex_micro_release_advertising_hold();
         }
         break;
     case ESP_GATTS_CONNECT_EVT:
         s_connection_id = parameter->connect.conn_id;
         s_mtu = BLE_CONFIG_DEFAULT_ATT_MTU;
         set_subscribed(false);
-        /* A bonded host may cache the formerly-last HID service through
-         * 0xffff. Ask it to refresh before accessing our appended service. */
-        (void)esp_ble_gatts_send_service_change_indication(
-            gatts_if, parameter->connect.remote_bda);
+        /* Service Changed is no longer sent on every connection: hosts
+         * then rediscovered everything each time. codex_micro sends it once
+         * per bonded host after a firmware change (send_service_changed). */
         break;
     case ESP_GATTS_SEND_SERVICE_CHANGE_EVT:
         if (parameter->service_change.status != ESP_GATT_OK) {
             ESP_LOGW(TAG, "service change indication failed: %d",
                      parameter->service_change.status);
         }
+        codex_micro_note_service_change_result(
+            parameter->service_change.status == ESP_GATT_OK);
         break;
     case ESP_GATTS_DISCONNECT_EVT:
         set_subscribed(false);
@@ -270,9 +294,12 @@ void ble_config_service_prepare(void)
     atomic_store(&s_subscribed, false);
     clear_tx();
     codex_micro_register_ble_gatts_observer(gatts_event, NULL);
+    codex_micro_register_service_change_sender(send_service_changed, NULL);
+    /* This service is appended after HID; advertise only once it exists. */
+    codex_micro_hold_advertising_for_services();
 }
 
-esp_err_t ble_config_service_start(void)
+static esp_err_t register_service(void)
 {
     /* Append after HID's complete database to preserve existing bonded handles.
      * codex_micro_init starts that database asynchronously. */
@@ -289,6 +316,16 @@ esp_err_t ble_config_service_start(void)
                  esp_err_to_name(mtu_result));
     }
     return esp_ble_gatts_app_register(BLE_CONFIG_APP_ID);
+}
+
+esp_err_t ble_config_service_start(void)
+{
+    const esp_err_t result = register_service();
+    if (result != ESP_OK) {
+        /* HID alone must stay reachable. */
+        codex_micro_release_advertising_hold();
+    }
+    return result;
 }
 
 bool ble_config_service_connected(void)

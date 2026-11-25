@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 import struct
+import time
 import zlib
+from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -21,6 +24,51 @@ class FrameError(ValueError):
 
 class ProtocolVersionError(FrameError):
     pass
+
+
+@dataclass(frozen=True)
+class FrameDiscard:
+    """A corrupted or malformed frame the decoder skipped while resyncing."""
+
+    reason: str
+    request_id: int | None = None
+    message_type: int | None = None
+
+    def describe(self) -> str:
+        parts = [self.reason]
+        if self.request_id is not None:
+            parts.append(f"request_id={self.request_id}")
+        if self.message_type is not None:
+            parts.append(f"type=0x{self.message_type:02x}")
+        return "，".join(parts)
+
+
+class BadFrameMonitor:
+    """Escalates isolated corrupt frames to a fatal link error only when they
+    cluster: ``limit`` discards inside ``window_s`` seconds."""
+
+    def __init__(
+        self,
+        *,
+        limit: int = 5,
+        window_s: float = 10.0,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._limit = limit
+        self._window_s = window_s
+        self._clock = clock
+        self._events: deque[float] = deque()
+
+    def reset(self) -> None:
+        self._events.clear()
+
+    def record(self, count: int = 1) -> bool:
+        now = self._clock()
+        for _ in range(count):
+            self._events.append(now)
+        while self._events and now - self._events[0] > self._window_s:
+            self._events.popleft()
+        return len(self._events) >= self._limit
 
 
 @dataclass(frozen=True)
@@ -90,29 +138,58 @@ def encode_request(
 
 
 class FrameDecoder:
+    """Incremental WMP1 response decoder.
+
+    A single bad frame (CRC mismatch, oversize length, reserved flags,
+    request_id 0) is skipped by advancing one byte past its magic and scanning
+    for the next ``WMP1``; it is reported through :meth:`take_discards`
+    instead of raising, so the good frames around it survive. Only a
+    CRC-valid frame with an incompatible protocol major raises
+    :class:`ProtocolVersionError`. Within the same major any protocol minor is
+    accepted: minors only add backward-compatible fields and commands, and
+    feature availability is decided from CAPABILITIES (protocol.md §2).
+    """
+
     def __init__(self, *, max_payload_bytes: int, protocol_major: int, protocol_minor: int) -> None:
         self._buffer = bytearray()
         self._max_payload_bytes = max_payload_bytes
         self._protocol_major = protocol_major
         self._protocol_minor = protocol_minor
+        self._discards: list[FrameDiscard] = []
+        self.peer_protocol_minor: int | None = None
+
+    @property
+    def peer_is_newer(self) -> bool:
+        return (
+            self.peer_protocol_minor is not None
+            and self.peer_protocol_minor > self._protocol_minor
+        )
 
     def reset(self) -> None:
         self._buffer.clear()
+        self._discards.clear()
+        self.peer_protocol_minor = None
+
+    def take_discards(self) -> list[FrameDiscard]:
+        discards, self._discards = self._discards, []
+        return discards
+
+    def _skip_frame_start(self, discard: FrameDiscard) -> None:
+        self._discards.append(discard)
+        del self._buffer[:1]
 
     def feed(self, data: bytes) -> list[Frame]:
         self._buffer.extend(data)
         frames: list[Frame] = []
         while True:
             if len(self._buffer) < HEADER_BYTES:
+                if self._buffer and not MAGIC.startswith(bytes(self._buffer[:4])):
+                    self._resync()
                 return frames
             if self._buffer[:4] != MAGIC:
-                next_magic = self._buffer.find(MAGIC, 1)
-                if next_magic < 0:
-                    del self._buffer[:-3]
+                if not self._resync():
                     return frames
-                del self._buffer[:next_magic]
-                if len(self._buffer) < HEADER_BYTES:
-                    return frames
+                continue
 
             (
                 _magic,
@@ -124,24 +201,41 @@ class FrameDecoder:
                 payload_length,
                 payload_crc,
             ) = HEADER.unpack_from(self._buffer)
-            if major != self._protocol_major:
-                raise ProtocolVersionError(f"响应 protocol major {major} 不受支持")
-            if minor != self._protocol_minor:
-                raise ProtocolVersionError(f"响应 protocol minor {minor} 不受支持")
-            if flags & RESERVED_FLAGS:
-                raise FrameError("响应设置了保留 flags")
-            if request_id == 0:
-                raise FrameError("响应 request_id 不能为 0")
             if payload_length > self._max_payload_bytes:
-                raise FrameError("响应 payload 超出共享协议上限")
+                self._skip_frame_start(FrameDiscard("响应 payload 长度超出共享协议上限"))
+                continue
             frame_length = HEADER_BYTES + payload_length
             if len(self._buffer) < frame_length:
                 return frames
             payload = bytes(self._buffer[HEADER_BYTES:frame_length])
-            del self._buffer[:frame_length]
             expected_crc = zlib.crc32(payload) & 0xFFFFFFFF if payload else 0
             if payload_crc != expected_crc:
-                raise FrameError("响应 payload CRC32 不匹配")
+                # Do not trust the length field of a corrupt frame: advance one
+                # byte so following good frames inside the span are recovered.
+                self._skip_frame_start(
+                    FrameDiscard(
+                        f"响应 payload CRC32 不匹配（payload_bytes={payload_length}，"
+                        f"received=0x{payload_crc:08x}，computed=0x{expected_crc:08x}）",
+                        request_id=request_id,
+                        message_type=message_type,
+                    )
+                )
+                continue
+            if major != self._protocol_major:
+                del self._buffer[:frame_length]
+                raise ProtocolVersionError(f"响应 protocol major {major} 不受支持")
+            del self._buffer[:frame_length]
+            if flags & RESERVED_FLAGS:
+                self._discards.append(
+                    FrameDiscard("响应设置了保留 flags", request_id, message_type)
+                )
+                continue
+            if request_id == 0:
+                self._discards.append(
+                    FrameDiscard("响应 request_id 不能为 0", None, message_type)
+                )
+                continue
+            self.peer_protocol_minor = minor
             frames.append(
                 Frame(
                     protocol_major=major,
@@ -152,3 +246,20 @@ class FrameDecoder:
                     payload_bytes=payload,
                 )
             )
+
+    def _resync(self) -> bool:
+        """Drop bytes up to the next magic. Returns True when one is at the
+        buffer start and a full header may follow."""
+
+        next_magic = self._buffer.find(MAGIC, 1)
+        if next_magic < 0:
+            # Keep a possible partial magic at the tail.
+            keep = 0
+            for size in (3, 2, 1):
+                if len(self._buffer) >= size and MAGIC.startswith(bytes(self._buffer[-size:])):
+                    keep = size
+                    break
+            del self._buffer[: len(self._buffer) - keep]
+            return False
+        del self._buffer[:next_magic]
+        return len(self._buffer) >= HEADER_BYTES

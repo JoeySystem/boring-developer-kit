@@ -19,6 +19,7 @@ from controller_config.views.actions import ActionsPage
 from controller_config.views.main_window import MainWindow
 from controller_config.views.workflows import WorkflowPage
 from controller_config.workflows import WorkflowStore
+from notice_helpers import answer_warnings
 
 
 class FakeHostServices:
@@ -62,7 +63,7 @@ def test_legacy_workflow_can_still_be_tested_and_enabled(
     )
     window = MainWindow(view_model)
     qtbot.addWidget(window)
-    monkeypatch.setattr(QMessageBox, "warning", lambda *_args, **_kwargs: QMessageBox.Ok)
+    answer_warnings(monkeypatch, lambda *_args, **_kwargs: QMessageBox.Ok)
     window.show()
     view_model.start()
     qtbot.waitUntil(lambda: view_model.draft is not None, timeout=1_000)
@@ -129,10 +130,7 @@ def test_workflow_editor_supports_reorder_and_limits_to_five_steps(
     window = MainWindow(view_model)
     qtbot.addWidget(window)
     messages = []
-    monkeypatch.setattr(
-        QMessageBox,
-        "warning",
-        lambda _parent, _title, message: messages.append(message) or QMessageBox.Ok,
+    answer_warnings(monkeypatch, lambda _parent, _title, message: messages.append(message) or QMessageBox.Ok,
     )
     window.show()
     view_model.start()
@@ -322,7 +320,7 @@ def test_applying_again_after_failure_keeps_the_same_local_task(qtbot, contract,
         attempted.append(definition.workflow_id)
         raise ValueError("写入失败")
     monkeypatch.setattr(view_model.host_tasks, "apply", fail)
-    monkeypatch.setattr(QMessageBox, "warning", lambda *_args: QMessageBox.Ok)
+    answer_warnings(monkeypatch, lambda *_args: QMessageBox.Ok)
     page._apply_or_save()
     page._apply_or_save()
     assert len(attempted) == 2 and attempted[0] == attempted[1]

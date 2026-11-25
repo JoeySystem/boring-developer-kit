@@ -108,6 +108,10 @@ CONSUMER_USAGE_LABELS = {
     0x00EA: "音量降低",
 }
 
+# Short names beside the device (Mode页 定稿 v1, 01: 音量 − / 音量 + / 静音).
+COMPACT_CONSUMER_LABELS = {0x00E2: "静音", 0x00E9: "音量 +", 0x00EA: "音量 −"}
+COMPACT_DEVICE_LABELS = {"macro_cancel": "取消"}
+
 DEVICE_ACTION_LABELS = {
     "macro_cancel": "取消按键序列",
     "lighting_toggle": "切换灯光",
@@ -325,6 +329,8 @@ def describe_action(
         usage = _integer_or_none(action.get("usage"))
         if usage is None:
             return "媒体动作无效"
+        if compact and usage in COMPACT_CONSUMER_LABELS:
+            return COMPACT_CONSUMER_LABELS[usage]
         return CONSUMER_USAGE_LABELS.get(usage, f"媒体 Usage {usage}")
     if action_type == "mouse":
         if is_encoder_scroll(control_id, action):
@@ -340,6 +346,8 @@ def describe_action(
         return f"切换到 Profile {action.get('profile_id', '—')}"
     if action_type == "device":
         name = action.get("name")
+        if compact and str(name) in COMPACT_DEVICE_LABELS:
+            return COMPACT_DEVICE_LABELS[str(name)]
         return DEVICE_ACTION_LABELS.get(str(name), f"设备功能 {name}")
     if action_type == "none":
         return "未映射"

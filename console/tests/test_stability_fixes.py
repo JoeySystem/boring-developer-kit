@@ -11,6 +11,8 @@ from controller_config.views.action_editor import ActionEditor
 from controller_config.views.preferences_editor import PreferencesEditor
 from controller_config.workflows import LocalWorkflow, WorkflowError, WorkflowStep
 from test_session_recovery import session, _editor
+from notice_helpers import answer_information, answer_warnings
+from notice_helpers import pick
 
 
 def test_prompt_unsaved_input_cannot_disappear_on_slot_navigation_or_exit(session, monkeypatch):
@@ -19,19 +21,24 @@ def test_prompt_unsaved_input_cannot_disappear_on_slot_navigation_or_exit(sessio
     editor = _editor(window)
     editor._name.setText("Keep me")
     editor._body.setPlainText("Unsaved input")
-    monkeypatch.setattr(QMessageBox, "warning", lambda *_args: QMessageBox.Cancel)
-    editor._direction_buttons[1].click()
+    monkeypatch.setattr(
+        "controller_config.views.prompt_library_editor.confirm_local_draft",
+        lambda *_args: QMessageBox.Cancel,
+    )
+    monkeypatch.setattr(
+        "controller_config.views.prompt_library_editor.ask_switch_direction",
+        lambda *_args, **_kwargs: QMessageBox.Cancel,
+    )
+    editor._cross.direction_selected.emit(1)
     assert editor._body.toPlainText() == "Unsaved input"
     editor._select_direction(2)
     assert editor._selected_prompt_id() == 1
-    window._nav_buttons["settings"].click()
-    assert vm.page == "prompts"
+    # Quitting asks; Cancel keeps the window and the typing.
     event = QCloseEvent()
     window.closeEvent(event)
     assert not event.isAccepted()
     assert _editor(window)._body.toPlainText() == "Unsaved input"
-    _editor(window)._save()
-    _editor(window)._select_direction(2)
+    # Leaving the page keeps the typing as a local prompt draft without asking.
     window._nav_buttons["settings"].click()
     assert vm.page == "settings"
     assert store.load(snapshot.identity["serial"]).draft_entry(1).body == "Unsaved input"
@@ -43,7 +50,10 @@ def test_prompt_save_while_switching_slots_updates_rebuilt_editor(session, monke
     vm.navigate("prompts")
     _editor(window)._name.setText("Saved on switch")
     _editor(window)._body.setPlainText("Original slot one")
-    monkeypatch.setattr(QMessageBox, "warning", lambda *_args: QMessageBox.Save)
+    monkeypatch.setattr(
+        "controller_config.views.prompt_library_editor.ask_switch_direction",
+        lambda *_args, **_kwargs: QMessageBox.Save,
+    )
     _editor(window)._select_direction(2)
     assert _editor(window)._selected_prompt_id() == 2
     assert _editor(window)._body.toPlainText() != "Original slot one"
@@ -58,28 +68,52 @@ def test_failed_prompt_save_keeps_fields_dirty_and_blocks_leaving(session, monke
     def fail(_library):
         raise OSError("disk unavailable")
     monkeypatch.setattr(store, "save", fail)
-    monkeypatch.setattr(QMessageBox, "warning", lambda *_args: QMessageBox.Save)
+    monkeypatch.setattr(
+        "controller_config.views.prompt_library_editor.confirm_local_draft",
+        lambda *_args: QMessageBox.Save,
+    )
+    answer_warnings(monkeypatch, lambda *_args: QMessageBox.Ok)
     window._nav_buttons["settings"].click()
     assert vm.page == "prompts"
     assert _editor(window).has_unsaved_fields()
     assert _editor(window)._body.toPlainText() == "Do not lose"
 
 
-@pytest.mark.parametrize("choice", [QMessageBox.Cancel, QMessageBox.Save, QMessageBox.Discard])
-def test_all_device_preferences_are_guarded_before_navigation(session, monkeypatch, choice):
-    window, vm, gateway, snapshot, store = session
+def _edit_all_device_preferences(window, vm):
     vm.navigate("lighting")
     editor = window._content.findChild(PreferencesEditor)
     editor._lighting_brightness.setValue(2)
-    editor._haptic_strength.setCurrentIndex(editor._haptic_strength.findData(40))
+    editor._haptic_enabled.toggle()
     editor._display_brightness.setValue(0)
-    expected = editor.values()
-    monkeypatch.setattr(QMessageBox, "warning", lambda *_args: choice)
+    return editor.values()
+
+
+def test_all_device_preferences_are_kept_in_the_draft_on_navigation(session, monkeypatch):
+    window, vm, gateway, snapshot, store = session
+    expected = _edit_all_device_preferences(window, vm)
+    asked = []
+    monkeypatch.setattr("controller_config.views.main_window.confirm_local_draft",
+                        lambda *_args: asked.append(_args) or QMessageBox.Cancel)
+    # Leaving the page keeps all three groups in the local draft without asking.
     window._nav_buttons["settings"].click()
-    assert vm.page == ("lighting" if choice == QMessageBox.Cancel else "settings")
+    assert vm.page == "settings" and not asked
+    assert tuple(vm.draft.config[key] for key in ("lighting", "haptic", "display")) == expected
+    assert not any(command.name == "SET_CONFIG" for command in gateway.commands)
+
+
+@pytest.mark.parametrize("choice", [QMessageBox.Cancel, QMessageBox.Save, QMessageBox.Discard])
+def test_all_device_preferences_are_guarded_before_exit(session, monkeypatch, choice):
+    window, vm, gateway, snapshot, store = session
+    expected = _edit_all_device_preferences(window, vm)
+    monkeypatch.setattr(
+        "controller_config.views.main_window.confirm_local_draft",
+        lambda *_args: choice,
+    )
+    assert window._confirm_leave_page(for_exit=True) is (choice != QMessageBox.Cancel)
     if choice == QMessageBox.Save:
         assert tuple(vm.draft.config[key] for key in ("lighting", "haptic", "display")) == expected
     elif choice == QMessageBox.Cancel:
+        assert vm.page == "lighting"
         assert window._content.findChild(PreferencesEditor).values() == expected
     else:
         assert vm.draft.config["display"] == snapshot.config["display"]
@@ -89,24 +123,19 @@ def test_all_device_preferences_are_guarded_before_navigation(session, monkeypat
 def test_import_rebuilds_selected_mapping_from_new_config(session, monkeypatch, tmp_path):
     window, vm, gateway, snapshot, store = session
     action = {"type": "key", "usage": 27}
-    vm.set_mapping(0, "key.8", "X", action)
+    vm.set_mapping(0, "key.9", "X", action)
     path = tmp_path / "incoming.json"
     vm.export_configuration(path, kind="draft")
     vm.discard_draft()
-    window._select_physical_control("key.8")
+    window._select_physical_control("key.9")
     assert window._content.findChild(ActionEditor).action() != action
-    selected = []
-    def choose(prompt):
-        selected.append(next(button for button in prompt.buttons() if button.text() == "导入到本地草稿"))
-        return 0
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *_args: (str(path), ""))
-    monkeypatch.setattr(QMessageBox, "exec", choose)
-    monkeypatch.setattr(QMessageBox, "clickedButton", lambda _prompt: selected[-1])
-    monkeypatch.setattr(QMessageBox, "information", lambda *_args: QMessageBox.Ok)
+    pick(monkeypatch, lambda _title, _text, _keys: "replace")
+    answer_information(monkeypatch, lambda *_args: QMessageBox.Ok)
     window._import_configuration()
     assert window._content.findChild(ActionEditor).action() == action
     window._content.findChild(QPushButton, "saveMappingDraft").click()
-    assert vm.draft.mapping(0, "key.8")["action"] == action
+    assert vm.draft.mapping(0, "key.9")["action"] == action
 
 
 def test_trigger_enable_requires_device_readback_not_local_draft(session, tmp_path):

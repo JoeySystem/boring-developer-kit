@@ -15,7 +15,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from controller_config.views.prompt_library_editor import PromptLibraryEditor
+from controller_config.views.mode_page import ModeStage
 from controller_config.actions import action_definitions
+from controller_config.appearance import uses_native_window_controls
 from controller_config.build_identity import BuildIdentity
 from controller_config.i18n import (
     ENGLISH,
@@ -159,6 +162,29 @@ def test_dynamic_text_can_update_in_english_and_return_to_chinese(
     manager.set_language(SIMPLIFIED_CHINESE)
     manager.retranslate_widget_tree(label)
     assert label.text() == "4 步 · 18/256 字节 · 延时 75 ms · 容量内"
+
+
+def test_diagnostic_start_guidance_translates_status_and_next_action(
+    qapp, tmp_path
+) -> None:
+    manager = LanguageManager(
+        qapp,
+        settings=_settings(tmp_path),
+        initial_language=ENGLISH,
+    )
+
+    assert translate_ui_text("设备正在切换状态") == "Device Is Switching State"
+    assert translate_ui_text("请松开按键 3。") == "Release key 3."
+    assert translate_ui_text("设备还在切换状态，请稍后重试。") == (
+        "The device is still switching state. Try again shortly."
+    )
+    assert translate_ui_text("设备未连接") == "Device Not Connected"
+    assert translate_ui_text("请重新连接设备后再开始检查。") == (
+        "Reconnect the device before starting the check."
+    )
+
+    manager.set_language(SIMPLIFIED_CHINESE)
+    assert translate_ui_text("请松开按键 3。") == "请松开按键 3。"
 
 
 def test_v4_playground_status_and_quota_copy_round_trips(qapp, tmp_path) -> None:
@@ -383,19 +409,15 @@ def test_prompt_palette_guide_and_fixed_slots_switch_languages(
     view_model.navigate("prompts")
     qtbot.waitUntil(lambda: bool(window.findChildren(QPushButton, "promptOperationStep")))
     assert "Hold key 12" in window.findChildren(QPushButton, "promptOperationStep")[0].text()
+    assert "Press the knob to confirm" in window.findChildren(QPushButton, "promptOperationStep")[2].text()
     guide = window.findChild(QLabel, "promptPaletteGuide").text()
-    assert "Hold key 12 for about 0.8 seconds" in guide
-    assert "press the knob to confirm" in guide
     assert "Key 3 cancels" in guide and "10 seconds" in guide
-    cards = window.findChildren(QPushButton, "promptDirectionCard")
-    for button in cards:
-        assert f"Prompt Slot {button.property('promptId')}" in button.toolTip()
-    first = next(button for button in cards if button.property("promptId") == 1)
-    assert "代码审查" in first.text()
+    cross = window.findChild(PromptLibraryEditor)._cross
+    assert "代码审查" in cross.shown_text(1)[0][0]  # what the user typed is never translated
 
     manager.set_language(SIMPLIFIED_CHINESE)
     assert "长按 12 号键" in window.findChildren(QPushButton, "promptOperationStep")[0].text()
-    assert "按 3 号按键取消" in window.findChild(QLabel, "promptPaletteGuide").text()
+    assert "3 号键取消" in window.findChild(QLabel, "promptPaletteGuide").text()
     assert window.findChild(QPushButton, "bindPromptDirection") is None
     view_model.shutdown()
 
@@ -457,6 +479,7 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
     qapp,
     tmp_path,
     contract,
+    monkeypatch,
 ) -> None:
     gateway = DemoGateway(contract, "ready")
     view_model = MainViewModel(
@@ -481,19 +504,15 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
     window.show()
     view_model.start()
     qtbot.waitUntil(
-        lambda: window._nav_buttons["overview"].accessibleName() == "Key Mapping",
+        lambda: window._nav_buttons["overview"].accessibleName() == "Mode",
         timeout=1000,
     )
 
     navigation_names = {
         button.accessibleName() for button in window._nav_buttons.values()
     }
-    assert navigation_names == {
-        "Key Mapping",
-        "Quick Prompts",
-        "Appearance & Feedback",
-        "Firmware & System",
-    }
+    # Mode / Prompt / Settings keep the same English names in every language.
+    assert navigation_names == {"Mode", "Prompt", "Settings"}
     def expected_navigation_text(button: QPushButton) -> str:
         return "" if button.property("compactNavigation") else button.accessibleName()
 
@@ -501,23 +520,25 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
         button.text() == expected_navigation_text(button)
         for button in window._nav_buttons.values()
     )
-    assert {
-        button.toolTip() for button in window._nav_buttons.values()
-    } == (navigation_names - {"Appearance & Feedback"}) | {
-        "Appearance & Feedback · Lighting, Haptics, Display"
-    }
+    # No hover box on the tabs (the designer 11-20 真屏验收).
+    assert {button.toolTip() for button in window._nav_buttons.values()} == {""}
     assert {
         button.accessibleDescription() for button in window._nav_buttons.values()
-    } == {"Switch View", "Firmware & System"}
+    } == {"Switch View", "Settings"}   # Settings describes its update state (here: none)
     qtbot.waitUntil(
-        lambda: window._device_auth_summary.text() == "Development · Unverified [ DEV ]",
+        lambda: window._device_auth_summary.text() == "Development · Unverified",
         timeout=1000,
     )
     assert window.windowTitle() == "BORING Console"
+    # macOS uses the system window buttons, which the system labels itself.
     assert {
         button.accessibleName()
         for button in window.findChildren(QPushButton, "windowControl")
-    } == {"Close Window", "Minimize Window", "Zoom Window"}
+    } == (
+        set()
+        if uses_native_window_controls()
+        else {"Close Window", "Minimize Window", "Zoom Window"}
+    )
     settings_menu = window.findChild(QMenu, "settingsMenu")
     assert settings_menu is not None and settings_menu.title() == "Settings"
     english_action = window.findChild(QAction, "languageAction_en_US")
@@ -530,10 +551,11 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
     assert window.findChild(QPushButton, "openDiagnosticsSettings") is None
     qtbot.waitUntil(
         lambda: any(
-            button.isVisible() and button.text() == "Firmware Update"
+            button.isVisible() and button.text() == "Update"
             for button in window.findChildren(QPushButton, "settingsGroup")
         )
     )
+    window._select_settings_section("system")
     language_buttons = {
         button.text(): button
         for button in window.findChildren(QPushButton, "settingsLanguageButton")
@@ -542,11 +564,6 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
     assert language_buttons["English"].property("active") is True
     assert language_buttons["简体中文"].property("active") is False
     view_model.navigate("overview")
-    assert window.findChild(QLabel, "devicePanelLive").text() == "Connected"
-    assert window.findChild(QLabel, "deviceConnectionSummary").text() == "USB-C · Connected"
-    bluetooth_management = window.findChild(QPushButton, "bleSlotsDisclosure")
-    assert bluetooth_management.text() == "Bluetooth & Computers…"
-    assert bluetooth_management.accessibleName() == "Open Bluetooth and computer management"
     overview_text = set()
 
     def inspect_ble_details() -> None:
@@ -555,27 +572,51 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
         overview_text.update(label.text() for label in dialog.findChildren(QLabel))
         dialog.accept()
 
+    # Bluetooth details open from the Mode bar (the device rail is gone, Mode页 定稿 v1).
+    qtbot.waitUntil(lambda: any(stage.isVisible() for stage in window.findChildren(ModeStage)))
+    stage = next(stage for stage in window.findChildren(ModeStage) if stage.isVisible())
+    assert stage.bar.ble.isVisible()
     QTimer.singleShot(0, inspect_ble_details)
-    window.findChild(QPushButton, "bleSlotsDisclosure").click()
+    stage.bar.ble.click()
     assert "Bluetooth connection" in overview_text
     assert "Computer 1" in overview_text
     assert "Selected · Not connected" in overview_text
     assert not any("KEY 3" in text for text in overview_text)
 
-    profile_pill = window.findChild(QPushButton, "profilePill")
-    assert profile_pill is not None and profile_pill.menu() is not None
-    save_as_profile = window.findChild(QPushButton, "saveProfileAsButton")
-    assert save_as_profile is not None
-    assert save_as_profile.text() == "Save as New Profile…"
-    create_profile = profile_pill.menu().findChild(QAction, "createProfileAction")
+    # The set chip opens 全部方案 (Mode页 定稿 v1, 10): 新建一屏 and each screen's ··· hold
+    # what the set menu had.
+    stage = next(stage for stage in window.findChildren(ModeStage) if stage.isVisible())
+    qtbot.mouseClick(stage.bar.profile, Qt.LeftButton)
+    stage = next(stage for stage in window.findChildren(ModeStage) if stage.isVisible())
+    overview = stage.overview
+    assert stage.overview_shown()
+    assert overview.title.text() == "All profiles"   # design ticket 第 4 件
+    assert overview.import_button.text() == "Import…"
+    assert overview.export_button.text() == "Export all…"
+    assert overview.done.text() == "Done"
+    opened = []
+    import controller_config.views.main_window as main_window_module
+
+    class RecordingMenu(QMenu):   # PySide6 ignores QMenu.exec patched on the class itself
+        def exec(self, *_args, **_kwargs):  # noqa: A003 - Qt's name
+            opened.append(self)
+
+    monkeypatch.setattr(main_window_module, "QMenu", RecordingMenu)
+    overview.new_requested.emit(overview.cards[-1])
+    create_profile = opened[-1].findChild(QAction, "createProfileAction")
     assert create_profile is not None
-    assert create_profile.text() == "New Blank Profile"
-    save_as_action = profile_pill.menu().findChild(QAction, "saveProfileAsAction")
+    assert create_profile.text() == "Blank"
+    save_current = opened[-1].findChild(QAction, "saveProfileAsAction")
+    assert save_current is not None
+    assert save_current.text() == "Copy current"
+    next(card for card in overview.cards if card.more is not None).more.click()
+    assert opened[-1].objectName() == "modeScreenMenu"
+    save_as_action = opened[-1].findChild(QAction, "saveProfileAsAction")
     assert save_as_action is not None
-    assert save_as_action.text() == "Save as New Profile…"
-    assert profile_pill.menu().findChild(
-        QAction, "manageDeviceKeySequencesAction"
-    ) is not None
+    assert save_as_action.text() == "Save as…"
+    assert opened[-1].findChild(QAction, "renameProfileAction").text() == "Rename"
+    assert opened[-1].findChild(QAction, "deleteProfileAction").text() == "Delete…"
+    overview.done.click()
 
     view_model.navigate("actions")
     qtbot.waitUntil(
@@ -588,9 +629,6 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
     actions_page = window.findChild(ActionsPage, "actionsPage")
     assert actions_page is not None
     assert window.findChild(QPushButton, "createAction").text() == "Create Custom Action"
-    sequence_action = window.findChild(QAction, "manageDeviceKeySequencesAction")
-    assert sequence_action is not None
-    assert sequence_action.text() == "Manage device key macros"
     actions_page.show_developer_lane(1)
     extension_tab = next(
         button
@@ -620,61 +658,41 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
     qtbot.waitUntil(
         lambda: (
             (guide := window.findChild(QLabel, "promptPaletteGuide")) is not None
-            and "Hold key 12 for about 0.8 seconds" in guide.text()
+            and "Key 3 cancels" in guide.text()
         ),
         timeout=1000,
     )
     qtbot.waitUntil(
         lambda: (
-            (helper_state := window.findChild(QLabel, "promptHelperOnlineState"))
+            (helper_state := window.findChild(QLabel, "promptStatusWord"))
             is not None
-            and helper_state.text() == "Helper Online"
+            and helper_state.text() == "Ready to use"   # 可以使用
         ),
         timeout=1000,
     )
 
     qtbot.waitUntil(lambda: view_model.model.snapshot is not None, timeout=1000)
-    view_model.navigate("diagnostics")
-    qtbot.waitUntil(
-        lambda: any(
-            label.text() == "Device Check"
-            for label in window.findChildren(QLabel)
-        ),
-        timeout=1000,
-    )
-    assert any(
-        button.text() == "Export Summary"
-        for button in window.findChildren(QPushButton)
-    )
-    report_issue = window.findChild(QPushButton, "reportJoystickIssue")
-    open_calibration = window.findChild(QPushButton, "openJoystickCalibration")
-    assert report_issue is not None
-    assert report_issue.text() == "Still Experiencing an Issue"
-    assert open_calibration is not None and open_calibration.isHidden()
-    report_issue.click()
-    assert not open_calibration.isHidden()
-    assert open_calibration.text() == "Open Joystick Calibration"
-    assert any(
-        label.text() == "Joystick Issue Still Present"
+    view_model.navigate("settings")
+    window._select_settings_section("device")
+    assert window.findChild(QPushButton, "openDeviceDiagnostics") is None
+    assert window.findChild(QWidget, "diagnosticsPage") is None
+    assert not any(
+        label.text() == "Device Check"
         for label in window.findChildren(QLabel)
+        if label.isVisible()
     )
-
-    manager.set_language(SIMPLIFIED_CHINESE)
-    assert any(
-        label.text() == "已确认仍有摇杆异常"
-        for label in window.findChildren(QLabel)
-    )
-    assert open_calibration.text() == "进入摇杆校准"
-    manager.set_language(ENGLISH)
+    window._select_settings_section("system")
 
     snapshot = view_model.model.snapshot
     assert snapshot is not None
     view_model.rename_profile(snapshot.active_profile_id, "诊断")
     view_model.navigate("overview")
-    profile_pill = window.findChild(QPushButton, "profilePill")
-    assert profile_pill is not None and profile_pill.menu() is not None
-    profile_action = profile_pill.menu().findChild(QAction, "profileSelectAction_0")
-    assert profile_action is not None and profile_action.text() == "诊断"
+    window._mode_show_overview(True)
+    stage = next(stage for stage in window.findChildren(ModeStage) if stage.isVisible())
+    card = next(card for card in stage.overview.cards
+                if card.screen is not None and card.screen.key == ("normal", 0))
+    assert card.findChild(QLabel, "modeOverviewName").text() == "诊断"
+    window._mode_show_overview(False)
 
     view_model.navigate("settings")
     chinese_button = next(
@@ -684,7 +702,7 @@ def test_window_switches_between_english_and_chinese_without_translating_profile
     )
     qtbot.mouseClick(chinese_button, Qt.LeftButton)
     qtbot.waitUntil(
-        lambda: window._nav_buttons["overview"].accessibleName() == "按键配置",
+        lambda: window._nav_buttons["overview"].accessibleName() == "Mode",
         timeout=1000,
     )
     assert manager.language == SIMPLIFIED_CHINESE

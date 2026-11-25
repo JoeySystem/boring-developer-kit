@@ -10,9 +10,10 @@ from test_firmware_release import (
     FakeReleaseSource, RecordingDemoGateway, _bundle, _release,
     official_demo_release, trust_test_signing_key,
 )
+from notice_helpers import answer_dialogs
 
 
-def test_dot_download_confirm_transfer_reconnect_and_clear(qtbot, contract):
+def test_dot_download_confirm_transfer_reconnect_and_clear(qtbot, contract, monkeypatch):
     source = FakeReleaseSource()
     gateway = RecordingDemoGateway(contract, 'ready')
     vm = MainViewModel(gateway, contract, firmware_release_source=source)
@@ -28,14 +29,11 @@ def test_dot_download_confirm_transfer_reconnect_and_clear(qtbot, contract):
     assert button.firmware_notice_visible()
     button.click()
     assert vm.page == 'settings'
-    assert window._settings_section == 'system'
+    assert window._settings_section == 'updates'
     assert source.downloads == []
     qtbot.waitUntil(lambda: bool(window._content.findChildren(QPushButton, 'settingsGroup')))
-    firmware_tab = next(
-        item for item in window._content.findChildren(QPushButton, 'settingsGroup')
-        if item.text() == window._language_manager.translate('固件更新')
-    )
-    firmware_tab.click()
+    # 固件更新不再是单独的页签，从「更新」分组里设备固件那一块点进去。
+    window._content.findChild(QPushButton, 'openFirmwareUpdates').click()
     assert vm.page == 'firmware'
     focus = next(
         card
@@ -47,24 +45,22 @@ def test_dot_download_confirm_transfer_reconnect_and_clear(qtbot, contract):
     assert focus.findChild(QPushButton, 'installRemoteFirmware') is not None
     assert window.findChild(QPushButton, 'remoteFirmwareDetailsToggle') is not None
 
-    def choose(choice):
-        dialog = QApplication.activeModalWidget()
-        assert isinstance(dialog, QMessageBox)
-        dialog.button(choice).click()
+    decision = ["cancel"]
+    answer_dialogs(monkeypatch, lambda _info: decision[0])
 
     qtbot.waitUntil(lambda: window.findChild(QPushButton, 'installRemoteFirmware') is not None)
     window.findChild(QPushButton, 'installRemoteFirmware').click()
     assert len(source.downloads) == 1
-    QTimer.singleShot(0, lambda: choose(QMessageBox.Cancel))
+    decision[0] = "cancel"
     source.download_completed.emit(bundle)
-    window._confirm_downloaded_remote_firmware()
+    window._firmware_page.confirm_downloaded_remote_firmware()
     assert vm.firmware_update.state is FirmwareUpdateState.PACKAGE_READY
     assert window.findChild(QPushButton, 'startFirmwareUpdate').text() == window._language_manager.translate('安装最新版固件…')
     assert not any(c.name.startswith('FW_') for c in gateway.commands)
 
     # Cancelling the automatic confirmation leaves one clear retry action.
     assert not any(c.name.startswith('FW_') for c in gateway.commands)
-    QTimer.singleShot(0, lambda: choose(QMessageBox.Yes))
+    decision[0] = "install"
     window.findChild(QPushButton, 'startFirmwareUpdate').click()
     qtbot.waitUntil(lambda: vm.firmware_update.state in {
         FirmwareUpdateState.COMPLETED, FirmwareUpdateState.FAILED,

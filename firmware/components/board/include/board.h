@@ -138,6 +138,8 @@ typedef struct {
     uint32_t sample_timestamp_ms;
     uint32_t recent_sample_age_ms;
     uint32_t adc_failure_count;
+    /** Isolated raw samples (>= 300 counts from their median) kept out of the filter. */
+    uint32_t spikes_rejected;
     uint32_t window_start_ms;
     uint32_t window_end_ms;
     uint32_t window_sample_count;
@@ -194,8 +196,20 @@ size_t board_control_count(void);
 /** True when all debounced digital and joystick controls are released. */
 bool board_inputs_neutral(void);
 
+/** True when all debounced buttons and keys are released. */
+bool board_keys_neutral(void);
+
+/** True while one joystick direction has remained active for ten seconds. */
+bool board_joystick_suspect(void);
+
 /** Copy currently active logical controls and return the number copied. */
 size_t board_get_active_controls(board_control_t *controls, size_t capacity);
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+/** Configure only the key matrix, so boot gestures can run before board_init. */
+esp_err_t board_boot_keys_prepare(void);
+/** Raw matrix level of one key (no debounce, no events), for boot gestures. */
+bool board_boot_key_held(board_control_t control);
+#endif
 
 /**
  * Return the latest oriented analog joystick angle while outside its deadzone.
@@ -229,6 +243,24 @@ bool board_take_shutdown_request(void);
  * Does not reset/re-arm the current physical gesture or read the HW latch.
  */
 void board_set_power_button_wake_mode(bool waiting_for_on);
+
+/*
+ * Power button diagnostics (GET_STATUS.power_button): a press that did not
+ * shut down (seen twice on 68DE8, 2026-11-10/11) shows where it went.
+ */
+typedef struct {
+    uint32_t presses;          /* debounced down edges */
+    uint32_t short_presses;
+    uint32_t long_presses;     /* shutdown or wake requests raised */
+    uint32_t ignored;          /* long presses the application did not act on */
+    const char *last_ignored;  /* why, or "none" */
+    bool wake_mode;            /* OFF standby: the 6.5 s wake hold applies */
+    bool armed;                /* a release was seen since start-up */
+} board_power_button_diagnostics_t;
+
+void board_power_button_get_diagnostics(board_power_button_diagnostics_t *diagnostics);
+/** The application dropped a long press (reason is a static string). */
+void board_power_button_note_ignored(const char *reason);
 
 /** Power V2: both sampled and debounced power-button states are released. */
 bool board_power_button_released(void);
@@ -349,7 +381,8 @@ typedef enum {
 /** Draw the Power V2 mode symbol. Link/battery are displayed on dedicated pages. */
 esp_err_t board_display_show_round_home(board_round_mode_t mode,
                                         board_round_link_t link,
-                                        int battery_percent);
+                                        int battery_percent,
+                                        bool joystick_suspect);
 
 /**
  * Draw the Power V2 USB-wake battery page without home-page status.
@@ -358,6 +391,10 @@ esp_err_t board_display_show_round_home(board_round_mode_t mode,
  */
 esp_err_t board_display_show_round_battery(int battery_percent,
                                            bool charging_standby);
+
+/* Power V2 haptic levels are 0..2 (off, 60 %, 80 %); lighting keeps 0..4. */
+#define BOARD_ROUND_HAPTIC_MAX_LEVEL 2U
+#define BOARD_ROUND_LIGHTING_MAX_LEVEL 4U
 
 /** Draw the Power V2 haptic-level vertical slice using single-digit levels. */
 esp_err_t board_display_show_round_haptic(uint8_t candidate_level,

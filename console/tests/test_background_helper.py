@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import json
+import pathlib
 import plistlib
 import sys
+from datetime import datetime
 from uuid import uuid4
 
 import pytest
 from PySide6.QtCore import QPoint, QSettings, Qt
-from PySide6.QtWidgets import QLabel, QMenu, QProgressBar, QPushButton, QWidget
+from PySide6.QtWidgets import QLabel, QMenu, QPushButton, QWidget
 
 import controller_config.background_helper as background_helper
+from controller_config.appearance import MACOS_GLASS_MENU_STYLE
 from controller_config.background_helper import (
     ApplicationInstanceCoordinator,
     BACKGROUND_ENABLED_KEY,
@@ -18,6 +21,7 @@ from controller_config.background_helper import (
     MacLaunchAgent,
     PromptBackgroundController,
     _MacTextStatusItem,
+    _menu_bar_reset_time,
     _menu_bar_usage_label,
     _provider_menu_bar_usage_label,
 )
@@ -28,6 +32,7 @@ from controller_config.codex_usage import (
     CodexUsageStatus,
 )
 from controller_config.i18n import ENGLISH, SIMPLIFIED_CHINESE, LanguageManager
+from controller_config.views.ui import ProgressRing
 
 
 def test_mac_launch_agent_contains_only_background_configurator_command(tmp_path) -> None:
@@ -238,8 +243,14 @@ def test_native_background_launch_agent_arguments_are_accepted_by_app(
 ) -> None:
     from controller_config.app import build_parser
 
-    executable = "/Applications/BORING Console.app/Contents/MacOS/BORING"
-    monkeypatch.setattr(sys, "executable", executable)
+    # Packaged builds: sys.executable names Nuitka's missing "python"; the
+    # LaunchAgent must start the real binary (task C3).
+    macos = tmp_path / "BORING Console.app/Contents/MacOS"
+    macos.mkdir(parents=True)
+    executable = str(macos / "console_entry")
+    pathlib.Path(executable).write_text("", encoding="utf-8")
+    monkeypatch.setattr(sys, "executable", str(macos / "python"))
+    monkeypatch.setattr(sys, "argv", [executable])
     monkeypatch.delattr(sys, "frozen", raising=False)
     monkeypatch.delattr(background_helper, "__compiled__", raising=False)
     if runtime == "frozen":
@@ -247,7 +258,7 @@ def test_native_background_launch_agent_arguments_are_accepted_by_app(
     else:
         monkeypatch.setattr(background_helper, "__compiled__", object(), raising=False)
     launch_agent = MacLaunchAgent(
-        background_helper.background_program_arguments(), directory=tmp_path
+        background_helper.background_program_arguments(), directory=tmp_path / "LaunchAgents"
     )
 
     launch_agent.set_enabled(True)
@@ -350,7 +361,7 @@ def test_macos_native_reopen_restores_hidden_console(qapp, qtbot, tmp_path, monk
         controller.deleteLater()
 
 
-@pytest.mark.parametrize("popup_kind", ["menu", "combo"])
+@pytest.mark.parametrize("popup_kind", ["menu", "submenu", "combo"])
 def test_macos_app_deactivation_dismisses_popups(qapp, qtbot, tmp_path, monkeypatch, popup_kind):
     from PySide6.QtWidgets import QComboBox
     monkeypatch.setattr(background_helper.QSystemTrayIcon, "isSystemTrayAvailable", lambda: False)
@@ -369,10 +380,17 @@ def test_macos_app_deactivation_dismisses_popups(qapp, qtbot, tmp_path, monkeypa
             import AppKit
             AppKit.NSApp.delegate().applicationDidBecomeActive_(None)
             qtbot.waitUntil(lambda: qapp.applicationState() == Qt.ApplicationActive)
+        root_menu = None
         if popup_kind == "menu":
             popup = QMenu(window)
             popup.addAction("配置方案")
             popup.popup(window.mapToGlobal(QPoint(30, 60)))
+        elif popup_kind == "submenu":
+            root_menu = QMenu(window)
+            popup = root_menu.addMenu("常用 AI")
+            popup.addAction("Codex")
+            root_menu.popup(window.mapToGlobal(QPoint(30, 60)))
+            popup.popup(window.mapToGlobal(QPoint(160, 60)))
         else:
             combo = QComboBox(window)
             combo.addItems(["键盘按键", "鼠标按键"])
@@ -388,6 +406,8 @@ def test_macos_app_deactivation_dismisses_popups(qapp, qtbot, tmp_path, monkeypa
             qapp.applicationStateChanged.emit(Qt.ApplicationInactive)
             assert not popup.isVisible()
         assert window.isVisible()
+        if root_menu is not None:
+            assert not root_menu.isVisible()
     finally:
         controller.deleteLater()
 
@@ -475,20 +495,32 @@ def test_menu_bar_title_does_not_mislabel_a_specialized_bucket_as_codex() -> Non
     assert _menu_bar_usage_label(snapshot) == "Codex —"
 
 
-def test_menu_bar_quota_progress_keeps_text_external_and_uses_remaining_quota(
+def test_menu_bar_quota_row_is_a_small_ring_short_name_and_reset_time(
     qapp,
 ) -> None:
+    # 进度条点阵样式 定稿 v1: small ring (36) with what is left, "5h" or
+    # "week usage", the reset time on the right; orange when nearly used up.
     primary = _CodexQuotaProgress("primary")
     secondary = _CodexQuotaProgress("secondary")
+    now = 1_800_000_000
 
-    primary.set_window(CodexQuotaWindow(12, 300, None))
-    secondary.set_window(CodexQuotaWindow(34, 10_080, None))
+    primary.set_window(CodexQuotaWindow(12, 300, now + 3_600))
+    secondary.set_window(CodexQuotaWindow(85, 10_080, now + 3 * 86_400))
 
+    assert primary.progress.ring_size() == 36
+    assert primary.progress.is_quota()
     assert primary.progress.value() == 88
-    assert secondary.progress.value() == 66
-    assert not primary.progress.isTextVisible()
-    assert "#FF6A00" in primary.progress.styleSheet()
-    assert "#FF6A00" in secondary.progress.styleSheet()
+    assert primary.progress.number_text() == "88"
+    assert not primary.progress.is_low()
+    assert secondary.progress.number_text() == "15"
+    assert secondary.progress.is_low()
+    assert primary.label.text() == "5h"
+    assert secondary.label.text() == "week usage"
+    window = CodexQuotaWindow(12, 300, now + 3_600)
+    assert _menu_bar_reset_time(window, now=now) == datetime.fromtimestamp(now + 3_600).strftime("%H:%M")
+    far = CodexQuotaWindow(85, 10_080, now + 3 * 86_400)
+    assert _menu_bar_reset_time(far, now=now) == datetime.fromtimestamp(now + 3 * 86_400).strftime("%m-%d %H:%M")
+    assert primary.reset.alignment() & Qt.AlignmentFlag.AlignRight
 
     primary.set_window(None)
     assert primary.isHidden()
@@ -502,8 +534,8 @@ def test_tray_menu_uses_readable_v4_opaque_fallback(qapp) -> None:
     assert menu.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
     assert menu.windowFlags() & Qt.WindowType.FramelessWindowHint
     assert menu.windowFlags() & Qt.WindowType.NoDropShadowWindowHint
-    assert "background-color: #242320" in menu.styleSheet()
-    assert "border-radius: 18px" in menu.styleSheet()
+    # The opaque fallback is the shared glass-menu style, whatever its values are.
+    assert menu.styleSheet() == MACOS_GLASS_MENU_STYLE
 
 
 def test_background_menu_keeps_top_numbers_and_updates_both_quota_bars(
@@ -605,19 +637,23 @@ def test_background_menu_keeps_top_numbers_and_updates_both_quota_bars(
     ] == ["Codex", "GPT-5.3-Codex-Spark", "Claude Code"]
     assert [
         progress.value()
-        for progress in panel.findChildren(QProgressBar, "menuBarQuotaProgress")
+        for progress in panel.findChildren(ProgressRing, "menuBarQuotaProgress")
     ] == [88, 66, 96, 72, 59]
+    # Live data: the per-group status line goes, "更新于" is written once at the bottom.
     assert "实时数据" in panel.codex.source.text()
     assert "更新于" in panel.codex.source.text()
+    assert panel.codex.source.isHidden()
     assert "Claude Code 额度" in panel.claude.source.text()
     assert "实时数据" in panel.claude.source.text()
+    assert panel.claude.source.isHidden()
+    assert not panel.updated.isHidden()
+    assert panel.updated.text().startswith("更新于 ")
     spark_line = next(
         label
         for label in panel.findChildren(QLabel, "menuBarQuotaWindowLabel")
         if label.property("limitId") == "codex_bengalfox"
     )
-    assert "剩余 96%" in spark_line.text()
-    assert "预计恢复" in spark_line.text()
+    assert spark_line.text() == "5h"
     assert controller._tray_usage_panel_action is not None
     assert controller._tray_usage_panel_action.isVisible()
     assert controller._tray_refresh_usage is not None
@@ -630,6 +666,7 @@ def test_background_menu_keeps_top_numbers_and_updates_both_quota_bars(
     controller.set_codex_usage_snapshot(CodexUsageSnapshot.loading(snapshot))
     assert panel.codex._bucket_widgets[0] is first_bucket
     assert "正在更新" in panel.codex.source.text()
+    assert not panel.codex.source.isHidden()  # no drawing for this state yet: kept as before
     assert controller._tray_refresh_usage.isEnabled()
     controller._tray_refresh_usage.click()
     assert monitor.refresh_calls == 1
@@ -656,7 +693,7 @@ def test_background_menu_keeps_top_numbers_and_updates_both_quota_bars(
     assert panel.codex._bucket_widgets[0] is first_bucket
     assert (
         panel.codex._bucket_widgets[0]
-        .findChild(QProgressBar, "menuBarQuotaProgress")
+        .findChild(ProgressRing, "menuBarQuotaProgress")
         .value()
         == 80
     )
@@ -763,7 +800,7 @@ def test_refresh_usage_keeps_menu_open_without_showing_console(
     )
     panel = controller._tray_usage_panel
     assert panel is not None
-    assert panel.findChild(QProgressBar, "menuBarQuotaProgress").value() == 79
+    assert panel.findChild(ProgressRing, "menuBarQuotaProgress").value() == 79
     assert menu.isVisible()
     assert window.isHidden()
 
@@ -829,7 +866,7 @@ def test_background_menu_surfaces_quota_read_failure(qapp, tmp_path, monkeypatch
         )
     )
     assert "本地日志 · 可能滞后" in panel.codex.source.text()
-    assert panel.findChild(QProgressBar, "menuBarQuotaProgress").value() == 82
+    assert panel.findChild(ProgressRing, "menuBarQuotaProgress").value() == 82
 
 
 def test_background_quota_panel_retranslates_without_reopening(
@@ -895,9 +932,10 @@ def test_background_quota_panel_retranslates_without_reopening(
         assert panel is not None
         line = panel.findChild(QLabel, "menuBarQuotaWindowLabel")
         assert line is not None
-        assert "5-hour window" in line.text()
-        assert "Remaining 75%" in line.text()
-        assert "Expected recovery" in line.text()
+        # the designer's short names are the same in every language (定稿 v1).
+        assert line.text() == "5h"
+        assert panel.findChild(ProgressRing, "menuBarQuotaProgress").number_text() == "75"
+        assert panel.updated.text().startswith("Updated ")
         assert "Codex Usage · Live data · Updated" in panel.codex.source.text()
         assert controller._tray_refresh_usage is not None
         assert controller._tray_refresh_usage.text() == "Refresh Usage"
@@ -913,7 +951,8 @@ def test_background_quota_panel_retranslates_without_reopening(
             QLabel, "menuBarQuotaWindowLabel"
         )
         assert translated_line is not None
-        assert "5 小时窗口" in translated_line.text()
+        assert translated_line.text() == "5h"
+        assert panel.updated.text().startswith("更新于 ")
         assert "Codex 额度 · 实时数据 · 更新于" in panel.codex.source.text()
         assert controller._tray_refresh_usage.text() == "刷新额度"
         assert controller._tray_status.text() == "助手离线 · 等待设备连接"

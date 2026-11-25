@@ -12,18 +12,28 @@ IDENT = "12345678-1234-1234-1234-123456789abc"
 
 
 def test_close_releases_config_subscription_before_canceling_connection(channel):
+    import threading
+    import time
+    from controller_config.transport.mac_ble_channel import _WmpPeripheralDelegate
+
     events = []
+    channel._delegate = _WmpPeripheralDelegate.alloc().initWithOwner_(channel)
     channel._tx = characteristic(TX, CB.CBCharacteristicPropertyIndicate)
     channel._subscription_ready(channel._tx, None)
 
     def unsubscribe(enabled, tx):
         assert enabled is False
         events.append('unsubscribe')
-        def confirm():
+
+        def confirm_on_corebluetooth_queue():
+            # A-05: the acknowledgement arrives on CoreBluetooth's own queue;
+            # close() must not need a Qt event loop to observe it.
+            time.sleep(0.05)
             tx.isNotifying = lambda: False
             events.append('confirmed')
-            channel.nativeEvent.emit('_subscription_ready', (tx, None))
-        QTimer.singleShot(0, confirm)
+            channel._delegate.peripheral_didUpdateNotificationStateForCharacteristic_error_(None, tx, None)
+
+        threading.Thread(target=confirm_on_corebluetooth_queue, daemon=True).start()
 
     channel._peripheral = NS(setNotifyValue_forCharacteristic_=unsubscribe,
                              setDelegate_=lambda _: None)
@@ -106,7 +116,7 @@ def test_writes_wait_for_ack_and_reassemble_notifications(channel, qtbot):
     channel._written(rx, None)
     channel._written(rx, None)
     assert b"".join(writes) == payload
-    assert channel.waitForBytesWritten(5)
+    assert not channel._chunks and not channel._inflight
     received = []
     channel.readyRead.connect(lambda: received.append(bytes(channel.readAll())))
     channel._received(tx, None)

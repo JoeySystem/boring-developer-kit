@@ -1,0 +1,42 @@
+{
+  "desktop_agent_status": {
+    "source": "desktop",
+    "active": true,
+    "selected": true,
+    "lease_ms": 5000,
+    "states": [
+      "working",
+      "completed",
+      "unknown",
+      "idle",
+      "standby",
+      "codex"
+    ],
+    "completion_seq": [
+      0,
+      3,
+      0,
+      0,
+      0,
+      0
+    ],
+    "encoder_navigation": false
+  },
+  "desktop_agent_press": {
+    "source": "desktop",
+    "sequence": 7,
+    "agent": 2,
+    "transport": "usb"
+  },
+  "desktop_navigation": {
+    "source": "desktop",
+    "sequence": 7,
+    "anchor_sequence": 7,
+    "offset": 0,
+    "agent": null,
+    "transport": null
+  },
+  "codex_micro": {
+    "status_age_ms": 1200
+  }
+}

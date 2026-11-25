@@ -1,0 +1,1 @@
+{"command": "SET_AGENT_STATUS", "result": {"source": "desktop", "active": true, "lease_ms": 5000}}

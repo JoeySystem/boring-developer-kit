@@ -21,6 +21,35 @@ def _no_event(_stage: str, _message: str, _progress: int) -> None:
     pass
 
 
+def ota_timings(timing: dict) -> dict:
+    """Seconds spent in each OTA stage; None for stages that were not reached.
+
+    preflight: open port, HELLO, capabilities, FW_STATUS/FW_BEGIN.
+    transfer_and_finalize: every FW_DATA chunk plus FW_END and finalization,
+    including any serial reconnects.
+    reboot_reconnect_readback: device reboot, USB re-enumeration, reopening
+    the port and reading back build_id, running partition and rollback state.
+    """
+    now = time.monotonic()
+
+    def span(start: str, end: str) -> float | None:
+        if start not in timing or end not in timing:
+            return None
+        return round(timing[end] - timing[start], 2)
+
+    return {
+        "preflight_s": span("start", "transfer_started"),
+        "transfer_and_finalize_s": span("transfer_started", "transferred"),
+        "reboot_reconnect_readback_s": span("transferred", "verified"),
+        "total_s": round(now - timing["start"], 2),
+        "serial_reconnects": timing.get("reconnects", 0),
+        # Present when Windows kept the stale device and the operator was
+        # asked to replug: seconds from the prompt to a successful readback.
+        "replug_prompted": "replug_prompted" in timing,
+        "replug_to_readback_s": span("replug_prompted", "verified"),
+    }
+
+
 class Provisioner:
     def __init__(self, flash_runner, verifier, history_root: Path, ota_updater=None):
         self.flash_runner = flash_runner
@@ -218,6 +247,7 @@ class Provisioner:
         event: EventCallback | None = None,
         *,
         restart_mismatched: bool = False,
+        expected_serial: str | None = None,
     ) -> ProvisionResult:
         if request.mode is not ProvisionMode.UPDATE:
             raise CompatibilityError("USB CDC OTA 只用于常规更新")
@@ -230,6 +260,7 @@ class Provisioner:
         operation_path = None
         ota_result = None
         images = (request.package.application,)
+        timing = {"start": time.monotonic(), "reconnects": 0}
         try:
             operation_path = self.history.begin(
                 self._base_receipt(request, started, None, images)
@@ -237,17 +268,38 @@ class Provisioner:
             notify("ota", "已连接运行设备，正在核对身份与 OTA 能力", 5)
 
             def progress(current: int, total: int) -> None:
+                timing.setdefault("transfer_started", time.monotonic())
                 percent = 10 + int((current / total) * 65) if total else 10
                 notify("ota", f"正在传输固件 {current}/{total} 字节", percent)
 
             current_port = request.port
-            expected_serial = None
             expected_target_partition = None
             finalization_uncertain = False
             reconnect_deadline = None
             while ota_result is None:
                 try:
-                    with self._open_serial(current_port) as connection:
+                    connection = self._open_serial(current_port)
+                except OSError as exc:
+                    if expected_serial is None:
+                        raise
+                    if reconnect_deadline is None:
+                        reconnect_deadline = time.monotonic() + request.verify_timeout_s
+                    remaining = reconnect_deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise CompatibilityError(
+                            f"OTA 中断后未能重连 {expected_serial}"
+                        ) from exc
+                    timing["reconnects"] += 1
+                    notify("ota", f"串口暂不可用，正在重新定位 {expected_serial}", 70)
+                    current_port = self.verifier.find_serial_port(
+                        request.package.runtime_usb,
+                        remaining,
+                        expected_serial,
+                        application.hardware_id,
+                    )
+                    continue
+                try:
+                    with connection:
                         client = WmpClient(connection, timeout_s=4.0)
                         ota_result = self.ota_updater.update(
                             client,
@@ -275,6 +327,7 @@ class Provisioner:
                         raise CompatibilityError(
                             f"OTA 中断后未能重连 {expected_serial}"
                         ) from exc
+                    timing["reconnects"] += 1
                     notify(
                         "ota",
                         f"串口中断，正在重新定位 {expected_serial} 并继续",
@@ -287,15 +340,31 @@ class Provisioner:
                         application.hardware_id,
                     )
 
-            notify("verify", "OTA 传输完成，等待重启并读回目标 build_id", 80)
+            timing["transferred"] = time.monotonic()
+            notify("verify", "OTA 传输完成，设备正在重启，等待读回目标 build_id", 80)
+
+            def replug_needed() -> None:
+                timing["replug_prompted"] = time.monotonic()
+                notify(
+                    "replug",
+                    "电脑没有重新识别到重启后的设备。请拔下 USB 线，等 2 秒再插回；"
+                    "工具会自动继续读回，不需要重新烧录",
+                    85,
+                )
+
             runtime = self.verifier.verify_serial(
                 request.package.runtime_usb,
-                request.verify_timeout_s,
+                max(request.readback_timeout_s, request.verify_timeout_s),
                 ota_result.serial,
                 application.hardware_id,
                 application.build_id,
                 ota_result.target_partition,
+                replug_after_s=request.replug_prompt_after_s,
+                on_replug_needed=replug_needed,
             )
+            timing["verified"] = time.monotonic()
+            if "replug_prompted" in timing:
+                notify("verify", "已重新识别设备，读回通过", 95)
             receipt = self._base_receipt(request, started, None, images)
             receipt.update(
                 {
@@ -306,6 +375,7 @@ class Provisioner:
                     "update_route": "cdc-ota",
                     "target_partition": ota_result.target_partition,
                     "runtime": asdict(runtime),
+                    "timings_s": ota_timings(timing),
                 }
             )
             receipt_path = self.history.finish(operation_path, receipt)
@@ -331,6 +401,7 @@ class Provisioner:
                     ),
                     "runtime": {},
                     "error": str(exc),
+                    "timings_s": ota_timings(timing),
                 }
             )
             try:

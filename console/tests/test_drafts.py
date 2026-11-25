@@ -174,7 +174,7 @@ def test_profile_create_copy_and_delete_stay_schema_valid(qtbot, contract) -> No
     assert draft.validate(contract) == ()
 
 
-def test_profile_save_as_copies_names_and_activates_in_one_draft_change(
+def test_profile_save_as_copies_names_without_activating_device(
     qtbot, contract
 ) -> None:
     snapshot = _snapshot(qtbot, contract)
@@ -185,7 +185,7 @@ def test_profile_save_as_copies_names_and_activates_in_one_draft_change(
     saved_profile_id = draft.save_profile_as(source_profile_id, "Writing")
 
     assert saved_profile_id != source_profile_id
-    assert draft.config["active_profile"] == saved_profile_id
+    assert draft.config["active_profile"] == source_profile_id
     assert draft.profile(saved_profile_id)["name"] == "Writing"
     assert draft.profile(saved_profile_id)["mappings"] == source_mappings
     assert draft.validate(contract) == ()
@@ -222,22 +222,20 @@ def test_agent_templates_create_valid_local_profiles(qtbot, contract) -> None:
                 template.key, platform="darwin", hardware_id=draft.hardware_id
             ),
         )
-        assert draft.config["active_profile"] == profile_id
+        assert draft.config["active_profile"] == snapshot.active_profile_id
         assert draft.profile(profile_id)["name"] == template.profile_name
         assert draft.validate(contract) == ()
         assert draft.profiles[:-1] == existing_profiles
-        profiles[template.key] = draft
+        profiles[template.key] = (draft, profile_id)
 
-    qwen = profiles["qwen-work"]
-    qwen_profile_id = qwen.config["active_profile"]
+    qwen, qwen_profile_id = profiles["qwen-work"]
     assert qwen.mapping(qwen_profile_id, "joystick.up")["action"] == {
         "type": "key",
         "usage": 17,
         "modifiers": [227],
     }
     assert qwen.mapping(qwen_profile_id, "joystick.press")["short_name"] == "取消"
-    workbuddy = profiles["workbuddy"]
-    workbuddy_profile_id = workbuddy.config["active_profile"]
+    workbuddy, workbuddy_profile_id = profiles["workbuddy"]
     assert workbuddy.mapping(workbuddy_profile_id, "key.9")["action"] == {
         "type": "key",
         "usage": 40,

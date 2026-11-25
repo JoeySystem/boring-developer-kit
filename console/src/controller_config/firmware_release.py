@@ -394,8 +394,13 @@ def _validate_channel(manifest: dict, channel: str) -> None:
             raise FirmwareReleaseError("在线 stable 渠道只接受 validation_state=released 的固件")
         if manifest.get("git_dirty") is not False:
             raise FirmwareReleaseError("在线 stable 渠道只接受 git_dirty=false 的固件")
-    elif manifest.get("validation_state") not in {"built", "sample-verified"}:
-        raise FirmwareReleaseError("sample 渠道只接受 built 或 sample-verified 样品固件")
+    elif manifest.get("validation_state") == "built":
+        raise FirmwareReleaseError(
+            "样品固件尚未完成实机验收，不向用户提供安装",
+            kind="unpublished",
+        )
+    elif manifest.get("validation_state") != "sample-verified":
+        raise FirmwareReleaseError("sample 渠道只接受已完成实机验收的 sample-verified 固件")
 
 
 def _version_key(value: str) -> tuple:

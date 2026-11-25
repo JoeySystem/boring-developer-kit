@@ -9,14 +9,14 @@ import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "v0.1.0-preview.10"
+VERSION = "v0.1.0-preview.11"
 EXAMPLES = ("observe_prompt", "claim_prompt", "propose_mapping", "save_host_task")
 ROOT_FILES = (
     "README.md", "START-HERE.md", "LICENSE", "NOTICE", "LICENSING.md",
     "THIRD-PARTY-NOTICES.md", "SUPPORT.md", "CONTRIBUTING.md", "CHANGELOG.md",
     "requirements-dev.txt",
 )
-DIRECTORIES = ("firmware", "console", "sdk", "examples", "protocol", "docs", "tests", "tools")
+DIRECTORIES = ("firmware", "console", "recovery-tool", "sdk", "examples", "protocol", "docs", "tests", "tools")
 
 
 def source_files(directory: Path):

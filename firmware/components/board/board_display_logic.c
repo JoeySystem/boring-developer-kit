@@ -212,7 +212,7 @@ uint8_t board_display_battery_ring_dot_count(int battery_percent)
     if (battery_percent <= 0) {
         return 0;
     }
-    if (battery_percent >= BOARD_DISPLAY_BATTERY_FULL_RING_PERCENT) {
+    if (battery_percent >= 100) {
         return BOARD_DISPLAY_BATTERY_RING_DOT_COUNT;
     }
     uint8_t count = (uint8_t)(

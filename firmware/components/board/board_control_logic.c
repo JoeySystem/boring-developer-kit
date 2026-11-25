@@ -46,6 +46,20 @@ __attribute__((weak)) bool board_take_shutdown_request(void)
     return false;
 }
 
+__attribute__((weak)) void board_power_button_get_diagnostics(
+    board_power_button_diagnostics_t *diagnostics)
+{
+    if (diagnostics != NULL) {
+        memset(diagnostics, 0, sizeof(*diagnostics));
+        diagnostics->last_ignored = "none";
+    }
+}
+
+__attribute__((weak)) void board_power_button_note_ignored(const char *reason)
+{
+    (void)reason;
+}
+
 __attribute__((weak)) esp_err_t board_power_request_shutdown(void)
 {
     return ESP_ERR_NOT_SUPPORTED;

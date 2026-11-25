@@ -14,6 +14,7 @@ AI_SELECTION_KEY = "ui/common_ai_selection"
 AI_DEVICE_KEY = "ui/common_ai_devices"
 AI_SETUP_COMPLETED_KEY = "ui/ai_setup_completed"
 AI_SETUP_STARTED_KEY = "ui/ai_setup_started"
+AI_SETUP_DEFERRED_KEY = "ui/ai_setup_deferred"
 
 
 @dataclass(frozen=True)
@@ -33,7 +34,8 @@ AI_APPLICATIONS = (
     AIApplication("deepseek-harness", "DeepSeek Harness", "basic", "https://www.deepseek.com/harness/"),
 )
 AI_BY_KEY = {app.key: app for app in AI_APPLICATIONS}
-VOICE_ACTION = {"type": "key_gesture", "usage": 104, "double_usage": 40}
+# A-16: the default start/stop key is defined once, in voice_presets.
+from controller_config.voice_presets import DEFAULT_VOICE_ACTION as VOICE_ACTION  # noqa: E402
 
 
 def installed_desktop_app(name):
@@ -100,6 +102,8 @@ def prepare_ai_profiles(draft, selected, current, voice, saved, *, platform):
         raise ValueError("请选择常用 AI，并选择先试用哪一个。")
     if voice not in {"none", "external", "native"}:
         raise ValueError("请选择语音输入方式。")
+    if draft.features.get("global_voice") is True and voice != "none":
+        raise ValueError("此设备的语音键由 Normal／Codex 共用，请先在设备模型的 8 号键设置语音。")
     if voice == "external" and "key_gesture" not in draft.actions:
         raise ValueError("当前固件不支持语音键的单击和双击，请先更新固件或暂不设置语音。")
     candidate = copy.deepcopy(draft)

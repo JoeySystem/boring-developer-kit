@@ -1,5 +1,8 @@
 #include "usb_service.h"
 
+#include "heap_checkpoint.h"
+#include "liveness.h"
+
 /*
  * One USB configuration combines CDC ACM with standard HID. The Codex USB
  * variant exposes its vendor protocol on a second HID interface so host HID
@@ -14,12 +17,18 @@
 #include "class/hid/hid_device.h"
 #include "codex_micro_protocol.h"
 #include "config_protocol.h"
+#include "esp_rom_sys.h"
+#include "esp_system.h"
+#include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "protocol_contract.h"
 #include "tusb.h"
 #include "tinyusb.h"
 #include "tinyusb_cdc_acm.h"
 #include "tinyusb_default_config.h"
+#include "device/usbd_pvt.h"
 
 enum {
     ITF_NUM_CDC_CONTROL = 0,
@@ -53,6 +62,33 @@ enum {
 #define USB_SERVICE_TINYUSB_TASK_STACK_SIZE 8192
 #define HID_USAGE_KEYBOARD_ERROR_ROLLOVER 0x01u
 #define HID_NEUTRAL_REPORT_COUNT 3u
+/*
+ * A software reset does not release the ESP32-S3 USB pull-up, so a host can
+ * keep the old device instance across esp_restart(). Windows then lists the
+ * COM port but cannot configure it (ERROR_DEVICE_NOT_CONNECTED, 433) until
+ * the cable is replugged. Leave the bus explicitly and give the host time to
+ * process the removal before the chip resets.
+ */
+#define USB_RESTART_DETACH_US (300u * 1000u)
+/*
+ * The same window at boot: after any reset that is not a power-on, the host
+ * may still hold the device instance of the firmware that ran before. Older
+ * firmware (including every image before this one) restarted without
+ * leaving the bus, which is what made Windows fail the post-OTA readback
+ * with error 433 until the cable was replugged. Dropping off the bus once at
+ * boot is the same as a replug for the host.
+ */
+#define USB_BOOT_REATTACH_MS 300u
+/*
+ * The configuration parser (including OTA flash writes) runs in its own task
+ * so the TinyUSB task never blocks on it. Unread bytes stay in the TinyUSB CDC
+ * FIFO, which makes the host back off (NAK) instead of losing data.
+ */
+#define USB_CONFIG_RX_TASK_STACK_SIZE 8192
+#define USB_CONFIG_RX_TASK_PRIORITY 4
+#define USB_CONFIG_RX_IDLE_POLL_MS 50u
+/* A key press may wake a sleeping host at most this often. */
+#define USB_REMOTE_WAKEUP_MIN_INTERVAL_MS 500u
 #if CONFIG_CODEX_MICRO_USB_ENABLED
 #define VENDOR_TX_QUEUE_DEPTH 64u
 #endif
@@ -71,6 +107,13 @@ typedef struct cdc_tx_node {
 } cdc_tx_node_t;
 
 static atomic_bool s_mounted;
+static atomic_bool s_driver_installed;
+static atomic_bool s_remote_wakeup_enabled;
+static atomic_bool s_wake_requested;
+static atomic_uint_least32_t s_remote_wakeups;
+static uint32_t s_last_remote_wakeup_ms;
+static atomic_bool s_rx_release_pending;
+static TaskHandle_t s_config_rx_task;
 static atomic_bool s_standard_enabled = true;
 static usb_service_ble_hid_t s_ble_hid;
 static usb_service_vendor_hid_t s_vendor_hid;
@@ -177,7 +220,9 @@ static const uint8_t HID_VENDOR_REPORT_DESCRIPTOR[] = {
 #endif
 
 static const uint8_t CONFIG_DESCRIPTOR[] = {
-    TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, 0, 250),
+    /* Remote wakeup: a key press can wake a sleeping host (bit 5). */
+    TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN,
+                          TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 250),
     TUD_CDC_DESCRIPTOR(ITF_NUM_CDC_CONTROL, 4, 0x81, 8, 0x02, 0x82, 64),
     TUD_HID_DESCRIPTOR(ITF_NUM_HID_STANDARD, 5, HID_ITF_PROTOCOL_NONE,
                        sizeof(HID_STANDARD_REPORT_DESCRIPTOR), 0x83,
@@ -265,6 +310,7 @@ static void usb_event_callback(tinyusb_event_t *event, void *arg)
 {
     (void)arg;
     if (event->id == TINYUSB_EVENT_ATTACHED) {
+        heap_checkpoint("usb_mounted");
         atomic_store(&s_mounted, true);
         s_keyboard_dirty = true;
     } else if (event->id == TINYUSB_EVENT_DETACHED) {
@@ -273,12 +319,26 @@ static void usb_event_callback(tinyusb_event_t *event, void *arg)
 #if CONFIG_CODEX_MICRO_USB_ENABLED
         vendor_tx_clear();
 #endif
-        if (config_protocol_active_transport() ==
-            CONFIG_PROTOCOL_TRANSPORT_USB) {
-            config_protocol_release_transport(
-                CONFIG_PROTOCOL_TRANSPORT_USB);
+        atomic_store(&s_remote_wakeup_enabled, false);
+        /* Releasing the transport takes the parser mutex, which an OTA write
+         * may hold for a while. Hand it to the config task instead of
+         * blocking the USB stack here. */
+        atomic_store(&s_rx_release_pending, true);
+        if (s_config_rx_task != NULL) {
+            xTaskNotifyGive(s_config_rx_task);
         }
     }
+}
+
+/* TinyUSB callbacks; esp_tinyusb 2.0 does not define these two. */
+void tud_suspend_cb(bool remote_wakeup_en)
+{
+    atomic_store(&s_remote_wakeup_enabled, remote_wakeup_en);
+}
+
+void tud_resume_cb(void)
+{
+    atomic_store(&s_wake_requested, false);
 }
 
 static esp_err_t protocol_tx(const uint8_t *data, size_t length, void *context)
@@ -361,12 +421,77 @@ static void poll_cdc_tx(void)
 
 static void cdc_rx_callback(int interface, cdcacm_event_t *event)
 {
+    (void)interface;
     (void)event;
-    size_t received = 0;
-    if (tinyusb_cdcacm_read(interface, s_cdc_rx, sizeof(s_cdc_rx), &received) == ESP_OK && received > 0) {
-        config_protocol_feed_transport(CONFIG_PROTOCOL_TRANSPORT_USB,
-                                       s_cdc_rx, received);
+    /* Runs in the TinyUSB task: only wake the parser task. */
+    if (s_config_rx_task != NULL) {
+        xTaskNotifyGive(s_config_rx_task);
     }
+}
+
+static void config_rx_task(void *parameter)
+{
+    (void)parameter;
+    for (;;) {
+        liveness_beat(LIVENESS_USB_RX);
+        (void)ulTaskNotifyTake(pdTRUE,
+                               pdMS_TO_TICKS(USB_CONFIG_RX_IDLE_POLL_MS));
+        if (atomic_exchange(&s_rx_release_pending, false) &&
+            config_protocol_active_transport() ==
+                CONFIG_PROTOCOL_TRANSPORT_USB) {
+            config_protocol_release_transport(CONFIG_PROTOCOL_TRANSPORT_USB);
+        }
+        /* Drain everything that is buffered; the timeout above also covers
+         * a notification that raced with the previous drain. */
+        for (;;) {
+            size_t received = 0;
+            if (tinyusb_cdcacm_read(TINYUSB_CDC_ACM_0, s_cdc_rx,
+                                    sizeof(s_cdc_rx), &received) != ESP_OK ||
+                received == 0) {
+                break;
+            }
+            config_protocol_feed_transport(CONFIG_PROTOCOL_TRANSPORT_USB,
+                                           s_cdc_rx, received);
+            /* A long OTA transfer drains here without leaving the loop. */
+            liveness_beat(LIVENESS_USB_RX);
+        }
+    }
+}
+
+/* Runs on the TinyUSB task: proves it still processes its event queue. */
+static void usb_stack_liveness_beat(void *parameter)
+{
+    (void)parameter;
+    liveness_beat(LIVENESS_USB_STACK);
+}
+
+/* Liveness supervisor probe (stability item 2). Blocks while the TinyUSB
+ * queue is full, which only a stuck TinyUSB task leaves full. */
+static bool usb_stack_liveness_probe(void)
+{
+    if (!atomic_load(&s_driver_installed)) {
+        return false;
+    }
+    usbd_defer_func(usb_stack_liveness_beat, NULL, false);
+    return true;
+}
+
+/* Only a power-on guarantees the host saw the device disappear. */
+static bool usb_boot_reattach_needed(esp_reset_reason_t reason)
+{
+    return reason != ESP_RST_POWERON;
+}
+
+/* Runs from esp_restart() for every restart path (OTA, menu, name change). */
+static void detach_before_restart(void)
+{
+    if (!atomic_load(&s_driver_installed)) {
+        return;
+    }
+    atomic_store(&s_mounted, false);
+    (void)tud_disconnect();
+    /* Busy-wait: the scheduler state is not guaranteed during shutdown. */
+    esp_rom_delay_us(USB_RESTART_DETACH_US);
 }
 
 esp_err_t usb_service_init(const char *serial)
@@ -386,10 +511,24 @@ esp_err_t usb_service_init(const char *serial)
         USB_SERVICE_TINYUSB_TASK_STACK_SIZE,
         TINYUSB_DEFAULT_TASK_PRIO,
         TINYUSB_DEFAULT_TASK_AFFINITY);
+    if (s_config_rx_task == NULL &&
+        xTaskCreate(config_rx_task, "usb_cfg_rx",
+                    USB_CONFIG_RX_TASK_STACK_SIZE, NULL,
+                    USB_CONFIG_RX_TASK_PRIORITY, &s_config_rx_task) != pdPASS) {
+        s_config_rx_task = NULL;
+        return ESP_ERR_NO_MEM;
+    }
     esp_err_t error = tinyusb_driver_install(&usb_config);
     if (error != ESP_OK) {
         return error;
     }
+    atomic_store(&s_driver_installed, true);
+    liveness_arm(LIVENESS_USB_RX, LIVENESS_USB_RX_TIMEOUT_MS);
+    liveness_set_probe(LIVENESS_USB_STACK, usb_stack_liveness_probe,
+                       LIVENESS_USB_STACK_TIMEOUT_MS);
+    /* Not fatal if it fails: USB still works, only the restart detach is lost.
+     * ESP_ERR_INVALID_STATE means the handler is already registered. */
+    (void)esp_register_shutdown_handler(detach_before_restart);
 
     const tinyusb_config_cdcacm_t cdc_config = {
         .cdc_port = TINYUSB_CDC_ACM_0,
@@ -398,7 +537,16 @@ esp_err_t usb_service_init(const char *serial)
         .callback_line_state_changed = NULL,
         .callback_line_coding_changed = NULL,
     };
-    return tinyusb_cdcacm_init(&cdc_config);
+    error = tinyusb_cdcacm_init(&cdc_config);
+    if (error != ESP_OK) {
+        return error;
+    }
+    if (usb_boot_reattach_needed(esp_reset_reason())) {
+        (void)tud_disconnect();
+        vTaskDelay(pdMS_TO_TICKS(USB_BOOT_REATTACH_MS));
+        (void)tud_connect();
+    }
+    return ESP_OK;
 }
 
 bool usb_service_is_mounted(void)
@@ -410,6 +558,54 @@ bool usb_service_is_mounted(void)
      * suspended when SOF traffic stops, so require a transfer-ready bus here.
      */
     return atomic_load(&s_mounted) && tud_ready();
+}
+
+usb_service_link_state_t usb_service_link_state(void)
+{
+    if (usb_service_is_mounted()) {
+        return USB_SERVICE_LINK_READY;
+    }
+    if (atomic_load(&s_mounted)) {
+        /* Configured earlier, bus now suspended. Without VBUS sense this is
+         * either a sleeping host or an unplugged cable. */
+        return USB_SERVICE_LINK_SUSPENDED;
+    }
+    /* A bus reset means a host is driving the cable but has not (yet)
+     * configured the device. */
+    return tud_connected() ? USB_SERVICE_LINK_ENUMERATING
+                           : USB_SERVICE_LINK_NONE;
+}
+
+uint32_t usb_service_remote_wakeups(void)
+{
+    return atomic_load(&s_remote_wakeups);
+}
+
+static bool ble_hid_connected(void);
+
+static void request_remote_wakeup(void)
+{
+    atomic_store(&s_wake_requested, true);
+}
+
+/* Wake a sleeping host only when no other host can take the input. */
+static void poll_remote_wakeup(void)
+{
+    if (!atomic_exchange(&s_wake_requested, false) ||
+        !atomic_load(&s_standard_enabled) || !atomic_load(&s_mounted) ||
+        !atomic_load(&s_remote_wakeup_enabled) || !tud_suspended() ||
+        ble_hid_connected()) {
+        return;
+    }
+    const uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
+    if (s_last_remote_wakeup_ms != 0u &&
+        now_ms - s_last_remote_wakeup_ms < USB_REMOTE_WAKEUP_MIN_INTERVAL_MS) {
+        return;
+    }
+    if (tud_remote_wakeup()) {
+        s_last_remote_wakeup_ms = now_ms == 0u ? 1u : now_ms;
+        atomic_fetch_add(&s_remote_wakeups, 1u);
+    }
 }
 
 bool usb_service_config_session_active(void)
@@ -537,6 +733,9 @@ void usb_service_set_key(usb_service_source_t source, uint8_t hid_usage, bool pr
     if (updated != s_key_owners[hid_usage]) {
         s_key_owners[hid_usage] = updated;
         s_keyboard_dirty = true;
+        if (pressed) {
+            request_remote_wakeup();
+        }
     }
 }
 
@@ -559,6 +758,9 @@ void usb_service_set_modifier(usb_service_source_t source, uint8_t hid_usage, bo
     if (updated != s_modifiers) {
         s_modifiers = updated;
         s_keyboard_dirty = true;
+        if (pressed) {
+            request_remote_wakeup();
+        }
     }
 }
 
@@ -614,6 +816,7 @@ void usb_service_tap_consumer(uint16_t hid_usage)
     }
     s_consumer_queue[s_consumer_write] = hid_usage;
     s_consumer_write = next;
+    request_remote_wakeup();
 }
 
 static bool enqueue_mouse(usb_service_source_t source, uint8_t buttons,
@@ -648,6 +851,9 @@ void usb_service_send_mouse(usb_service_source_t source, uint8_t buttons,
         }
     }
     if (updated_buttons != s_mouse_buttons) {
+        if ((updated_buttons & (uint8_t)~s_mouse_buttons) != 0u) {
+            request_remote_wakeup();
+        }
         s_mouse_buttons = updated_buttons;
         s_mouse_buttons_dirty = true;
     }
@@ -864,6 +1070,9 @@ void usb_service_poll(void)
     } else {
         clear_cdc_tx_queue();
     }
+    poll_remote_wakeup();
+    config_protocol_set_usb_link_diagnostics(
+        (uint8_t)usb_service_link_state(), atomic_load(&s_remote_wakeups));
 
     if (!update_hid_route() || s_hid_route == USB_SERVICE_ROUTE_NONE ||
         !route_ready(s_hid_route)) {

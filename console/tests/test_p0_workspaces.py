@@ -5,6 +5,8 @@ from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QMessageBox
 
 from test_session_recovery import session
+from notice_helpers import answer_information
+from notice_helpers import pick
 
 
 def switch_with_dirty_a(vm, gateway, snapshot):
@@ -20,8 +22,7 @@ def test_exit_detects_dirty_previous_device(session, monkeypatch):
     window, vm, gateway, snapshot, _ = session
     draft_a = switch_with_dirty_a(vm, gateway, snapshot)
     prompts = []
-    monkeypatch.setattr(QMessageBox, "exec", lambda dialog: prompts.append(dialog.text()) or 0)
-    monkeypatch.setattr(QMessageBox, "clickedButton", lambda dialog: None)
+    pick(monkeypatch, lambda _title, text, _keys: prompts.append(text) or "cancel")
     try:
         event = QCloseEvent()
         window.closeEvent(event)
@@ -32,22 +33,20 @@ def test_exit_detects_dirty_previous_device(session, monkeypatch):
         draft_a.discard()
 
 
-@pytest.mark.parametrize("choice", [QMessageBox.AcceptRole, QMessageBox.DestructiveRole])
+@pytest.mark.parametrize("choice", ["export", "discard"])
 def test_exit_handles_previous_device_workspace(session, monkeypatch, tmp_path, choice):
     import json
     from PySide6.QtWidgets import QFileDialog
     window, vm, gateway, snapshot, _ = session
     draft_a = switch_with_dirty_a(vm, gateway, snapshot)
-    selected = []
-    monkeypatch.setattr(QMessageBox, "exec", lambda dialog: selected.append(next(b for b in dialog.buttons() if dialog.buttonRole(b) == choice)) or 0)
-    monkeypatch.setattr(QMessageBox, "clickedButton", lambda dialog: selected[-1])
+    pick(monkeypatch, lambda _title, _text, _keys: choice)
     target = tmp_path / "a.json"
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(target), ""))
-    monkeypatch.setattr(QMessageBox, "information", lambda *args: QMessageBox.Ok)
+    answer_information(monkeypatch, lambda *args: QMessageBox.Ok)
     try:
         assert vm.pending_dirty_workspaces() == (draft_a,)
         assert window.close()  # Native window close uses the same closeEvent path.
-        if choice == QMessageBox.AcceptRole:
+        if choice == "export":
             assert json.loads(target.read_text())["config"]["profiles"][0]["name"] == "A unsaved"
         else:
             assert not vm.pending_dirty_workspaces()

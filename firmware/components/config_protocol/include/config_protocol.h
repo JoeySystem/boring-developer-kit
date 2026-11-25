@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include "board.h"
 #include "esp_err.h"
+#include "usb_standby_trace.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -52,6 +53,9 @@ void config_protocol_init(const char *serial, config_protocol_tx_fn tx, void *tx
 
 /** Publish BLE availability only after the configuration service has started. */
 void config_protocol_set_ble_service_ready(bool ready);
+/** USB link state (usb_service_link_state_t) and remote wakeups, for GET_STATUS. */
+void config_protocol_set_usb_link_diagnostics(uint8_t link_state,
+                                              uint32_t remote_wakeups);
 void config_protocol_feed(const uint8_t *data, size_t length);
 /** Claim the single WMP session for one transport and reset volatile state. */
 bool config_protocol_claim_transport(config_protocol_transport_t transport,
@@ -65,6 +69,12 @@ void config_protocol_feed_transport(config_protocol_transport_t transport,
 config_protocol_transport_t config_protocol_active_transport(void);
 /** Capture joystick samples and expire abandoned calibration sessions. */
 void config_protocol_poll(void);
+/*
+ * Main loop, every pass (stability item 4). Healthy = USB mounted and not in
+ * safe mode; BLE readiness is only reported. A fresh image approved by a host
+ * is confirmed after it stays healthy for FIRMWARE_HEALTH_DWELL_MS.
+ */
+void config_protocol_note_runtime_health(bool usb_mounted, bool safe_mode, bool ble_ready);
 void config_protocol_reset(void);
 
 /**
@@ -101,6 +111,13 @@ bool config_protocol_calibration_activation_ready(void);
 void config_protocol_calibration_activated(void);
 
 /** Publish existing Action Engine state through the read-only GET_STATUS diagnostics. */
+/* GET_STATUS power_guard.state: "normal", "low", "critical", "boot_blocked"
+ * or "locked_standby". The pointer must stay valid (string literal). */
+void config_protocol_set_power_guard_state(const char *state);
+
+/* GET_STATUS usb_standby: Action Engine publishes a copy on every change. */
+void config_protocol_set_usb_standby_trace(const usb_standby_trace_t *trace);
+
 void config_protocol_set_action_diagnostics(
     const char *host_output_state, const char *local_page,
     const char *round_setting_state, bool quick_config_active,

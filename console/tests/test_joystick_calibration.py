@@ -66,7 +66,8 @@ def _start_result(session_id: int = 7) -> dict:
     }
 
 
-def _sample_result(*, complete: bool, session_id: int = 7) -> dict:
+def _sample_result(*, complete: bool, session_id: int = 7,
+                   ready: bool | None = None) -> dict:
     return {
         "command": "CALIBRATION_SAMPLE",
         "result": {
@@ -77,6 +78,7 @@ def _sample_result(*, complete: bool, session_id: int = 7) -> dict:
             "minimum": {"x": 260, "y": 340},
             "maximum": {"x": 3820, "y": 3750},
             "travel_complete": complete,
+            **({"ready_to_confirm": ready} if ready is not None else {}),
         },
     }
 
@@ -156,6 +158,26 @@ def test_complete_calibration_samples_confirms_and_reads_back(qtbot, contract) -
     assert view_model.draft.config["joystick"]["filter"] == snapshot.config["joystick"]["filter"]
     assert view_model.draft.config["joystick"]["x"]["invert"] is False
     assert gateway.poll_intervals[-1] == 500
+
+
+def test_new_firmware_waits_for_stable_returns_after_full_travel(qtbot, contract) -> None:
+    gateway = CalibrationGateway()
+    view_model = MainViewModel(gateway, contract)
+    gateway.snapshot_ready.emit(_power_v2_snapshot(contract, read_only=False))
+    view_model.start_joystick_calibration()
+    gateway.command_completed.emit("CALIBRATION_START", _start_result())
+    view_model._poll_calibration_sample()
+    gateway.command_completed.emit(
+        "CALIBRATION_SAMPLE", _sample_result(complete=True, ready=False)
+    )
+    assert view_model.calibration.state is CalibrationState.CAPTURING
+    assert view_model.calibration.travel_complete is True
+    assert view_model.calibration.can_confirm is False
+    view_model._poll_calibration_sample()
+    gateway.command_completed.emit(
+        "CALIBRATION_SAMPLE", _sample_result(complete=True, ready=True)
+    )
+    assert view_model.calibration.can_confirm is True
 
 
 def test_cancel_preserves_original_configuration(qtbot, contract) -> None:

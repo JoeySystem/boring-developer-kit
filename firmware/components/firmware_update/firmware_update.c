@@ -14,7 +14,8 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "protocol_contract.h"
-#include "psa/crypto.h"
+#include "ram_reserve.h"
+#include "wmp_sha256.h"
 #include "sdkconfig.h"
 
 #define IMAGE_DESCRIPTOR_OFFSET                                             \
@@ -32,14 +33,18 @@ static esp_ota_handle_t s_update_handle;
 static bool s_update_handle_active;
 static size_t s_expected_size;
 static size_t s_received_size;
-static uint8_t s_expected_sha256[PSA_HASH_LENGTH(PSA_ALG_SHA_256)];
+static uint8_t s_expected_sha256[WMP_SHA256_DIGEST_BYTES];
 static char s_expected_version[32];
-static psa_hash_operation_t s_hash_operation = PSA_HASH_OPERATION_INIT;
+/* Allocation-free, so FW_BEGIN works even with internal heap exhausted. */
+static wmp_sha256_t s_hash_context;
 static bool s_hash_active;
 static atomic_bool s_finalize_pending;
 static int64_t s_finalize_deadline_us;
 static atomic_bool s_reboot_pending;
 static int64_t s_reboot_deadline_us;
+static atomic_bool s_confirm_pending;
+static _Atomic firmware_confirm_source_t s_confirm_source =
+    FIRMWARE_CONFIRM_SOURCE_NOT_REQUIRED;
 
 typedef struct {
     uint32_t magic;
@@ -153,10 +158,7 @@ static bool version_string_valid(const char *version)
 
 static void reset_hash(void)
 {
-    if (s_hash_active) {
-        (void)psa_hash_abort(&s_hash_operation);
-    }
-    s_hash_operation = psa_hash_operation_init();
+    memset(&s_hash_context, 0, sizeof(s_hash_context));
     s_hash_active = false;
 }
 
@@ -172,6 +174,7 @@ static void clear_transaction(void)
     s_received_size = 0;
     memset(s_expected_sha256, 0, sizeof(s_expected_sha256));
     memset(s_expected_version, 0, sizeof(s_expected_version));
+    ram_reserve_restore();
 }
 
 static bool descriptor_string_valid(const char *value, size_t capacity,
@@ -220,10 +223,13 @@ esp_err_t firmware_update_init(void)
     s_finalize_deadline_us = 0;
     atomic_store(&s_reboot_pending, false);
     s_reboot_deadline_us = 0;
-    return psa_crypto_init() == PSA_SUCCESS ? ESP_OK : ESP_FAIL;
+    if (ram_reserve_init() != ESP_OK) {
+        ESP_LOGW(TAG, "emergency RAM reserve unavailable");
+    }
+    return ESP_OK;
 }
 
-esp_err_t firmware_update_confirm_running(void)
+esp_err_t firmware_update_boot_ready(void)
 {
 #if CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
     const esp_partition_t *running = esp_ota_get_running_partition();
@@ -236,20 +242,46 @@ esp_err_t firmware_update_confirm_running(void)
         s_boot_diagnostics.current_confirm_error = state_error;
         return state_error;
     }
-    if (state != ESP_OTA_IMG_PENDING_VERIFY) {
-        firmware_update_boot_stage(FIRMWARE_BOOT_STAGE_CONFIRMED);
+    if (state == ESP_OTA_IMG_PENDING_VERIFY) {
+        /* F-01: "starts" is not "reachable". Keep rollback armed until a host
+         * completes the configuration handshake; any reset returns to the
+         * previous slot. */
+        atomic_store(&s_confirm_source, FIRMWARE_CONFIRM_SOURCE_PENDING);
+        atomic_store(&s_confirm_pending, true);
+        ESP_LOGI(TAG, "OTA image in %s awaits host confirmation", running->label);
+        return ESP_OK;
+    }
+#endif
+    atomic_store(&s_confirm_source, FIRMWARE_CONFIRM_SOURCE_NOT_REQUIRED);
+    firmware_update_boot_stage(FIRMWARE_BOOT_STAGE_CONFIRMED);
+    return ESP_OK;
+}
+
+bool firmware_update_confirm_pending(void)
+{
+    return atomic_load(&s_confirm_pending);
+}
+
+esp_err_t firmware_update_confirm_running(firmware_confirm_source_t source)
+{
+#if CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
+    if (!atomic_load(&s_confirm_pending)) {
         return ESP_OK;
     }
     const esp_err_t error = esp_ota_mark_app_valid_cancel_rollback();
     s_boot_diagnostics.current_confirm_error = error;
-    if (error == ESP_OK) {
-        firmware_update_boot_stage(FIRMWARE_BOOT_STAGE_CONFIRMED);
-        ESP_LOGI(TAG, "confirmed OTA image in %s after startup self-test",
-                 running->label);
+    if (error != ESP_OK) {
+        return error;
     }
-    return error;
+    atomic_store(&s_confirm_pending, false);
+    atomic_store(&s_confirm_source, source);
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    ESP_LOGI(TAG, "confirmed OTA image in %s (%s)",
+             running != NULL ? running->label : "?",
+             source == FIRMWARE_CONFIRM_SOURCE_HOST ? "FW_CONFIRM" : "session");
+    return ESP_OK;
 #else
-    firmware_update_boot_stage(FIRMWARE_BOOT_STAGE_CONFIRMED);
+    (void)source;
     return ESP_OK;
 #endif
 }
@@ -259,7 +291,7 @@ esp_err_t firmware_update_begin(const char *product_id, const char *hardware_id,
                                 const char *sha256_hex, char *reason,
                                 size_t reason_size)
 {
-    uint8_t expected_sha256[PSA_HASH_LENGTH(PSA_ALG_SHA_256)];
+    uint8_t expected_sha256[WMP_SHA256_DIGEST_BYTES];
     if (!board_is_product_target()) {
         set_reason(reason, reason_size,
                    "firmware update is disabled on the generic devkit target");
@@ -306,12 +338,7 @@ esp_err_t firmware_update_begin(const char *product_id, const char *hardware_id,
         return begin_error;
     }
     s_update_handle_active = true;
-    if (psa_hash_setup(&s_hash_operation, PSA_ALG_SHA_256) != PSA_SUCCESS) {
-        clear_transaction();
-        atomic_store(&s_state, FIRMWARE_UPDATE_FAILED);
-        set_reason(reason, reason_size, "could not initialize firmware hashing");
-        return ESP_FAIL;
-    }
+    wmp_sha256_init(&s_hash_context);
     s_hash_active = true;
     s_target_partition = target;
     s_expected_size = image_size;
@@ -346,12 +373,7 @@ esp_err_t firmware_update_write(size_t offset, const uint8_t *data, size_t lengt
             return identity_error;
         }
     }
-    if (psa_hash_update(&s_hash_operation, data, length) != PSA_SUCCESS) {
-        set_reason(reason, reason_size, "could not hash firmware chunk");
-        atomic_store(&s_state, FIRMWARE_UPDATE_FAILED);
-        clear_transaction();
-        return ESP_FAIL;
-    }
+    wmp_sha256_update(&s_hash_context, data, length);
     const esp_err_t write_error = esp_ota_write(s_update_handle, data, length);
     if (write_error != ESP_OK) {
         set_reason(reason, reason_size, "could not write firmware chunk");
@@ -377,13 +399,10 @@ esp_err_t firmware_update_finish(char *reason, size_t reason_size)
         return ESP_ERR_INVALID_SIZE;
     }
 
-    uint8_t actual_sha256[PSA_HASH_LENGTH(PSA_ALG_SHA_256)];
-    size_t actual_length = 0;
-    const psa_status_t hash_status = psa_hash_finish(
-        &s_hash_operation, actual_sha256, sizeof(actual_sha256), &actual_length);
+    uint8_t actual_sha256[WMP_SHA256_DIGEST_BYTES];
+    wmp_sha256_finish(&s_hash_context, actual_sha256);
     s_hash_active = false;
-    if (hash_status != PSA_SUCCESS || actual_length != sizeof(actual_sha256) ||
-        memcmp(actual_sha256, s_expected_sha256, sizeof(actual_sha256)) != 0) {
+    if (memcmp(actual_sha256, s_expected_sha256, sizeof(actual_sha256)) != 0) {
         set_reason(reason, reason_size, "firmware SHA-256 does not match manifest");
         atomic_store(&s_state, FIRMWARE_UPDATE_FAILED);
         clear_transaction();
@@ -392,6 +411,10 @@ esp_err_t firmware_update_finish(char *reason, size_t reason_size)
 
     const esp_ota_handle_t completed_handle = s_update_handle;
     s_update_handle_active = false;
+    /* esp_ota_end and esp_ota_set_boot_partition hash the image through the
+     * PSA driver, which needs DMA-capable internal RAM. Failures restore the
+     * reserve in clear_transaction(); success reboots. */
+    ram_reserve_release();
     const esp_err_t end_error = esp_ota_end(completed_handle);
     if (end_error != ESP_OK) {
         set_reason(reason, reason_size,
@@ -494,6 +517,7 @@ void firmware_update_get_status(firmware_update_status_t *status)
 #endif
     }
     status->reboot_pending = atomic_load(&s_reboot_pending);
+    status->confirm_source = atomic_load(&s_confirm_source);
     if (s_boot_diagnostics.magic == BOOT_DIAGNOSTICS_MAGIC) {
         status->current_boot_sequence = s_boot_diagnostics.current_sequence;
         status->current_boot_stage =
@@ -533,6 +557,7 @@ void firmware_update_poll(void)
             ESP_LOGE(TAG, "could not select the new boot partition: %s",
                      esp_err_to_name(boot_error));
             atomic_store(&s_state, FIRMWARE_UPDATE_FAILED);
+            ram_reserve_restore();
             return;
         }
         atomic_store(&s_state, FIRMWARE_UPDATE_READY_TO_REBOOT);

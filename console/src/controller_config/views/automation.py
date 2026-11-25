@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from controller_config.views.ui import notice
 from controller_config.automation import AutomationError, LocalScriptAutomation
 from controller_config.i18n import translate_ui_text
 from controller_config.views.v4_widgets import V4Card
@@ -368,11 +369,12 @@ class AutomationPage(QScrollArea):
             previous.script_path, previous.enabled, previous.timeout_ms,
         ) if previous is not None else AutomationEditingState(None, "", None, "", False)
         if current != expected:
-            choice = QMessageBox.question(
+            choice = notice.ask(
                 self, translate_ui_text("未保存的修改"),
                 translate_ui_text("保存当前修改后再继续？"),
                 QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
                 QMessageBox.Cancel,
+                labels={QMessageBox.Discard: "放弃修改"},
             )
             if choice == QMessageBox.Cancel:
                 return False
@@ -465,7 +467,7 @@ class AutomationPage(QScrollArea):
             definition.validate()
             self._view_model.host_tasks.apply("script", definition, self._control.currentData())
         except (AutomationError, ValueError, OSError) as exc:
-            QMessageBox.warning(self, translate_ui_text("无法保存本地脚本"), str(exc))
+            notice.notify(self, translate_ui_text("无法保存本地脚本"), str(exc))
             return
         self._selected_id = definition.automation_id
         self._update_button_state()
@@ -493,7 +495,7 @@ class AutomationPage(QScrollArea):
                 timeout_ms=self._timeout.value() * 1000,
             )
         except (AutomationError, OSError) as exc:
-            QMessageBox.warning(
+            notice.notify(
                 self,
                 translate_ui_text("无法保存本地脚本"),
                 translate_ui_text(str(exc)),
@@ -510,7 +512,7 @@ class AutomationPage(QScrollArea):
         try:
             self._view_model.run_automation_test(self._selected_id)
         except AutomationError as exc:
-            QMessageBox.warning(
+            notice.notify(
                 self,
                 translate_ui_text("无法运行本地脚本"),
                 translate_ui_text(str(exc)),
@@ -519,19 +521,21 @@ class AutomationPage(QScrollArea):
     def _delete_selected(self) -> None:
         if self._selected_id is None:
             return
-        answer = QMessageBox.question(
+        answer = notice.ask(
             self,
             translate_ui_text("删除本地脚本"),
             translate_ui_text("删除后，对应提示词事件将恢复默认处理。"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel,
+            danger=True,
+            labels={QMessageBox.StandardButton.Yes: "删除"},
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:
             self._view_model.delete_automation(self._selected_id)
         except (AutomationError, ValueError, OSError) as exc:
-            QMessageBox.warning(
+            notice.notify(
                 self,
                 translate_ui_text("无法删除本地脚本"),
                 translate_ui_text(str(exc)),

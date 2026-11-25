@@ -227,7 +227,7 @@ def test_busy_firmware_blocks_name_save(naming):
     vm, gateway, _ = naming
     readback(gateway)
     vm.ble_name.edit('Mine')
-    vm._firmware_update = FirmwareUpdateTransaction(state=FirmwareUpdateState.TRANSFERRING)
+    vm._firmware.replace_silently(FirmwareUpdateTransaction(state=FirmwareUpdateState.TRANSFERRING))
     with pytest.raises(ValueError, match='维护'):
         vm.ble_name.save()
     assert gateway.commands[-1].name == 'BLE_NAME_GET'

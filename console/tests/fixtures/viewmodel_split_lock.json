@@ -1,0 +1,7051 @@
+{
+ "ble_failure_messages": [
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "init",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "CONNECTING",
+    "正在确认设备身份并读取配置…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "connect",
+     "ble:desk"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "connect ble",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READ_FAILED",
+    "蓝牙连接失败；请重新连接，或使用 USB 连接设备。",
+    "无法打开\nport busy"
+   ],
+   "candidates": [],
+   "failed_ports": [
+    "ble:desk"
+   ],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "ble failed before config",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READ_FAILED",
+    "蓝牙设备已连接，但配置未能读取；请重新连接，或使用 USB 连接设备。",
+    "配置损坏\nbad config"
+   ],
+   "candidates": [],
+   "failed_ports": [
+    "ble:desk"
+   ],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "connect",
+     "ble:desk"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "ble failed while reading config",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READ_FAILED",
+    "配置读取失败；请重新连接设备。",
+    "未知\nno port"
+   ],
+   "candidates": [],
+   "failed_ports": [
+    "ble:desk"
+   ],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "failure without port",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READ_FAILED",
+    "配置读取失败；请重新连接设备。",
+    "未知\nno port"
+   ],
+   "candidates": [],
+   "failed_ports": [
+    "ble:desk"
+   ],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "shutdown"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "shutdown",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  }
+ ],
+ "candidates_lists": [
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "init",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "scan",
+     false
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "refresh",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "NO_DEVICE",
+    "尚未连接 BORING 设备",
+    "请插入 USB，或先在系统蓝牙设置中连接设备。"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "no candidates",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "MULTIPLE_DEVICES",
+    "此电脑连接了多台 BORING 设备",
+    "请选择要管理的设备。"
+   ],
+   "candidates": [
+    "cu.a",
+    "cu.b"
+   ],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "two candidates",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "CONNECTING",
+    "正在确认设备身份并读取配置…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "connect",
+     "cu.b"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "user picks one",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "CONNECTING",
+    "正在确认设备身份并读取配置…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "shutdown"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "shutdown",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  }
+ ],
+ "disconnect_backoff": [
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "init",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "snapshot cu.usbmodem-lock",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "DISCONNECTED",
+    "设备连接已断开",
+    "cable removed"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "scan_reconnect",
+     "cu.usbmodem-lock",
+     false
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "disconnected",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "DISCONNECTED",
+    "设备连接已断开",
+    "cable removed"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "scan_reconnect",
+     "cu.usbmodem-lock",
+     false
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    1000
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "tick 0",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "DISCONNECTED",
+    "设备连接已断开",
+    "cable removed"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "scan",
+     true
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    1000
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "tick 1",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "DISCONNECTED",
+    "设备连接已断开",
+    "cable removed"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "scan_reconnect",
+     "cu.usbmodem-lock",
+     false
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    1000
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "tick 2",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "DISCONNECTED",
+    "设备连接已断开",
+    "cable removed"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "scan",
+     true
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    1000
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "tick 3",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "DISCONNECTED",
+    "设备连接已断开",
+    "cable removed"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "scan",
+     true
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    1000
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "tick 4",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "DISCONNECTED",
+    "设备连接已断开",
+    "cable removed"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "scan",
+     true
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    1000
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "tick 5",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "DISCONNECTED",
+    "设备连接已断开",
+    "cable removed"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "scan_reconnect",
+     "cu.usbmodem-lock",
+     false
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    1000
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "tick 6",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "DISCONNECTED",
+    "设备连接已断开",
+    "cable removed"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "scan",
+     true
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    1000
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "tick 7",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "DISCONNECTED",
+    "设备连接已断开",
+    "cable removed"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    1000
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "empty scan while disconnected",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "CONNECTING",
+    "正在确认设备身份并读取配置…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "connect",
+     "cu.usbmodem-lock"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "device back",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "CONNECTING",
+    "正在确认设备身份并读取配置…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "shutdown"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "shutdown",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  }
+ ],
+ "failure_kind_AUTHENTICATION_INTERRUPTED": [
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "init",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "snapshot cu.usbmodem-lock",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "DISCONNECTED",
+    "AUTHENTICATION_INTERRUPTED message",
+    "AUTHENTICATION_INTERRUPTED technical"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "failure AUTHENTICATION_INTERRUPTED",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "DISCONNECTED",
+    "AUTHENTICATION_INTERRUPTED message",
+    "AUTHENTICATION_INTERRUPTED technical"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "scan_reconnect",
+     "cu.usbmodem-lock",
+     false
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "reconnect tick",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "DISCONNECTED",
+    "AUTHENTICATION_INTERRUPTED message",
+    "AUTHENTICATION_INTERRUPTED technical"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "shutdown"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "shutdown",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  }
+ ],
+ "failure_kind_AUTHENTICITY_FAILED": [
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "init",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "snapshot cu.usbmodem-lock",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "AUTHENTICITY_FAILED",
+    "AUTHENTICITY_FAILED message",
+    "AUTHENTICITY_FAILED technical"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "failure AUTHENTICITY_FAILED",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "AUTHENTICITY_FAILED",
+    "AUTHENTICITY_FAILED message",
+    "AUTHENTICITY_FAILED technical"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "reconnect tick",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "AUTHENTICITY_FAILED",
+    "AUTHENTICITY_FAILED message",
+    "AUTHENTICITY_FAILED technical"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "shutdown"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "shutdown",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  }
+ ],
+ "failure_kind_DISCOVERY_INTERRUPTED": [
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "init",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "snapshot cu.usbmodem-lock",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "DISCONNECTED",
+    "蓝牙连接检查暂未完成，正在自动重试。",
+    "DISCOVERY_INTERRUPTED technical"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    5000
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "failure DISCOVERY_INTERRUPTED",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "DISCONNECTED",
+    "蓝牙连接检查暂未完成，正在自动重试。",
+    "DISCOVERY_INTERRUPTED technical"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "scan_reconnect",
+     "cu.usbmodem-lock",
+     false
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    1000
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "reconnect tick",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "DISCONNECTED",
+    "蓝牙连接检查暂未完成，正在自动重试。",
+    "DISCOVERY_INTERRUPTED technical"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "shutdown"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    1000
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "shutdown",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  }
+ ],
+ "failure_kind_FIRMWARE_UPDATE_REQUIRED": [
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "init",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "snapshot cu.usbmodem-lock",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "FIRMWARE_UPDATE_REQUIRED",
+    "FIRMWARE_UPDATE_REQUIRED message",
+    "FIRMWARE_UPDATE_REQUIRED technical"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "failure FIRMWARE_UPDATE_REQUIRED",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "FIRMWARE_UPDATE_REQUIRED",
+    "FIRMWARE_UPDATE_REQUIRED message",
+    "FIRMWARE_UPDATE_REQUIRED technical"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "reconnect tick",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "FIRMWARE_UPDATE_REQUIRED",
+    "FIRMWARE_UPDATE_REQUIRED message",
+    "FIRMWARE_UPDATE_REQUIRED technical"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "shutdown"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "shutdown",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  }
+ ],
+ "failure_kind_INCOMPATIBLE": [
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "init",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "snapshot cu.usbmodem-lock",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "INCOMPATIBLE",
+    "INCOMPATIBLE message",
+    "INCOMPATIBLE technical"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "failure INCOMPATIBLE",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "INCOMPATIBLE",
+    "INCOMPATIBLE message",
+    "INCOMPATIBLE technical"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "reconnect tick",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "INCOMPATIBLE",
+    "INCOMPATIBLE message",
+    "INCOMPATIBLE technical"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "shutdown"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "shutdown",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  }
+ ],
+ "firmware_abort_and_reject": [
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "init",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "snapshot cu.usbmodem-lock",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "PACKAGE_READY",
+    "固件包已完成本地检查，尚未向设备发送数据",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "package loaded",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "CHECKING",
+    "正在读取设备固件维护状态",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "poll",
+     60000
+    ],
+    [
+     "command",
+     "FW_STATUS"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "start",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "ABORTING",
+    "等待当前请求结束，然后中止设备固件接收事务",
+    "",
+    0,
+    0,
+    "",
+    true
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "abort while checking",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "ABORTING",
+    "等待当前请求结束，然后中止设备固件接收事务",
+    "",
+    0,
+    0,
+    "",
+    true
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "command",
+     "FW_ABORT"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "status during abort",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "PACKAGE_READY",
+    "设备中的未完成固件接收已清除；可重新开始所选软件包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "poll",
+     500
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "aborted",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "FAILED",
+    "设备拒绝固件维护命令",
+    "FW_BEGIN: technical VALIDATION_FAILED",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "poll",
+     60000
+    ],
+    [
+     "command",
+     "FW_STATUS"
+    ],
+    [
+     "command",
+     "FW_BEGIN"
+    ],
+    [
+     "poll",
+     500
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "FW_BEGIN rejected",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "NEEDS_ABORT",
+    "设备中存在另一份未完成的固件接收；必须由用户明确中止后才能继续",
+    "",
+    0,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "poll",
+     60000
+    ],
+    [
+     "command",
+     "FW_STATUS"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "foreign receive needs abort",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "FAILED",
+    "重新连接的是另一台设备，已停止固件维护",
+    "",
+    0,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "poll",
+     500
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "another device reconnects",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "FAILED",
+    "重新连接的是另一台设备，已停止固件维护",
+    "",
+    0,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "shutdown"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "shutdown",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  }
+ ],
+ "firmware_deadlines_and_pause": [
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "init",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "snapshot cu.usbmodem-lock",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "PACKAGE_READY",
+    "固件包已完成本地检查，尚未向设备发送数据",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "package loaded",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "CHECKING",
+    "正在读取设备固件维护状态",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "poll",
+     60000
+    ],
+    [
+     "command",
+     "FW_STATUS"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "start",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "TRANSFERRING",
+    "正在传输固件：0 / 1024 字节",
+    "",
+    0,
+    256,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "command",
+     "FW_BEGIN"
+    ],
+    [
+     "command",
+     "FW_DATA"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "FW_BEGIN ack",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "DISCONNECTED",
+    "设备连接已断开",
+    "cable pulled mid transfer"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "PAUSED",
+    "传输期间连接中断；重连后将从设备报告的偏移继续，不会盲目重发",
+    "cable pulled mid transfer",
+    0,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "scan_reconnect",
+     "cu.usbmodem-lock",
+     true
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "paused by disconnect",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "DISCONNECTED",
+    "设备连接已断开",
+    "cable pulled mid transfer"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "PAUSED",
+    "传输期间连接中断；重连后将从设备报告的偏移继续，不会盲目重发",
+    "cable pulled mid transfer",
+    0,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "scan_reconnect",
+     "cu.usbmodem-lock",
+     true
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "urgent usb reconnect",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "DISCONNECTED",
+    "等待固件维护设备重新连接 USB…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "PAUSED",
+    "传输期间连接中断；重连后将从设备报告的偏移继续，不会盲目重发",
+    "cable pulled mid transfer",
+    0,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "waiting for usb",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "CHECKING",
+    "传输期间连接中断；重连后将从设备报告的偏移继续，不会盲目重发",
+    "cable pulled mid transfer",
+    0,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "poll",
+     60000
+    ],
+    [
+     "command",
+     "FW_STATUS"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "same device back",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "FINALIZING",
+    "设备正在校验完整镜像并准备新的 OTA 分区",
+    "cable pulled mid transfer",
+    0,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    true,
+    true
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "device finalizing",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "FAILED",
+    "设备未在期限内完成固件镜像校验",
+    "",
+    0,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "poll",
+     500
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "finalize deadline",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "FAILED",
+    "设备未在期限内完成固件镜像校验",
+    "",
+    0,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "shutdown"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "shutdown",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  }
+ ],
+ "firmware_failure_wait_and_stop": [
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "init",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "snapshot cu.usbmodem-lock",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "PACKAGE_READY",
+    "固件包已完成本地检查，尚未向设备发送数据",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "package loaded",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "CHECKING",
+    "正在读取设备固件维护状态",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "poll",
+     60000
+    ],
+    [
+     "command",
+     "FW_STATUS"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "start",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "TRANSFERRING",
+    "正在传输固件：0 / 1024 字节",
+    "",
+    0,
+    256,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "command",
+     "FW_BEGIN"
+    ],
+    [
+     "command",
+     "FW_DATA"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "FW_BEGIN ack",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READ_FAILED",
+    "USB 连接失败；请重新连接，仍失败时可重新插拔 USB。",
+    "通信失败\nlink lost"
+   ],
+   "candidates": [],
+   "failed_ports": [
+    "cu.usbmodem-lock"
+   ],
+   "firmware": [
+    "PAUSED",
+    "固件维护期间通信失败，重连后将先读取 FW_STATUS 对账",
+    "link lost",
+    0,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "failure during transfer",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READ_FAILED",
+    "USB 连接失败；请重新连接，仍失败时可重新插拔 USB。",
+    "通信失败\nlink lost"
+   ],
+   "candidates": [],
+   "failed_ports": [
+    "cu.usbmodem-lock"
+   ],
+   "firmware": [
+    "PAUSED",
+    "固件维护期间通信失败，重连后将先读取 FW_STATUS 对账",
+    "link lost",
+    0,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "scan_reconnect",
+     "cu.usbmodem-lock",
+     true
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "reconnect tick",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READ_FAILED",
+    "USB 连接失败；请重新连接，仍失败时可重新插拔 USB。",
+    "通信失败\nlink lost"
+   ],
+   "candidates": [],
+   "failed_ports": [
+    "cu.usbmodem-lock"
+   ],
+   "firmware": [
+    "FAILED",
+    "已停止本地等待；设备端更新未取消，结果尚未确认。重新连接并选择安装后将先读取设备状态。",
+    "",
+    0,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "poll",
+     500
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "user stops waiting",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READ_FAILED",
+    "USB 连接失败；请重新连接，仍失败时可重新插拔 USB。",
+    "通信失败\nlink lost"
+   ],
+   "candidates": [],
+   "failed_ports": [
+    "cu.usbmodem-lock"
+   ],
+   "firmware": [
+    "FAILED",
+    "已停止本地等待；设备端更新未取消，结果尚未确认。重新连接并选择安装后将先读取设备状态。",
+    "",
+    0,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "shutdown"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "shutdown",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  }
+ ],
+ "firmware_happy_path": [
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "init",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "snapshot cu.usbmodem-lock",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "PACKAGE_READY",
+    "固件包已完成本地检查，尚未向设备发送数据",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "package loaded",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "CHECKING",
+    "正在读取设备固件维护状态",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "poll",
+     60000
+    ],
+    [
+     "command",
+     "FW_STATUS"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "start",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "BEGINNING",
+    "正在建立固件接收事务",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "command",
+     "FW_BEGIN"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "FW_STATUS idle",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "TRANSFERRING",
+    "正在传输固件：0 / 1024 字节",
+    "",
+    0,
+    256,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "command",
+     "FW_DATA"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "FW_BEGIN ack",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "TRANSFERRING",
+    "正在传输固件：256 / 1024 字节",
+    "",
+    256,
+    256,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "command",
+     "FW_DATA"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "FW_DATA ack 256",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "TRANSFERRING",
+    "正在传输固件：512 / 1024 字节",
+    "",
+    512,
+    256,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "command",
+     "FW_DATA"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "FW_DATA ack 512",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "TRANSFERRING",
+    "正在传输固件：768 / 1024 字节",
+    "",
+    768,
+    256,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "command",
+     "FW_DATA"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "FW_DATA ack 768",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "FINALIZING",
+    "镜像传输完成，正在让设备校验并准备重启",
+    "",
+    1024,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "command",
+     "FW_END"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "FW_DATA ack 1024",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "FINALIZING",
+    "设备正在校验完整镜像并准备新的 OTA 分区",
+    "",
+    1024,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    true,
+    true
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "FW_END finalizing",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "FINALIZING",
+    "设备正在校验完整镜像并准备新的 OTA 分区",
+    "",
+    1024,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    true,
+    true
+   ],
+   "gateway": [
+    [
+     "command",
+     "FW_STATUS"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "status poll",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "WAITING_RECONNECT",
+    "设备已完成镜像校验，等待重启后核对版本和 build_id",
+    "",
+    1024,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    true
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "ready to reboot",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "DISCONNECTED",
+    "设备连接已断开",
+    "expected reboot"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "WAITING_RECONNECT",
+    "设备正在重启；重新连接后将核对版本和 build_id",
+    "expected reboot",
+    1024,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    true
+   ],
+   "gateway": [
+    [
+     "scan_reconnect",
+     "cu.usbmodem-lock",
+     true
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "rebooting",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "VERIFYING",
+    "设备已重连，正在核对运行版本、目标分区和回滚状态",
+    "expected reboot",
+    1024,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    true
+   ],
+   "gateway": [
+    [
+     "poll",
+     60000
+    ],
+    [
+     "command",
+     "FW_STATUS"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "reconnected",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "VERIFYING",
+    "新固件已运行，正在等待设备完成启动自检并取消回滚",
+    "expected reboot",
+    1024,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    true,
+    true
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "rollback pending",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "COMPLETED",
+    "设备已重新连接，版本、build_id 和目标分区读回一致，已确认无需回滚",
+    "",
+    1024,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "poll",
+     500
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "verified",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "poll",
+     500
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "dismissed",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "shutdown"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "shutdown",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  }
+ ],
+ "firmware_maintenance_entry": [
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "init",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "FIRMWARE_MAINTENANCE",
+    "设备已认证；配置未能读取，可通过 USB 安装官方签名固件。",
+    "schema incompatible"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "firmware",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "maintenance snapshot",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "DISCONNECTED",
+    "设备连接已断开",
+    "unplugged"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "scan_reconnect",
+     "cu.usbmodem-lock",
+     false
+    ]
+   ],
+   "page": "firmware",
+   "reconnect_timer": [
+    true,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "maintenance device unplugged",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "DISCONNECTED",
+    "设备连接已断开",
+    "unplugged"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "shutdown"
+    ]
+   ],
+   "page": "firmware",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "shutdown",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  }
+ ],
+ "firmware_resume_and_timeouts": [
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "init",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "snapshot cu.usbmodem-lock",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "PACKAGE_READY",
+    "固件包已完成本地检查，尚未向设备发送数据",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "package loaded",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "CHECKING",
+    "正在读取设备固件维护状态",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "poll",
+     60000
+    ],
+    [
+     "command",
+     "FW_STATUS"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "start",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "TRANSFERRING",
+    "正在传输固件：256 / 1024 字节",
+    "",
+    256,
+    768,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "command",
+     "FW_DATA"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "resume from device offset",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "CHECKING",
+    "固件命令 ACK 未确认，正在通过 FW_STATUS 对账续传位置",
+    "technical TRANSPORT_TIMEOUT",
+    256,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "command",
+     "FW_STATUS"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "FW_DATA timeout",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "CHECKING",
+    "固件命令 ACK 未确认，正在通过 FW_STATUS 对账续传位置",
+    "technical TRANSPORT_TIMEOUT",
+    256,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "dropped FW_STATUS ignored",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "FINALIZING",
+    "镜像传输完成，正在让设备校验并准备重启",
+    "technical TRANSPORT_TIMEOUT",
+    1024,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "command",
+     "FW_END"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "status after timeout",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "VERIFYING",
+    "FW_END 结果未知；将通过重连后的版本和 FW_STATUS 对账，不重复开始传输",
+    "technical TRANSPORT_TIMEOUT",
+    1024,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    true
+   ],
+   "gateway": [
+    [
+     "scan",
+     true
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "FW_END timeout",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "DISCONNECTED",
+    "等待固件维护设备重新连接 USB…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "VERIFYING",
+    "FW_END 结果未知；将通过重连后的版本和 FW_STATUS 对账，不重复开始传输",
+    "technical TRANSPORT_TIMEOUT",
+    1024,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    true
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "usb scan empty",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "DISCONNECTED",
+    "等待固件维护设备重新连接 USB…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "FAILED",
+    "未在期限内确认新固件的运行分区和回滚状态；更新结果尚未确认",
+    "",
+    1024,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "poll",
+     500
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "deadline while verifying",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "DISCONNECTED",
+    "等待固件维护设备重新连接 USB…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "FAILED",
+    "未在期限内确认新固件的运行分区和回滚状态；更新结果尚未确认",
+    "",
+    1024,
+    0,
+    "ota_1",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "shutdown"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "shutdown",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  }
+ ],
+ "usb_handoff": [
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "init",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "command",
+     "BLE_NAME_GET"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "snapshot ble:current",
+   "usb_probe_timer": true,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "probe_usb",
+     "CP01-AABBCCDDEEFF"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "probe tick",
+   "usb_probe_timer": true,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "other usb device",
+   "usb_probe_timer": true,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "CONNECTING",
+    "正在确认设备身份并读取配置…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "connect",
+     "cu.same"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "same usb device",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "command",
+     "BLE_NAME_GET"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "usb session",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "shutdown"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "shutdown",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  }
+ ],
+ "usb_read_failure_and_replug": [
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "init",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "scan",
+     false
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "start",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "CONNECTING",
+    "正在确认设备身份并读取配置…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "connect",
+     "cu.usbmodem-lock"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "one usb candidate",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "CONNECTING",
+    "正在读取 GET_CONFIG",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "progress GET_CONFIG",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READ_FAILED",
+    "USB 设备已连接，但配置未能读取；请重新连接，仍失败时可重新插拔 USB。",
+    "配置损坏\nGET_CONFIG payload invalid"
+   ],
+   "candidates": [],
+   "failed_ports": [
+    "cu.usbmodem-lock"
+   ],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "read failed while reading config",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READ_FAILED",
+    "USB 设备已连接，但配置未能读取；请重新连接，仍失败时可重新插拔 USB。",
+    "配置损坏\nGET_CONFIG payload invalid"
+   ],
+   "candidates": [],
+   "failed_ports": [
+    "cu.usbmodem-lock"
+   ],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "scan",
+     true
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    1000
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "reconnect tick after read failure",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READ_FAILED",
+    "USB 设备已连接，但配置未能读取；请重新连接，仍失败时可重新插拔 USB。",
+    "配置损坏\nGET_CONFIG payload invalid"
+   ],
+   "candidates": [],
+   "failed_ports": [
+    "cu.usbmodem-lock"
+   ],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    1000
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "same failed port still present",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READ_FAILED",
+    "USB 设备已连接，但配置未能读取；请重新连接，仍失败时可重新插拔 USB。",
+    "配置损坏\nGET_CONFIG payload invalid"
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    true,
+    1000
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "port vanished",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "CONNECTING",
+    "正在确认设备身份并读取配置…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "connect",
+     "cu.usbmodem-lock"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "port re-inserted",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "CONNECTING",
+    "正在确认设备身份并读取配置…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "shutdown"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "shutdown",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  }
+ ],
+ "write_failure_SET_CONFIG_GENERATION_CONFLICT": [
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "init",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "snapshot cu.usbmodem-lock",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "command",
+     "VALIDATE_CONFIG"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "validating",
+   "usb_probe_timer": false,
+   "write": [
+    "VALIDATING",
+    "正在让设备验证候选配置",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "poll",
+     250
+    ],
+    [
+     "command",
+     "SET_CONFIG"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "writing",
+   "usb_probe_timer": false,
+   "write": [
+    "WRITING",
+    "正在写入设备候选槽",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "poll",
+     500
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "SET_CONFIG GENERATION_CONFLICT",
+   "usb_probe_timer": false,
+   "write": [
+    "CONFLICT",
+    "设备配置已被其他操作更新",
+    "current_generation=9"
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "shutdown"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "shutdown",
+   "usb_probe_timer": false,
+   "write": [
+    "CONFLICT",
+    "设备配置已被其他操作更新",
+    "current_generation=9"
+   ]
+  }
+ ],
+ "write_failure_SET_CONFIG_STORAGE_FAILURE": [
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "init",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "snapshot cu.usbmodem-lock",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "command",
+     "VALIDATE_CONFIG"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "validating",
+   "usb_probe_timer": false,
+   "write": [
+    "VALIDATING",
+    "正在让设备验证候选配置",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "poll",
+     250
+    ],
+    [
+     "command",
+     "SET_CONFIG"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "writing",
+   "usb_probe_timer": false,
+   "write": [
+    "WRITING",
+    "正在写入设备候选槽",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "poll",
+     500
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "SET_CONFIG STORAGE_FAILURE",
+   "usb_probe_timer": false,
+   "write": [
+    "FAILED",
+    "设备写入失败",
+    "technical STORAGE_FAILURE"
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "shutdown"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "shutdown",
+   "usb_probe_timer": false,
+   "write": [
+    "FAILED",
+    "设备写入失败",
+    "technical STORAGE_FAILURE"
+   ]
+  }
+ ],
+ "write_failure_SET_CONFIG_TRANSPORT_TIMEOUT": [
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "init",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "snapshot cu.usbmodem-lock",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "command",
+     "VALIDATE_CONFIG"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "validating",
+   "usb_probe_timer": false,
+   "write": [
+    "VALIDATING",
+    "正在让设备验证候选配置",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "poll",
+     250
+    ],
+    [
+     "command",
+     "SET_CONFIG"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "writing",
+   "usb_probe_timer": false,
+   "write": [
+    "WRITING",
+    "正在写入设备候选槽",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "SET_CONFIG TRANSPORT_TIMEOUT",
+   "usb_probe_timer": false,
+   "write": [
+    "PENDING",
+    "未收到写入 ACK，正在通过设备状态对账；不会自动重试写入",
+    "technical TRANSPORT_TIMEOUT"
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "shutdown"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "shutdown",
+   "usb_probe_timer": false,
+   "write": [
+    "PENDING",
+    "未收到写入 ACK，正在通过设备状态对账；不会自动重试写入",
+    "technical TRANSPORT_TIMEOUT"
+   ]
+  }
+ ],
+ "write_failure_VALIDATE_CONFIG_GENERATION_CONFLICT": [
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "init",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "snapshot cu.usbmodem-lock",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "command",
+     "VALIDATE_CONFIG"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "validating",
+   "usb_probe_timer": false,
+   "write": [
+    "VALIDATING",
+    "正在让设备验证候选配置",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "poll",
+     500
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "VALIDATE_CONFIG GENERATION_CONFLICT",
+   "usb_probe_timer": false,
+   "write": [
+    "CONFLICT",
+    "设备配置已被其他操作更新",
+    "current_generation=9"
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "shutdown"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "shutdown",
+   "usb_probe_timer": false,
+   "write": [
+    "CONFLICT",
+    "设备配置已被其他操作更新",
+    "current_generation=9"
+   ]
+  }
+ ],
+ "write_failure_VALIDATE_CONFIG_TRANSPORT_TIMEOUT": [
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "init",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "snapshot cu.usbmodem-lock",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "command",
+     "VALIDATE_CONFIG"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "validating",
+   "usb_probe_timer": false,
+   "write": [
+    "VALIDATING",
+    "正在让设备验证候选配置",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "poll",
+     500
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "VALIDATE_CONFIG TRANSPORT_TIMEOUT",
+   "usb_probe_timer": false,
+   "write": [
+    "FAILED",
+    "设备校验回复超时，配置尚未保存，请重试。",
+    "technical TRANSPORT_TIMEOUT"
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "shutdown"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "shutdown",
+   "usb_probe_timer": false,
+   "write": [
+    "FAILED",
+    "设备校验回复超时，配置尚未保存，请重试。",
+    "technical TRANSPORT_TIMEOUT"
+   ]
+  }
+ ],
+ "write_failure_VALIDATE_CONFIG_VALIDATION_FAILED": [
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "init",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "snapshot cu.usbmodem-lock",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "command",
+     "VALIDATE_CONFIG"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "validating",
+   "usb_probe_timer": false,
+   "write": [
+    "VALIDATING",
+    "正在让设备验证候选配置",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "poll",
+     500
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "VALIDATE_CONFIG VALIDATION_FAILED",
+   "usb_probe_timer": false,
+   "write": [
+    "FAILED",
+    "设备拒绝候选配置",
+    "technical VALIDATION_FAILED"
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "shutdown"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "shutdown",
+   "usb_probe_timer": false,
+   "write": [
+    "FAILED",
+    "设备拒绝候选配置",
+    "technical VALIDATION_FAILED"
+   ]
+  }
+ ],
+ "write_failure_VALIDATE_CONFIG_none": [
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "init",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "snapshot cu.usbmodem-lock",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "command",
+     "VALIDATE_CONFIG"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "validating",
+   "usb_probe_timer": false,
+   "write": [
+    "VALIDATING",
+    "正在让设备验证候选配置",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "poll",
+     500
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "VALIDATE_CONFIG no name",
+   "usb_probe_timer": false,
+   "write": [
+    "FAILED",
+    "设备校验未完成，配置尚未保存，请查看详情后重试。",
+    "technical nack"
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "shutdown"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "shutdown",
+   "usb_probe_timer": false,
+   "write": [
+    "FAILED",
+    "设备校验未完成，配置尚未保存，请查看详情后重试。",
+    "technical nack"
+   ]
+  }
+ ],
+ "write_readback_failure": [
+  {
+   "app": [
+    "SCANNING",
+    "正在查找已连接到此电脑的 BORING 设备…",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "init",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "snapshot cu.usbmodem-lock",
+   "usb_probe_timer": false,
+   "write": [
+    "IDLE",
+    "尚未开始设备写入",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "command",
+     "VALIDATE_CONFIG"
+    ],
+    [
+     "poll",
+     250
+    ],
+    [
+     "command",
+     "SET_CONFIG"
+    ],
+    [
+     "command",
+     "GET_CONFIG"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "verifying",
+   "usb_probe_timer": false,
+   "write": [
+    "VERIFYING",
+    "lock readback",
+    ""
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "poll",
+     500
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "readback failed",
+   "usb_probe_timer": false,
+   "write": [
+    "UNKNOWN",
+    "无法读回设备配置完成对账",
+    "technical TRANSPORT_TIMEOUT"
+   ]
+  },
+  {
+   "app": [
+    "READY",
+    "已同步 · 可配置",
+    ""
+   ],
+   "candidates": [],
+   "failed_ports": [],
+   "firmware": [
+    "IDLE",
+    "尚未选择固件维护包",
+    "",
+    0,
+    0,
+    "",
+    false
+   ],
+   "firmware_timers": [
+    false,
+    false
+   ],
+   "gateway": [
+    [
+     "shutdown"
+    ]
+   ],
+   "page": "overview",
+   "reconnect_timer": [
+    false,
+    500
+   ],
+   "remote": "UNCONFIGURED",
+   "step": "shutdown",
+   "usb_probe_timer": false,
+   "write": [
+    "UNKNOWN",
+    "无法读回设备配置完成对账",
+    "technical TRANSPORT_TIMEOUT"
+   ]
+  }
+ ]
+}

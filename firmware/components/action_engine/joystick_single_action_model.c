@@ -4,10 +4,20 @@
 
 #include "prompt_joystick_model.h"
 
-void joystick_single_action_model_reset(joystick_single_action_model_t *model)
+void joystick_single_action_model_reset_to_idle(
+    joystick_single_action_model_t *model)
 {
     if (model != NULL) {
         *model = (joystick_single_action_model_t){0};
+    }
+}
+
+void joystick_single_action_model_reset_latched(
+    joystick_single_action_model_t *model)
+{
+    joystick_single_action_model_reset_to_idle(model);
+    if (model != NULL) {
+        model->wait_center = true;
     }
 }
 
@@ -19,12 +29,18 @@ joystick_single_action_result_t joystick_single_action_model_update(
     if (model == NULL) {
         return result;
     }
+    if (model->wait_center) {
+        if (!radial_active) {
+            joystick_single_action_model_reset_to_idle(model);
+        }
+        return result;
+    }
     if (!radial_active) {
         if (model->active) {
             result.release = true;
             result.direction = model->active_direction;
         }
-        joystick_single_action_model_reset(model);
+        joystick_single_action_model_reset_to_idle(model);
         return result;
     }
     if (model->sample_seen && sample_count == model->last_sample_count) {

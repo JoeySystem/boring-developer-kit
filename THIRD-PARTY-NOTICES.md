@@ -12,6 +12,8 @@
 | pytest / pytest-qt | 开发测试 | [pytest](https://github.com/pytest-dev/pytest/blob/main/LICENSE) / [pytest-qt](https://github.com/pytest-dev/pytest-qt/blob/master/LICENSE) |
 | setuptools | SDK 和控制台源码 wheel 构建 | [上游许可证](https://github.com/pypa/setuptools/blob/main/LICENSE) |
 
+新手引导里的图标来自 [Phosphor Icons](https://github.com/phosphor-icons/core)（MIT），许可文本随附在 `console/src/controller_config/assets/onboarding/icons/LICENSE`。
+
 准确依赖版本和平台条件见 [控制台 pyproject.toml](console/pyproject.toml) 与 [SDK pyproject.toml](sdk/python/pyproject.toml)。原生安装包工具所引入的依赖也需要保留其实际版本的许可；源码 wheel 构建与原生安装包交付是不同步骤。
 
 社区构建调用操作系统已有字体，不再分发内部 BORING 5R 字库或官方应用图标。系统字体的存在不授予提取、打包或再分发字体文件的权利。
@@ -32,3 +34,9 @@
 - esp_secure_cert_mgr 2.9.3：[上游](https://github.com/espressif/esp_secure_cert_mgr)。
 - led_strip 3.0.3：[组件来源](https://components.espressif.com/components/espressif/led_strip/versions/3.0.3)。
 - waveshare/esp_lcd_st7735 2.0.0：[组件来源](https://components.espressif.com/components/waveshare/esp_lcd_st7735/versions/2.0.0)。
+
+`firmware/components/esp_hid/` 是 ESP-IDF 6.0.2 `esp_hid` 组件的副本（Apache-2.0，保留 Espressif 版权头），仅新增输入报告订阅的保存与恢复；`firmware/tools/patches/esp-idf-v6.0.2-preserve-peripheral-bond.patch` 修改 ESP-IDF Bluedroid 源码（Apache-2.0）。两者沿用上游许可，不改为本仓库非商业许可，改动说明见 `firmware/components/esp_hid/BORING_CHANGES.md` 与 `firmware/BLE-BOND-PATCH.md`。
+
+## 固件更新与校准工具
+
+`recovery-tool/` 源码不捆绑第三方运行库。打包后的 Mac / Windows 工具包含 Python、pyserial、pywebview 等组件，清单与许可文本见 [recovery-tool/THIRD-PARTY-NOTICES.md](recovery-tool/THIRD-PARTY-NOTICES.md) 和 `recovery-tool/licenses/`。

@@ -2,11 +2,11 @@
 
 - [protocol.md](protocol.md)：USB CDC / BLE 传输、帧格式、命令和错误码。
 - [config-schema.json](config-schema.json)：配置 JSON Schema。
-- [generated/protocol_contract.h](generated/protocol_contract.h)：与本次固件源码快照一致的现有常量头；应用源码见 [firmware](../firmware/README.md)。
+- [generated/protocol_contract.h](generated/protocol_contract.h)：与本次固件源码快照（20261123.01）一致的常量头；应用源码见 [firmware](../firmware/README.md)。
 - [device-trust-roots.json](device-trust-roots.json)：当前官方量产根公钥，仅用于验证，不含签发私钥。
-- [fixtures/manifest.json](fixtures/manifest.json)：22 个公开正例、反例和测试向量的索引。
+- [fixtures/manifest.json](fixtures/manifest.json)：25 个公开正例、反例和测试向量的索引；桌面 Agent 状态灯（`desktop` 来源）的样例在 `fixtures/desktop_agent/`。
 
-本目录来自 2026-09-10 当前协议快照；线协议为 1.0，配置 Schema 为 1。支持某条命令仍需查询实际设备 CAPABILITIES，不能仅凭协议文件存在就认为所有固件支持。
+本目录对应 Console 0.3.0 与固件 20261123.01 的协议快照（2026-11-24）；线协议仍为 1.0，配置 Schema 为 1。新增内容包括升级后确认 `FW_CONFIRM`、桌面 Agent 状态灯、存储降级状态等，都要先查设备 CAPABILITIES。支持某条命令仍需查询实际设备 CAPABILITIES，不能仅凭协议文件存在就认为所有固件支持。
 
 认证正例 `device-auth-v1.json` 仅保留测试根公钥、公开证书、签名、挑战和已有 canonical 数据；测试私钥已从公开版本移除。这里的测试根不能用于认证官方量产设备，该测试文件不包含官方生产根或签发能力；官方验证公钥单独放在 device-trust-roots.json。负例仍可用于验证失败路径。
 

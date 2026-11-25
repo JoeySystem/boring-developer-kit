@@ -6,7 +6,7 @@ import pytest
 
 from PySide6.QtCore import QTimer, Qt, QSettings
 from PySide6.QtGui import QAction, QKeySequence
-from PySide6.QtWidgets import QPushButton, QMessageBox
+from PySide6.QtWidgets import QApplication, QPushButton, QMessageBox
 from shiboken6 import isValid
 
 from controller_config.background_helper import PromptBackgroundController
@@ -17,6 +17,8 @@ from controller_config.transport.qt_serial import SerialWorker
 from controller_config.transport.demo import DemoGateway
 from controller_config.viewmodels.main import MainViewModel
 from controller_config.views.main_window import MainWindow
+from controller_config.views.mode_page import ModeStage
+from notice_helpers import pick
 
 
 def test_profile_menu_survives_codex_traffic_counter_update(qtbot, contract):
@@ -26,10 +28,21 @@ def test_profile_menu_survives_codex_traffic_counter_update(qtbot, contract):
     window.show()
     model.start()
     qtbot.waitUntil(lambda: model.draft is not None)
+    # A first connection lets the found clip's ending play (about 1.6 s) first.
+    qtbot.waitUntil(lambda: window._connection_transition_model is None, timeout=3500)
     qtbot.wait(400)
-    button = window.findChild(QPushButton, "profilePill")
-    menu = button.menu()
+    # The set's name chip on the Mode page's bottom bar opens 全部方案 (Mode页 定稿 v1, 10);
+    # each screen's ··· opens that screen's menu.
+    stage = next(stage for stage in window.findChildren(ModeStage) if stage.isVisible())
+    qtbot.mouseClick(stage.bar.profile, Qt.LeftButton)
+    stage = next(stage for stage in window.findChildren(ModeStage) if stage.isVisible())
+    assert stage.overview_shown()
+    button = next(card.more for card in stage.overview.cards if card.more is not None)
+    opened = []
     observed = []
+
+    def catch_menu():
+        opened.append(QApplication.activePopupWidget())
 
     def update_traffic():
         status = deepcopy(model.model.snapshot.status)
@@ -37,16 +50,20 @@ def test_profile_menu_survives_codex_traffic_counter_update(qtbot, contract):
         model._on_status_updated(status)
 
     def inspect_menu():
-        observed.append(isValid(menu) and menu.isVisible())
-        if isValid(menu):
+        menu = opened[0] if opened else None
+        observed.append(menu is not None and isValid(menu) and menu.objectName() == "modeScreenMenu"
+                        and menu.isVisible())
+        if menu is not None and isValid(menu):
             menu.close()
 
-    QTimer.singleShot(50, update_traffic)
+    QTimer.singleShot(30, catch_menu)
+    QTimer.singleShot(60, update_traffic)
     QTimer.singleShot(150, inspect_menu)
     qtbot.mouseClick(button, Qt.LeftButton)
     qtbot.waitUntil(lambda: bool(observed))
     assert observed == [True]
     assert model.model.snapshot.status["codex_micro"]["rx_output_reports"] == 109
+    assert any(stage.overview_shown() for stage in window.findChildren(ModeStage) if stage.isVisible())
 
 
 def test_native_quit_action_uses_draft_cancel_and_discard(qtbot, qapp, contract, tmp_path, monkeypatch):
@@ -63,16 +80,8 @@ def test_native_quit_action_uses_draft_cancel_and_discard(qtbot, qapp, contract,
     quits = []
     prompts = []
     monkeypatch.setattr(qapp, "quit", lambda: quits.append(True))
-    decision = [QMessageBox.RejectRole]
-    real_exec = QMessageBox.exec
-
-    def answer(dialog):
-        prompts.append(dialog.windowTitle())
-        chosen = next(b for b in dialog.buttons() if dialog.buttonRole(b) == decision[0])
-        QTimer.singleShot(50, chosen.click)
-        return real_exec(dialog)
-
-    monkeypatch.setattr(QMessageBox, "exec", answer)
+    decision = ["cancel"]
+    prompts = pick(monkeypatch, lambda _title, _text, _keys: decision[0])
     action = window.findChild(QAction, "quitApplicationAction")
     try:
         assert action is not None
@@ -81,7 +90,7 @@ def test_native_quit_action_uses_draft_cancel_and_discard(qtbot, qapp, contract,
         action.trigger()
         assert prompts and model.draft.is_dirty
         assert not quits and not background.quitting
-        decision[0] = QMessageBox.DestructiveRole
+        decision[0] = "discard"
         action.trigger()
         assert quits == [True]
         assert background.quitting

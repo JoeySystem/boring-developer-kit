@@ -18,6 +18,7 @@
     {"code": 16, "name": "READ_ONLY"},
     {"code": 17, "name": "DUPLICATE_REQUEST_MISMATCH"},
     {"code": 18, "name": "DEVICE_IDENTITY_UNAVAILABLE"},
-    {"code": 19, "name": "DEVICE_SIGNING_FAILED"}
+    {"code": 19, "name": "DEVICE_SIGNING_FAILED"},
+    {"code": 20, "name": "AUTHENTICATION_REQUIRED"}
   ]
 }

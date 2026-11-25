@@ -56,15 +56,48 @@ def png(size: int) -> bytes:
     ) + chunk(b"IEND", b"")
 
 
+ICO_SIZES = (16, 24, 32, 48, 64, 128, 256)
+# icns entries that carry PNG data: (type, pixel size).
+ICNS_TYPES = (
+    (b"icp4", 16), (b"icp5", 32), (b"ic07", 128), (b"ic08", 256),
+    (b"ic09", 512), (b"ic10", 1024), (b"ic11", 32), (b"ic12", 64),
+    (b"ic13", 256), (b"ic14", 512),
+)
+
+
+def ico(sizes=ICO_SIZES) -> bytes:
+    images = [png(size) for size in sizes]
+    header = struct.pack("<HHH", 0, 1, len(images))
+    offset = len(header) + 16 * len(images)
+    entries = b""
+    for size, data in zip(sizes, images):
+        side = 0 if size >= 256 else size
+        entries += struct.pack("<BBBBHHII", side, side, 0, 0, 1, 32, len(data), offset)
+        offset += len(data)
+    return header + entries + b"".join(images)
+
+
+def icns() -> bytes:
+    body = b"".join(
+        kind + struct.pack(">I", len(data) + 8) + data
+        for kind, data in ((kind, png(size)) for kind, size in ICNS_TYPES)
+    )
+    return b"icns" + struct.pack(">I", len(body) + 8) + body
+
+
 def main() -> int:
+    """Write the generic community icon the build scripts expect.
+
+    The official build uses a branded icon that is not part of this kit.
+    """
     parser = argparse.ArgumentParser()
-    parser.add_argument("output", type=Path)
+    parser.add_argument("output", type=Path, nargs="?",
+                        default=Path(__file__).resolve().parent / "icons")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    for points in (16, 32, 128, 256, 512):
-        (args.output / f"icon_{points}x{points}.png").write_bytes(png(points))
-        doubled = points * 2
-        (args.output / f"icon_{points}x{points}@2x.png").write_bytes(png(doubled))
+    (args.output / "recovery-icon.png").write_bytes(png(512))
+    (args.output / "recovery-icon.ico").write_bytes(ico())
+    (args.output / "recovery-icon.icns").write_bytes(icns())
     return 0
 
 

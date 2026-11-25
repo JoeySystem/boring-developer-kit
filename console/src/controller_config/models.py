@@ -17,6 +17,7 @@ class AppState(str, Enum):
     CONNECTING = "connecting"
     READY = "ready"
     READ_ONLY = "read_only"
+    FIRMWARE_MAINTENANCE = "firmware_maintenance"
     FIRMWARE_UPDATE_REQUIRED = "firmware_update_required"
     INCOMPATIBLE = "incompatible"
     AUTHENTICITY_FAILED = "authenticity_failed"
@@ -53,6 +54,14 @@ class DeviceSnapshot:
     capabilities: dict[str, Any]
     port_name: str
     trust: DeviceTrust
+    maintenance_reason: str = ""
+    # TimingMark steps of the connection that produced this snapshot (SH-005).
+    # Not part of equality: it describes how the snapshot arrived, not the device.
+    connect_timing: tuple = field(default=(), compare=False)
+
+    @property
+    def maintenance_only(self) -> bool:
+        return bool(self.maintenance_reason)
 
     @classmethod
     def from_protocol(

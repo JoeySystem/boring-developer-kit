@@ -19,7 +19,7 @@ from controller_config.views.main_window import MainWindow
 @pytest.fixture
 def edited_catalog(tmp_path, monkeypatch):
     data = json.loads(files("controller_config.translations").joinpath("ui_text.json").read_text())
-    data["messages"]["固件与系统"].update(zh_CN="系统中心", en_US="System Center")
+    data["messages"]["设置与维护"].update(zh_CN="系统中心", en_US="System Center")
     data["messages"]["切换到官方版本"].update(zh_CN="切换", en_US="Switch")
     data["messages"]["仅保存本地草稿"].update(zh_CN="存草稿", en_US="Save Draft")
     data["dynamic"]["prompt.slot_pending"].update(
@@ -68,7 +68,8 @@ def test_real_window_uses_edited_copy_after_repeated_language_switches(
     qtbot.addWidget(window, before_close_func=lambda _: vm.shutdown())
     window.show()
     vm.start()
-    qtbot.waitUntil(lambda: window._nav_buttons["settings"].accessibleName() == "系统中心")
+    # 顶部页签固定叫 Settings，不走文案目录；改过的文案用下面的按钮来查。
+    qtbot.waitUntil(lambda: window._nav_buttons["settings"].accessibleName() == "Settings")
     for language, name, button in (
         ("en_US", "System Center", "Switch"),
         ("zh_CN", "系统中心", "切换"),
@@ -76,10 +77,12 @@ def test_real_window_uses_edited_copy_after_repeated_language_switches(
     ):
         language_manager.set_language(language)
         vm.navigate("settings")
-        qtbot.waitUntil(lambda: window._nav_buttons["settings"].accessibleName() == name)
-        window._select_settings_section("system")
+        assert window._nav_buttons["settings"].accessibleName() == "Settings"
+        window._select_settings_section("updates")
         qtbot.waitUntil(lambda: window.findChild(QPushButton, "switchOfficialVersion") is not None)
-        assert window.findChild(QPushButton, "switchOfficialVersion").text() == button
+        qtbot.waitUntil(
+            lambda: window.findChild(QPushButton, "switchOfficialVersion").text() == button
+        )
 
 
 def test_shortened_or_empty_copy_round_trips_without_reinterpreting_source(
@@ -150,6 +153,10 @@ def test_local_p0_and_update_copy_preserves_identity_and_meaning(language):
         "正在读取设备最新配置，请稍后再操作",
         "固件校验未通过，未安装。",
         "检查应用更新",
+        "更新已下载",
+        "软件更新已准备好。退出前可以直接安装，无需下次重新下载。",
+        "退出并安装更新",
+        "放弃本次更新并退出",
         "其他设备或旧配置仍有本地草稿，请先切回处理，再重启更新。",
     ):
         assert catalog.translate(source, language) != source
@@ -158,21 +165,6 @@ def test_local_p0_and_update_copy_preserves_identity_and_meaning(language):
     assert serial in catalog.translate(source, language)
     assert catalog.translate(source, language) != source
     assert "0.1.18" in catalog.translate("有新版本 {version}", language).format(version="0.1.18")
-
-
-@pytest.mark.parametrize("language", ["en_US", "ja_JP"])
-def test_voice_setup_stage_copy_is_translated(language):
-    catalog = TextCatalog.load()
-    for source in (
-        "设置要求与帮助…",
-        "使用其他快捷键…",
-        "1  设备快捷键 · 待保存",
-        "2  输入软件绑定 · 保存设备后继续",
-        "练习完成，内容未发送到 AI。",
-        "更换语音输入软件",
-        "从 Mac 顶部输入法菜单切换到千问，打开千问设置 → 语音输入，将快捷键设为右 Option，并开启“短按也唤起语音输入”。",
-    ):
-        assert catalog.translate(source, language) != source
 
 
 @pytest.mark.parametrize("language,expected", [
@@ -202,3 +194,52 @@ def test_bluetooth_send_and_validation_timeout_copy(language, expected):
         '设备校验未完成，配置尚未保存，请查看详情后重试。',
     ), (*expected, expected[1])):
         assert phrase in catalog.translate(source, language)
+
+
+@pytest.mark.parametrize("language", ["en_US", "ja_JP"])
+def test_doubao_low_friction_flow_and_recovery_are_localized(language):
+    catalog = TextCatalog.load()
+    for source in (
+        "其他使用方式",
+        "我已完成，开始按键练习",
+        "我已用 BORING 键完成练习",
+        "可以正常使用",
+        "没有成功？",
+        "完全没反应",
+        "已经唤起，但没有文字",
+        "已经唤起，但无法结束",
+        "同时唤起了其他语音软件",
+        "文字出现了，但没有发送",
+    ):
+        assert catalog.translate(source, language) != source
+    assert catalog.translate("上次已在 Codex 验证", language) != "上次已在 Codex 验证"
+
+
+@pytest.mark.parametrize("language", ["en_US", "ja_JP"])
+def test_diagnostic_start_guidance_is_localized(language):
+    catalog = TextCatalog.load()
+    for source in (
+        "设备正在切换状态",
+        "请保持控件松开，Console 正在自动等待。",
+        "正在确认诊断保护",
+        "正在确认设备已停止向其他程序发送操作。",
+        "检测到设备控件仍在操作",
+        "请松开设备上的全部控件。",
+        "设备当前处于待机状态",
+        "请操作任意控件唤醒设备。",
+        "设备本地设置正在占用输入",
+        "请退出设备上的菜单或快捷设置。",
+        "配置正在应用",
+        "请保持设备连接并稍候。",
+        "正在确认设备状态",
+        "请保持设备连接。",
+        "设备未连接",
+        "请重新连接设备后再开始检查。",
+        "本次未能开始检查",
+        "重试检查",
+        "设备还在切换状态，请稍后重试。",
+        "设备没有完成安全接管，请稍后重试。",
+        "未能开始设备检查，请稍后重试。",
+    ):
+        assert catalog.translate(source, language) != source
+    assert catalog.translate("请松开按键 3。", language) != "请松开按键 3。"

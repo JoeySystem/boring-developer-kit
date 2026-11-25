@@ -214,14 +214,19 @@ def test_canceled_connected_query_ignores_queued_native_callback(qtbot):
     from controller_config.transport import ble
     finder = ble.MacConnectedDeviceFinder()
     delegate = ble._MacCentralDelegate.alloc().initWithOwner_(finder)
-    finder._delegate = delegate
-    finished = []
-    finder.finished.connect(lambda: finished.append(True))
-    # An already queued callback must not enumerate or emit after cancellation.
-    delegate.centralManagerDidUpdateState_(object())
-    finder.cancel()
-    QCoreApplication.processEvents()
-    assert finished == [] and delegate._owner is None
+    # A-07: the delegate belongs to the process-wide shared central manager.
+    ble.SharedMacCentral.reset_for_tests()
+    ble.SharedMacCentral._delegate = delegate
+    try:
+        finished = []
+        finder.finished.connect(lambda: finished.append(True))
+        # An already queued callback must not enumerate or emit after cancellation.
+        delegate.centralManagerDidUpdateState_(object())
+        finder.cancel()
+        QCoreApplication.processEvents()
+        assert finished == [] and delegate._owner is None
+    finally:
+        ble.SharedMacCentral.reset_for_tests()
 
 
 def test_connected_query_timeout_is_retryable_discovery_failure(qtbot, contract, monkeypatch):
@@ -663,7 +668,9 @@ def test_native_query_waits_for_power_then_finishes_once(qtbot, monkeypatch):
     assert not finished
     manager.current_state = 5
     finder._manager_state_changed(manager)
-    assert finished == [True] and manager.queries == 2 and manager.delegate is None
+    # A-07: the shared manager keeps its delegate; the finished finder detaches.
+    assert finished == [True] and manager.queries == 2
+    assert not hasattr(manager, "delegate")
     finder._manager_state_changed(manager)
     assert finished == [True] and manager.queries == 2
 
@@ -711,3 +718,9 @@ def test_qt_channel_holds_early_reply_until_last_write_ack(qtbot):
     channel._on_characteristic_written(channel._rx, b"last")
     qtbot.waitUntil(lambda: b"reply" in events)
     assert events == ["progress", "progress", "sent", b"reply"]
+    # After the request is acknowledged, fragments go straight to the frame
+    # decoder instead of waiting for a quiet period between indications.
+    channel._on_characteristic_changed(channel._tx, b"fragment-1")
+    assert events[-1] == b"fragment-1"
+    channel._on_characteristic_changed(channel._tx, b"fragment-2")
+    assert events[-1] == b"fragment-2"

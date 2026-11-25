@@ -6,7 +6,8 @@ idf_component_register(
          "mist_glyph_motion.c" "mist_display_model.c"
          "boring_5r_ui_core.c"
          "board_control_logic.c" "board_input_logic.c" "board_display_logic.c"
-         "joystick_sample_recovery.c"
+         "joystick_sample_recovery.c" "joystick_suspect_model.c"
+         "led_power_model.c"
     INCLUDE_DIRS "include"
     REQUIRES
         esp_driver_gpio

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+
+import pytest
 from types import SimpleNamespace
 
 from controller_config.models import DeviceSnapshot
@@ -369,6 +371,7 @@ def test_production_policy_rejects_device_without_authentication_capability(
     assert session.finished
     assert failures[0].kind is BootstrapKind.AUTHENTICITY_FAILED
     assert "设备认证能力" in failures[0].technical
+    assert "恢复官方固件" in str(failures[0])
     assert [command.name for command, _request_id in sent] == ["HELLO", "CAPABILITIES"]
 
 
@@ -660,3 +663,211 @@ def test_ble_auth_timeout_records_stage_for_fresh_connection_retry(contract, loa
     assert 'AUTH_GET_CERTIFICATE' in failures[0].technical
     assert '20260910.05' in failures[0].technical
     assert '重新连接' in str(failures[0])
+
+
+def _production_maintenance_session(contract, load_fixture, *, hello_change=None,
+                                    caps_change=None, port_name="usb:test"):
+    sent, completed, failures = [], [], []
+    fixture = load_fixture("device-auth-v1.json")
+    certificate = fixture["certificate_response"]["result"]["certificate"]
+    authenticator = DeviceAuthenticator(
+        TrustBundle.from_document(
+            {"version": 1, "roots": [{**fixture["test_root"], "purpose": "production"}]},
+            policy=TrustPolicy.PRODUCTION,
+        ), nonce_factory=lambda: bytes(range(32)),
+    )
+    hello = load_fixture("hello-v1.json")["ack"]
+    hello["result"]["identity"].update({key: certificate[key]
+                                         for key in ("product_id", "hardware_id", "serial")})
+    if hello_change:
+        hello_change(hello["result"])
+    caps = load_fixture("capabilities-matrix12-power-v2-v1.json")
+    caps["result"]["features"]["device_authentication"] = True
+    if caps_change:
+        caps_change(caps["result"])
+    session = BootstrapSession(
+        contract=contract, port_name=port_name, usb_serial=certificate["serial"],
+        authenticator=authenticator,
+        send=lambda command, request_id: sent.append((command, request_id)),
+        completed=completed.append, failed=failures.append,
+    )
+    session.start()
+    for response in (hello, caps, fixture["certificate_response"], fixture["challenge_response"]):
+        if session.finished:
+            break
+        session.accept(_ack(sent[-1][1], response))
+    return session, sent, completed, failures, hello
+
+
+def _maintenance_ready(session, sent):
+    assert sent[-1][0].name == "FW_STATUS"
+    session.accept(_ack(sent[-1][1], {
+        "command": "FW_STATUS", "result": {"firmware_update": {
+            "state": "IDLE", "running_partition": "ota_0", "rollback_pending": False,
+            "running_version": session._responses["HELLO"]["result"]["versions"]["firmware"],
+        }}
+    }))
+
+
+@pytest.mark.parametrize("failed_command, failure", [
+    ("GET_STATUS", "timeout"), ("GET_STATUS", "nack"),
+    ("GET_STATUS", "schema"), ("GET_CONFIG", "timeout"),
+    ("GET_CONFIG", "nack"), ("GET_CONFIG", "schema"),
+    ("GET_CONFIG", "mapping"),
+])
+def test_authenticated_usb_read_failure_can_establish_ota_only_session(
+    contract, load_fixture, failed_command, failure,
+):
+    session, sent, completed, failures, hello = _production_maintenance_session(contract, load_fixture)
+    if failed_command == "GET_CONFIG":
+        session.accept(_ack(sent[-1][1], _status(hello["result"]["config"]["digest"])))
+    assert sent[-1][0].name == failed_command
+    if failure == "timeout":
+        session.timeout()
+    elif failure == "nack":
+        session.accept(Frame(1, 0, 0x7F, RESPONSE_FLAG | ERROR_FLAG, sent[-1][1], json.dumps({
+            "command": failed_command, "error": {"name": "INTERNAL", "message": "old config unreadable"}
+        }).encode()))
+    elif failure == "mapping":
+        config = load_fixture("config-matrix12-power-v2-v1.json")
+        # Supported JSON schema, but not an action this particular firmware declares.
+        session._responses["CAPABILITIES"]["result"]["actions"] = ["none"]
+        session.accept(_ack(sent[-1][1], {"command": "GET_CONFIG", "result": {
+            **hello["result"]["config"], "config": config,
+        }}))
+    else:
+        session.accept(_ack(sent[-1][1], {"command": failed_command, "result": {}}))
+    assert not failures and not completed
+    _maintenance_ready(session, sent)
+    assert not failures
+    snapshot = completed[0]
+    assert snapshot.maintenance_only and snapshot.maintenance_reason
+    assert snapshot.trust.is_authenticated
+    assert snapshot.identity == hello["result"]["identity"]
+    assert snapshot.versions == hello["result"]["versions"]
+    assert snapshot.config_result == {} and snapshot.config == {}
+    assert not snapshot.config_is_synced
+
+
+@pytest.mark.parametrize("change", [
+    lambda result: result["versions"].update(schema_version=2),
+    lambda result: result["compatibility"].update(read=False, write=False, reason="old_schema"),
+    lambda result: result["compatibility"].update(write=False, reason="read_only"),
+])
+def test_authenticated_usb_config_compatibility_can_enter_maintenance(contract, load_fixture, change):
+    session, sent, completed, failures, _ = _production_maintenance_session(
+        contract, load_fixture, hello_change=change,
+    )
+    _maintenance_ready(session, sent)
+    assert not failures and completed[0].maintenance_only
+    assert "GET_CONFIG" not in [command.name for command, _ in sent]
+
+
+@pytest.mark.parametrize("failure", ["nack", "invalid", "timeout"])
+def test_maintenance_probe_failure_keeps_connection_failed(contract, load_fixture, failure):
+    session, sent, completed, failures, _ = _production_maintenance_session(contract, load_fixture)
+    session.timeout()  # Authenticated GET_STATUS failure initiates FW_STATUS probe.
+    assert sent[-1][0].name == "FW_STATUS"
+    if failure == "timeout":
+        session.timeout()
+    elif failure == "invalid":
+        session.accept(_ack(sent[-1][1], {"command": "FW_STATUS", "result": {}}))
+    else:
+        session.accept(Frame(1, 0, 0x7F, RESPONSE_FLAG | ERROR_FLAG, sent[-1][1], json.dumps({
+            "command": "FW_STATUS", "error": {"name": "UNKNOWN_COMMAND", "message": "unsupported"}
+        }).encode()))
+    assert not completed and len(failures) == 1
+    assert "GET_STATUS" in failures[0].technical
+    assert "FW_STATUS" in failures[0].technical
+
+
+@pytest.mark.parametrize("change", [
+    lambda caps: caps["features"].update(firmware_update=False),
+    lambda caps: caps["limits"].pop("firmware_chunk_bytes"),
+    lambda caps: caps["limits"].update(firmware_image_bytes=0),
+])
+def test_authenticated_without_ota_capability_or_limits_cannot_enter_maintenance(
+    contract, load_fixture, change,
+):
+    session, sent, completed, failures, _ = _production_maintenance_session(
+        contract, load_fixture, caps_change=change,
+    )
+    session.timeout()
+    assert not completed and len(failures) == 1
+    assert "FW_STATUS" not in [command.name for command, _ in sent]
+
+
+def test_authenticated_ble_read_failure_keeps_original_failure(contract, load_fixture):
+    session, sent, completed, failures, _ = _production_maintenance_session(
+        contract, load_fixture, port_name="ble:test",
+    )
+    session.timeout()
+    assert not completed and len(failures) == 1
+    assert sent[-1][0].name == "GET_STATUS"
+
+
+@pytest.mark.parametrize("change", [
+    lambda result: result["versions"].update(protocol_major=2),
+    lambda result: result["identity"].update(hardware_id="UNKNOWN"),
+    lambda result: result["versions"].update(schema_version="2"),
+])
+def test_config_maintenance_does_not_relax_hello_identity_or_protocol(
+    contract, load_fixture, change,
+):
+    session, sent, completed, failures, _ = _production_maintenance_session(
+        contract, load_fixture, hello_change=change,
+    )
+    assert session.finished and not completed
+    assert failures[0].kind is BootstrapKind.INCOMPATIBLE
+    assert [command.name for command, _ in sent] == ["HELLO"]
+
+
+def test_config_maintenance_never_accepts_a_different_authenticated_device(contract, load_fixture):
+    session, sent, completed, failures, _ = _production_maintenance_session(
+        contract, load_fixture,
+        hello_change=lambda result: result["identity"].update(serial="CP01-112233445566"),
+    )
+    assert session.finished and not completed
+    assert failures[0].kind is BootstrapKind.AUTHENTICITY_FAILED
+    assert "FW_STATUS" not in [command.name for command, _ in sent]
+
+
+def test_ble_read_only_configuration_still_connects_as_before(contract, load_fixture):
+    session, sent, completed, failures, hello = _production_maintenance_session(
+        contract, load_fixture, port_name="ble:test",
+        hello_change=lambda result: result["compatibility"].update(write=False),
+    )
+    session.accept(_ack(sent[-1][1], _status(hello["result"]["config"]["digest"])))
+    session.accept(_ack(sent[-1][1], {"command": "GET_CONFIG", "result": {
+        **hello["result"]["config"], "config": load_fixture("config-matrix12-power-v2-v1.json"),
+    }}))
+    assert not failures
+    assert completed[0].is_read_only and not completed[0].maintenance_only
+
+
+def test_hello_config_relaxation_is_explicit_and_only_relaxes_schema(contract, load_fixture):
+    from controller_config.protocol.contract import ContractError
+
+    hello = load_fixture("hello-v1.json")["ack"]
+    hello["result"]["versions"]["schema_version"] = 2
+    with pytest.raises(ContractError, match="schema"):
+        contract.validate_hello(hello)
+    contract.validate_hello(hello, allow_config_incompatible=True)
+    hello["result"]["config"] = {}
+    with pytest.raises(ContractError):
+        contract.validate_hello(hello, allow_config_incompatible=True)
+
+
+@pytest.mark.parametrize("update", [
+    {"state": "IDLE"},
+    {"state": "IDLE", "running_partition": "factory", "running_version": "0.1.0-alpha.1", "rollback_pending": False},
+    {"state": "IDLE", "running_partition": "ota_0", "running_version": "different-version", "rollback_pending": False},
+    {"state": "IDLE", "running_partition": "ota_0", "running_version": "0.1.0-alpha.1", "rollback_pending": "false"},
+])
+def test_maintenance_probe_requires_running_image_and_rollback_fields(contract, load_fixture, update):
+    session, sent, completed, failures, _ = _production_maintenance_session(contract, load_fixture)
+    session.timeout()
+    assert sent[-1][0].name == "FW_STATUS"
+    session.accept(_ack(sent[-1][1], {"command": "FW_STATUS", "result": {"firmware_update": update}}))
+    assert session.finished and not completed and len(failures) == 1
+    assert "FW_STATUS 验证失败" in failures[0].technical

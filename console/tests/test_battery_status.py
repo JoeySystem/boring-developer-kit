@@ -1,11 +1,12 @@
 from dataclasses import replace
 
 import pytest
-from PySide6.QtWidgets import QApplication, QFrame, QLabel, QLineEdit, QPushButton, QSizePolicy
+from PySide6.QtWidgets import QLineEdit, QScrollArea
 
 from controller_config.diagnostics import DiagnosticsSession
 from controller_config.models import AppState, ScreenModel
 from controller_config.transport.demo import _power_v2_snapshot
+from controller_config.views.mode_page import ModeStage
 from test_session_recovery import session
 
 
@@ -24,84 +25,52 @@ def test_battery_requires_valid_percentage(contract, status, expected):
     assert snapshot.battery_percent == expected
 
 
+def _stage(window) -> ModeStage:
+    """The Mode page; the battery is painted on it (paint_battery), not a label."""
+    return window.findChild(QScrollArea, 'overviewScroll').widget()
+
+
 @pytest.mark.parametrize('port', ['/dev/cu.test', 'ble:test-device'])
 def test_battery_updates_in_place_and_disconnect_hides_stale_value(session, port):
     window, vm, gateway, snapshot, _ = session
     gateway.snapshot_ready.emit(replace(snapshot, port_name=port))
     window._select_physical_control('key.9')
     editor = window.findChild(QLineEdit, 'mappingShortNameEditor')
+    assert editor is not None
     editor.setText('Unsaved')
-    label = window.findChild(QLabel, 'deviceBatterySummary')
+    stage = _stage(window)
+    assert isinstance(stage, ModeStage)
     gateway.status_updated.emit({**vm.model.snapshot.status,
                                  'battery': 73, 'battery_valid': True, 'is_charging': None})
     assert window.findChild(QLineEdit, 'mappingShortNameEditor') is editor
     assert editor.text() == 'Unsaved'
-    assert window.findChild(QLabel, 'deviceBatterySummary') is label
-    assert label.text() == '电量 73%'
-    assert '正在充电' not in label.text()
+    assert _stage(window) is stage
+    assert stage.state().battery == 73
+    # The bolt means "connected over USB", never "charging".
+    assert stage.state().usb == (port == '/dev/cu.test')
     gateway.status_updated.emit({**vm.model.snapshot.status,
                                  'battery': None, 'battery_valid': False})
-    assert label.text() == '电量 —'
-    assert '暂未' in label.toolTip()
+    assert stage.state().battery is None
     gateway.status_updated.emit({**vm.model.snapshot.status,
                                  'battery': 100, 'battery_valid': True})
-    assert label.text() == '电量 100%'
+    assert stage.state().battery == 100
     gateway.disconnected.emit('test disconnect')
-    assert window.findChild(QLabel, 'deviceBatterySummary').text() == '电量 — · 已断开'
+    state = _stage(window).state()
+    assert not state.connected and state.battery is None
 
 
-def test_older_firmware_and_english_label(session):
+def test_older_firmware_shows_no_battery(session):
     window, vm, gateway, snapshot, _ = session
     status = {k: v for k, v in snapshot.status.items()
               if k not in {'battery', 'battery_valid', 'is_charging'}}
     gateway.status_updated.emit(status)
-    label = window.findChild(QLabel, 'deviceBatterySummary')
-    assert label.text() == '电量 —'
-    assert '固件未提供' in label.toolTip()
+    assert _stage(window).state().battery is None
     try:
         window._language_manager.set_language('en_US')
         gateway.status_updated.emit({**status, 'battery': 0, 'battery_valid': True})
-        assert window.findChild(QLabel, 'deviceBatterySummary').text() == 'Battery 0%'
+        assert _stage(window).state().battery == 0
     finally:
         window._language_manager.set_language('zh_CN')
-
-
-def test_device_card_prioritizes_active_connection_over_bluetooth_management(session):
-    window, _vm, gateway, snapshot, _ = session
-    window.resize(1280, 720)
-    window.show()
-    QApplication.processEvents()
-
-    card = window.findChild(QFrame, 'deviceContextCard')
-    assert card is not None
-    assert card.findChild(QLabel, 'devicePanelLive').text() == '已连接'
-    assert card.findChild(QLabel, 'devicePanelLive').property('connectionState') == 'connected'
-    assert card.findChild(QLabel, 'deviceConnectionSummary').text() == 'USB-C · 已连接'
-    subtitle = card.findChild(QLabel, 'devicePanelSubtitle')
-    assert subtitle.text() == '开发设备 · 未认证'
-    assert subtitle.isVisible()
-    assert [label.text() for label in card.findChildren(QLabel, 'devicePanelKey')] == ['当前模式']
-
-    bluetooth = card.findChild(QPushButton, 'bleSlotsDisclosure')
-    assert bluetooth is not None
-    assert bluetooth.text() == '蓝牙与电脑…'
-    assert bluetooth.accessibleName() == '打开蓝牙与电脑管理'
-    assert bluetooth.property('buttonRole') == 'ghost'
-    assert bluetooth.sizePolicy().horizontalPolicy() == QSizePolicy.Policy.Maximum
-
-    gateway.snapshot_ready.emit(replace(snapshot, port_name='ble:test-device'))
-    card = window.findChild(QFrame, 'deviceContextCard')
-    assert card.findChild(QLabel, 'deviceConnectionSummary').text() == '蓝牙 · 已连接'
-
-    gateway.disconnected.emit('test disconnect')
-    card = window.findChild(QFrame, 'deviceContextCard')
-    assert card.findChild(QLabel, 'devicePanelLive').text() == '已断开'
-    assert card.findChild(QLabel, 'devicePanelLive').property('connectionState') == 'disconnected'
-    assert card.findChild(QLabel, 'deviceConnectionSummary').text() == '未检测到连接'
-    subtitle = card.findChild(QLabel, 'devicePanelSubtitle')
-    assert subtitle.text() == '插入 USB，或先在系统蓝牙设置中连接设备。'
-    assert subtitle.isVisible()
-    assert [label.text() for label in card.findChildren(QLabel, 'devicePanelKey')] == ['上次模式']
 
 
 def test_diagnostics_does_not_infer_charging_from_usb_or_full_battery(contract):

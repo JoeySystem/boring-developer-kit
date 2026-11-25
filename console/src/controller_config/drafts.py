@@ -251,7 +251,6 @@ class LocalDraft:
                 "mappings": [by_control[control_id] for control_id in self.controls],
             }
         )
-        self.set_active_profile(profile_id)
         return profile_id
 
     def copy_profile(self, profile_id: int | None) -> int:
@@ -285,7 +284,6 @@ class LocalDraft:
             raise ValueError("已存在同名配置方案。")
         new_id = self.copy_profile(profile_id)
         self.rename_profile(new_id, normalized_name)
-        self.set_active_profile(new_id)
         return new_id
 
     def delete_profile(self, profile_id: int | None) -> None:
@@ -302,6 +300,26 @@ class LocalDraft:
     def set_active_profile(self, profile_id: int) -> None:
         self.profile(profile_id)
         self.config["active_profile"] = profile_id
+
+    def reorder_profiles(self, order: list[int]) -> bool:
+        """Put the profiles in this order of ids (全部方案 drag, design decision).
+
+        Only the list order changes: ids, ``active_profile`` and every
+        "switch to profile N" action point at ids, and the device's knob
+        double-click walks the list in order (config_store_select_next_profile).
+        Returns False when the order is already this one.
+        """
+        profiles = self.config.get("profiles")
+        if not isinstance(profiles, list):
+            raise ValueError("Profiles 不可用")
+        current = [profile.get("id") for profile in profiles]
+        if sorted(order) != sorted(current) or len(set(order)) != len(order):
+            raise ValueError("新的方案顺序必须包含每一个方案，且只出现一次")
+        if list(order) == current:
+            return False
+        by_id = {profile["id"]: profile for profile in profiles}
+        profiles[:] = [by_id[profile_id] for profile_id in order]
+        return True
 
     def macro(self, macro_id: int | None) -> dict[str, Any]:
         for macro in self.macros:
@@ -448,15 +466,29 @@ class LocalDraft:
         raise ValueError("无法生成唯一的按键序列名称")
 
     def set_codex_voice(self, profile_id: int | None, action: dict) -> None:
+        if self.config.get("voice_action") is not None:
+            raise ValueError("8 号语音键已改为设备级设置，请从设备模型进入语音设置。")
         if self.features.get("codex_voice") is not True:
             raise ValueError("此设备固件尚不支持 CODEX 模式第三方语音。")
-        if action.get("type") not in {"none", "key_gesture"}:
+        action_type = action.get("type")
+        if action_type == "key" and self.features.get("codex_voice_hold") is not True:
+            raise ValueError("此设备固件尚不支持 CODEX 模式按住说话。")
+        if action_type not in {"none", "key", "key_gesture"}:
             raise ValueError("请选择 Codex 自带语音或第三方语音输入软件。")
         profile = self.profile(profile_id)
-        if action.get("type") == "none":
+        if action_type == "none":
             profile.pop("codex_voice", None)
         else:
             profile["codex_voice"] = copy.deepcopy(action)
+
+    def set_global_voice(self, action: dict) -> None:
+        if (self.hardware_id != "WMP-S3-MATRIX12-POWER-V2" or
+                self.features.get("global_voice") is not True or
+                self.platform not in {"macos", "darwin", "windows", "windows_linux", "win32"}):
+            raise ValueError("当前设备或系统尚不支持设备级语音键。")
+        if action.get("type") not in {"key", "key_gesture"}:
+            raise ValueError("请录制语音快捷键。")
+        self.config["voice_action"] = copy.deepcopy(action)
 
     def set_mapping(
         self,
@@ -465,6 +497,8 @@ class LocalDraft:
         short_name: str,
         action: dict[str, Any],
     ) -> None:
+        if control_id == "key.8" and self.config.get("voice_action") is not None:
+            raise ValueError("8 号语音键已改为设备级设置，请从设备模型进入语音设置。")
         if control_id not in self.controls:
             raise ValueError(f"{control_id} 不在设备 CAPABILITIES 中")
         action_type = action.get("type")
@@ -503,6 +537,8 @@ class LocalDraft:
             errors.append("候选配置 hardware_id 与当前设备不一致")
         if config.get("schema_version") != self.schema_version:
             errors.append("候选配置 schema_version 与当前设备不一致")
+        if config.get("voice_action") is not None and self.features.get("global_voice") is not True:
+            errors.append("此设备固件尚不支持设备级语音键。")
         profiles = [profile for profile in config.get("profiles", ()) if isinstance(profile, dict)]
         profile_ids = [profile.get("id") for profile in profiles]
         if len(profile_ids) != len(set(profile_ids)):
@@ -516,8 +552,16 @@ class LocalDraft:
         macro_id_set = set(macro_ids)
         profile_id_set = set(profile_ids)
         for profile in profiles:
-            if "codex_voice" in profile and self.features.get("codex_voice") is not True:
-                errors.append("此设备固件尚不支持 CODEX 模式第三方语音。")
+            voice = profile.get("codex_voice")
+            if voice is not None:
+                if self.features.get("codex_voice") is not True:
+                    errors.append("此设备固件尚不支持 CODEX 模式第三方语音。")
+                elif (
+                    isinstance(voice, dict)
+                    and voice.get("type") == "key"
+                    and self.features.get("codex_voice_hold") is not True
+                ):
+                    errors.append("此设备固件尚不支持 CODEX 模式按住说话。")
             mappings = profile.get("mappings")
             if not isinstance(mappings, list):
                 continue
@@ -581,12 +625,46 @@ def _collect_changes(
         for key in sorted(before.keys() | after.keys()):
             _collect_changes(f"{path}.{key}", before.get(key), after.get(key), output)
         return
+    if path == "config.profiles" and _same_profiles_reordered(before, after):
+        # A new order is one change, not every field of every moved profile;
+        # each profile is then compared with itself (by id), wherever it went.
+        output.append(DraftChange(f"{path}.order", [p["id"] for p in before], [p["id"] for p in after]))
+        by_id = {profile["id"]: profile for profile in before}
+        for index, after_item in enumerate(after):
+            _collect_changes(f"{path}[{index}]", by_id[after_item["id"]], after_item, output)
+        return
     if isinstance(before, list) and isinstance(after, list) and len(before) == len(after):
         for index, (before_item, after_item) in enumerate(zip(before, after, strict=True)):
             _collect_changes(f"{path}[{index}]", before_item, after_item, output)
         return
     if before != after:
         output.append(DraftChange(path, copy.deepcopy(before), copy.deepcopy(after)))
+
+
+def _profile_ids(profiles: Any) -> list[Any] | None:
+    if not isinstance(profiles, list) or not all(isinstance(p, dict) and "id" in p for p in profiles):
+        return None
+    return [profile["id"] for profile in profiles]
+
+
+def _same_profiles_reordered(before: Any, after: Any) -> bool:
+    """The same profiles (by id, no repeats) in a different order."""
+    before_ids, after_ids = _profile_ids(before), _profile_ids(after)
+    return (before_ids is not None and after_ids is not None and before_ids != after_ids
+            and len(set(before_ids)) == len(before_ids) and sorted(before_ids) == sorted(after_ids))
+
+
+def reorder_visible(all_ids: list[int], visible_order: list[int]) -> list[int]:
+    """The whole profile order after the shown ones were rearranged.
+
+    全部方案 hides the other platform's profiles; they keep their places in the
+    list and the shown ones fill the remaining places in their new order.
+    """
+    shown = set(visible_order)
+    if len(shown) != len(visible_order) or not shown <= set(all_ids):
+        raise ValueError("新的方案顺序里有重复或不存在的方案")
+    queue = iter(visible_order)
+    return [next(queue) if profile_id in shown else profile_id for profile_id in all_ids]
 
 
 def _changes_between(before: dict[str, Any], after: dict[str, Any]) -> tuple[DraftChange, ...]:

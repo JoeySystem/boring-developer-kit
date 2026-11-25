@@ -29,9 +29,11 @@ prepare_qt_platform_plugins()
 
 from PySide6.QtCore import QSettings, QTimer  # noqa: E402
 from PySide6.QtGui import QIcon  # noqa: E402
-from PySide6.QtWidgets import QApplication, QMessageBox, QStyle  # noqa: E402
+from PySide6.QtWidgets import QApplication, QStyle  # noqa: E402
 
 from controller_config.protocol.contract import Contract, ContractError
+from controller_config.views.ui import notice
+from controller_config.config_cache import DeviceConfigCache
 from controller_config.protocol.device_auth import load_default_authenticator
 from controller_config.build_identity import load_build_identity
 from controller_config.claude_usage import ClaudeUsageMonitor
@@ -48,7 +50,6 @@ from controller_config.extensions.bindings import ExtensionBindingError
 from controller_config.extensions.platform import ExtensionPlatformController
 from controller_config.i18n import LanguageManager
 from controller_config.prompt_helper import MacClipboardPaster, PromptHelperRuntime
-from controller_config.settings_migration import migrate_legacy_user_state
 from controller_config.transport.demo import DemoGateway
 from controller_config.transport.device_gateway import DeviceGateway
 from controller_config.viewmodels.main import MainViewModel
@@ -92,12 +93,13 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     build_identity = load_build_identity()
     app = QApplication(sys.argv[:1])
-    app.setWindowIcon(app.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
+    style = getattr(app, "style", None)
+    if callable(style):  # community build: a system icon instead of the brand icon
+        app.setWindowIcon(style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
     app.setApplicationName(build_identity.application_name)
     app.setApplicationDisplayName(build_identity.application_display_name)
     app.setOrganizationName("BORING")
     ui_settings = QSettings()
-    migrate_legacy_user_state(ui_settings, build_identity)
     language_manager = LanguageManager(
         app,
         settings=ui_settings,
@@ -113,25 +115,26 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if not instance.acquire(activate_existing=not args.background):
             if instance.conflict_message:
-                QMessageBox.information(
+                notice.alert(
                     None,
                     language_manager.translate("BORING 控制台已在运行"),
                     language_manager.translate(instance.conflict_message),
+            kind="info",
                 )
             return 0
     except RuntimeError as exc:
-        QMessageBox.critical(None, "无法启动 BORING 控制台", str(exc))
+        notice.alert(None, "无法启动 BORING 控制台", str(exc))
         return 2
     try:
         contract = Contract.load()
         authenticator = load_default_authenticator()
     except (ContractError, ValueError) as exc:
-        QMessageBox.critical(None, "设备信任配置不可用", str(exc))
+        notice.alert(None, "设备信任配置不可用", str(exc))
         return 2
     gateway = (
         DemoGateway(contract, args.demo)
         if args.demo
-        else DeviceGateway(contract, authenticator)
+        else DeviceGateway(contract, authenticator, config_cache=DeviceConfigCache.default())
     )
     firmware_source = default_firmware_source()
     manifest_url = args.firmware_manifest_url or firmware_source["manifest_url"]
@@ -145,6 +148,10 @@ def main(argv: list[str] | None = None) -> int:
         if sys.platform == "darwin"
         else None
     )
+    if not args.demo:
+        # H16: Doubao store copies left by a crash, a kill or a power loss.
+        from controller_config.viewmodels.desktop_agents import cleanup_stale_store_copies
+        cleanup_stale_store_copies()
     view_model = MainViewModel(
         gateway,
         contract,
@@ -168,7 +175,7 @@ def main(argv: list[str] | None = None) -> int:
     except (ExtensionManagerError, ExtensionBindingError, RuntimeError) as exc:
         view_model.shutdown()
         instance.close()
-        QMessageBox.critical(None, "扩展平台无法启动", str(exc))
+        notice.alert(None, "扩展平台无法启动", str(exc))
         return 2
     launch_agent = (
         MacLaunchAgent(
@@ -199,6 +206,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     if sys.platform == "darwin" and not args.demo:
         focus_activator.failed.connect(window.show_agent_focus_error)
+    if not args.demo:
+        # M23: a Doubao light press that did not jump says why (notice, or a
+        # system notification while Console is in the background).
+        link = getattr(view_model, "desktop_agents", None)
+        if link is not None:
+            link.open_failed.connect(window.show_agent_focus_error)
+            # -15 第 2 处: the hub's own signal also says which app; Doubao gets a banner.
+            hub = getattr(link, "hub", None)
+            if hub is not None:
+                hub.open_failed.connect(window.show_agent_open_failed)
     from controller_config.desktop_update import create_desktop_updater
     from controller_config.views.desktop_update import DesktopUpdateUi
     if not args.demo:
@@ -229,7 +246,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             view_model.claude_status.start()
         except (OSError, ValueError, RuntimeError) as exc:
-            view_model.claude_status.message = f"Claude Code 状态联动未启动：{exc}"
+            view_model.claude_status.message = f"Claude 状态灯未启动：{exc}"
     if codex_usage is not None:
         codex_usage.start()
     if claude_usage is not None:

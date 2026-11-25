@@ -1,0 +1,15 @@
+menu "BORING config protocol"
+
+    config WMP_RAM_FAULT_INJECTION
+        bool "TEST ONLY: exhaust the DMA-capable internal heap"
+        default n
+        help
+            Never enable for a release. About 20 s after start-up the firmware
+            allocates every DMA-capable internal heap block it can and keeps
+            them, reproducing a returned unit whose request fingerprints
+            failed with that pool exhausted. Use it to check that HELLO,
+            GET_STATUS and USB firmware updates still work and how BLE, keys
+            and the display behave. Built only with tools/build.sh
+            --ram-fault-injection.
+
+endmenu

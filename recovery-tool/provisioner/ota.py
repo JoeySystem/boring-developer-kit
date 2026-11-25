@@ -261,7 +261,7 @@ class CdcOtaUpdater:
         limits = capabilities.get("limits")
         if not isinstance(features, dict) or features.get("firmware_update") is not True:
             raise OtaUpdateError(
-                "device firmware does not support USB updates; use BOOT recovery"
+                "device firmware does not support safe USB updates; contact support"
             )
         if not isinstance(limits, dict):
             raise OtaUpdateError("device did not advertise firmware update limits")

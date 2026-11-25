@@ -100,9 +100,19 @@ bool board_is_product_target(void)
     return false;
 }
 
-bool board_inputs_neutral(void)
+bool board_keys_neutral(void)
 {
     return !s_stable;
+}
+
+bool board_inputs_neutral(void)
+{
+    return board_keys_neutral();
+}
+
+bool board_joystick_suspect(void)
+{
+    return false;
 }
 
 size_t board_get_active_controls(board_control_t *controls, size_t capacity)

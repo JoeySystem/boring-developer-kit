@@ -3,28 +3,24 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QResizeEvent, QShowEvent
+import shiboken6
+from PySide6.QtCore import QEvent, QPoint, QRect, QRectF, Qt, Signal
+from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
-    QButtonGroup,
+    QApplication,
     QCheckBox,
     QColorDialog,
-    QComboBox,
     QFormLayout,
     QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
-    QSlider,
-    QScrollArea,
-    QFrame,
     QSpinBox,
-    QStyle,
-    QStyleOptionSlider,
     QVBoxLayout,
     QWidget,
 )
+from PySide6.QtWidgets import QGraphicsDropShadowEffect
 
 from controller_config.protocol.contract import ConfigEditorRules, validate_ble_name
 from controller_config.i18n import (
@@ -33,9 +29,29 @@ from controller_config.i18n import (
     set_translatable_text,
     translate_ui_text,
 )
-from controller_config.views.v4_widgets import V4Card, UsageRings
-from controller_config.views.digital_label import Boring5RLabel
-from controller_config.views.screen_icon_editor import ScreenIconDraft, ScreenIconEditor
+from controller_config.views.screen_icon_editor import ScreenIconDraft, ScreenIconEditor, icon_preview
+from controller_config.style import tokens
+from controller_config.views.ui import motion
+from controller_config.views.ui.page_motion import clear_grab
+from controller_config.views.ui.tile_morph import TileMorph
+from controller_config.views.settings_wall import (
+    RADIUS as WALL_RADIUS,
+    HOME_ICON_PREVIEW,
+    RoundArrowButton,
+    SettingsWall,
+    TileIcon,
+    WallTile,
+    title_label,
+)
+from controller_config.views.ui import (
+    LARGE,
+    MEDIUM,
+    ColorPresetRow,
+    DeviceTopView,
+    Dialog,
+    DotMatrixSlider,
+    SegmentedControl,
+)
 
 
 class BleNameEditor(QWidget):
@@ -300,95 +316,118 @@ class RgbButton(QPushButton):
         )
 
 
-class LightingLevelScale(QWidget):
-    """Keep the visible level marks centred under the slider's real snap points."""
+HAPTIC_HELP = (
+    "适用于所有模式和配置方案。按下旋钮或摇杆属于按键反馈；任务／计时提醒包括 Codex、CC 和番茄钟。",
+    "关闭振动不影响按键动作、灯光和屏幕。保存到设备并完成回读后生效，不是实时预览。",
+    "设备自身的马达强度设置页会试振当前档位，即使总开关已关闭；选择 0 档停止。",
+)
+LEGACY_HAPTIC_HELP = ("当前固件不支持分类振动开关，升级支持该功能的固件后可分别设置。",)
 
-    _MARK_WIDTH = 60
-    _SLIDER_HEIGHT = 28
-    _MARKS_TOP = 31
 
-    def __init__(
-        self,
-        slider: QSlider,
-        level_names: tuple[str, ...],
-        parent: QWidget | None = None,
-    ) -> None:
-        super().__init__(parent)
-        self.setObjectName("lightingLevelScale")
-        self.setMinimumWidth(300)
-        self.setMaximumWidth(340)
-        self.setFixedHeight(64)
-        self._slider = slider
-        self._slider.setParent(self)
-        self._marks: list[QWidget] = []
-        for index, name in enumerate(level_names):
-            mark = QWidget(self, objectName="lightingLevelMark")
-            mark.setProperty("levelValue", index)
-            mark.setFixedWidth(self._MARK_WIDTH)
-            mark_layout = QVBoxLayout(mark)
-            mark_layout.setContentsMargins(0, 0, 0, 0)
-            mark_layout.setSpacing(0)
-            number = QLabel(str(index), objectName="lightingLevelMarkNumber")
-            number.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            mark_layout.addWidget(number)
-            semantic = QLabel(objectName="lightingLevelMarkName")
-            semantic.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            set_translatable_text(semantic, name)
-            mark_layout.addWidget(semantic)
-            self._marks.append(mark)
+def _row(*items: object, spacing: int = 8) -> QHBoxLayout:
+    """One line of a tile: widgets, ints for fixed gaps, None for a stretch."""
+    row = QHBoxLayout()
+    row.setContentsMargins(0, 0, 0, 0)
+    row.setSpacing(spacing)
+    for item in items:
+        if item is None:
+            row.addStretch(1)
+        elif isinstance(item, int):
+            row.addSpacing(item)
+        else:
+            # Add first, then show: a widget shown before it has a parent
+            # would open as its own window and hide again when re-parented.
+            row.addWidget(item, 0, Qt.AlignmentFlag.AlignVCenter)
+            item.show()
+    return row
 
-    def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802
-        super().resizeEvent(event)
-        self._layout_scale()
 
-    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802
-        super().showEvent(event)
-        self._layout_scale()
+def _clear(layout) -> None:
+    """Empty a tile layout without deleting its widgets (they are re-placed)."""
+    while layout.count():
+        item = layout.takeAt(0)
+        if item.widget() is not None:
+            item.widget().hide()
+        elif item.layout() is not None:
+            _clear(item.layout())
+            item.layout().setParent(None)
 
-    def _layout_scale(self) -> None:
-        if not self._marks or self.width() <= 0:
+
+def _name(text: str, object_name: str = "lightingRowName") -> QLabel:
+    label = QLabel(objectName=object_name)
+    set_translatable_text(label, text)
+    return label
+
+
+def _tile_picture(tile: "FoldingTile") -> QPixmap:
+    """A still of the tile with its controls. Its shadow effect would leave the controls
+    out of the picture, so it comes off for the moment of the still."""
+    if tile.graphicsEffect() is None:
+        return clear_grab(tile, own_background=True)
+    tile.setGraphicsEffect(None)
+    try:
+        return clear_grab(tile, own_background=True)
+    finally:
+        tile.restore_effect()
+
+
+class FoldingTile(WallTile):
+    """A one-cell tile that opens two cells wide over its neighbour (灯光页 v0.2).
+
+    Its controls are created once as children of the tile; arrange(layout,
+    expanded) puts the ones each look needs into the emptied layout.
+    """
+
+    def __init__(self, object_name: str) -> None:
+        super().__init__(1, 1)
+        self.setObjectName(object_name)
+        self._arrange = None
+        self.expanded = False
+
+    def set_arrange(self, arrange) -> None:
+        self._arrange = arrange
+        self.rearrange()
+
+    def set_expanded(self, expanded: bool) -> None:
+        self.expanded = expanded
+        self.span = (1, 2 if expanded else 1)
+        self.setProperty("raised", expanded)
+        self.restore_effect()
+        self.rearrange()
+        self.update()
+
+    def restore_effect(self) -> None:
+        """Open: a faint shadow under it (-08 答复第 3 件); closed: none."""
+        if not self.expanded:
+            self.setGraphicsEffect(None)
             return
-        option = QStyleOptionSlider()
-        self._slider.initStyleOption(option)
-        option.sliderPosition = self._slider.minimum()
-        option.sliderValue = self._slider.minimum()
-        first_handle = self._slider.style().subControlRect(
-            QStyle.ComplexControl.CC_Slider,
-            option,
-            QStyle.SubControl.SC_SliderHandle,
-            self._slider,
-        )
-        side_inset = max(0, self._MARK_WIDTH // 2 - first_handle.center().x())
-        self._slider.setGeometry(
-            side_inset,
-            0,
-            max(0, self.width() - side_inset * 2),
-            self._SLIDER_HEIGHT,
-        )
+        r, g, b, a = tokens.TILE_SHADOW
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(tokens.TILE_SHADOW_BLUR)
+        shadow.setOffset(0, tokens.TILE_SHADOW_OFFSET)
+        shadow.setColor(QColor(r, g, b, a))
+        self.setGraphicsEffect(shadow)
 
-        for value, mark in enumerate(self._marks):
-            option = QStyleOptionSlider()
-            self._slider.initStyleOption(option)
-            option.sliderPosition = value
-            option.sliderValue = value
-            handle = self._slider.style().subControlRect(
-                QStyle.ComplexControl.CC_Slider,
-                option,
-                QStyle.SubControl.SC_SliderHandle,
-                self._slider,
-            )
-            center_x = self._slider.x() + handle.center().x()
-            mark.setGeometry(
-                center_x - self._MARK_WIDTH // 2,
-                self._MARKS_TOP,
-                self._MARK_WIDTH,
-                self.height() - self._MARKS_TOP,
-            )
+    def rearrange(self) -> None:
+        _clear(self.box)
+        for child in self.findChildren(QWidget, options=Qt.FindChildOption.FindDirectChildrenOnly):
+            child.hide()
+        self._arrange(self.box, self.expanded)
 
 
-class PreferencesEditor(QWidget):
+class PreferencesEditor(SettingsWall):
+    """「灯光与反馈」: a 4 × 2 wall (the designer, 灯光页排法二 v0.4).
+
+    Left 2 × 2: 按键灯光 (device picture, colours, brightness, live preview).
+    Top right: 屏幕 and 震动, one cell each; each opens two cells wide over the
+    other, one at a time. Bottom right 2 × 1: 屏幕图标, opening a dialog.
+    The editor owns the controls and values(); the main window supplies the
+    device picture, the live-preview switch and the save banner.
+    """
+
     lighting_changed = Signal(object)
     screen_icon_editor_created = Signal(object)
+    screen_glyphs_opened = Signal(object)
 
     def __init__(
         self,
@@ -405,7 +444,8 @@ class PreferencesEditor(QWidget):
         screen_icon_draft: ScreenIconDraft | None = None,
         parent: QWidget | None = None,
     ) -> None:
-        super().__init__(parent)
+        super().__init__("appearance", parent)
+        self.setObjectName("lightingWall")
         self._lighting = copy.deepcopy(lighting)
         self._haptic = copy.deepcopy(haptic)
         self._display = copy.deepcopy(display)
@@ -441,167 +481,140 @@ class PreferencesEditor(QWidget):
         self._lighting_level_value: QLabel | None = None
         self._status_colors: list[RgbButton] = []
         self._under_key_colors: list[tuple[int, RgbButton]] = []
-        self._cards_layout = QGridLayout(self)
-        self._cards_layout.setContentsMargins(0, 0, 0, 0)
-        self._cards_layout.setSpacing(12)
-        self._light_card = self._lighting_group()
-        self._cards_layout.addWidget(self._light_card, 0, 0, 2, 1)
-        self._haptic_card = None
-        self._screen_card = None
-        if features.get("haptic") is True:
-            self._haptic_card = self._haptic_group()
-            self._cards_layout.addWidget(self._haptic_card, 0, 1)
+        self._screen_icon_dialog = None
+        self._open_tile: FoldingTile | None = None
+
+        self._light_card = self._lighting_tile()
+        self.place(self._light_card, 0, 0)
+        self._show_lighting(self.lighting_value())
+        if self._light_buttons:
+            self._select_light_key(next(iter(self._light_buttons)))
+        self._screen_card: FoldingTile | None = None
+        self._haptic_card: FoldingTile | None = None
+        self._icon_card: WallTile | None = None
         if features.get("display") is True:
-            self._screen_card = self._display_group()
-            self._cards_layout.addWidget(self._screen_card, 1, 1)
-        self._cards_layout.setColumnStretch(0, 3)
-        self._cards_layout.setColumnStretch(1, 2)
-        self._compact_cards = False
-        self._workspace_columns = None
+            self._screen_card = FoldingTile("screenWidgetCard")
+            self._build_display_controls(self._screen_card)
+            self._screen_card.set_arrange(self._arrange_display)
+            self.place(self._screen_card, 0, 2)
+            self._icon_card = self._screen_icon_tile()
+            self.place(self._icon_card, 1, 2)
+        if features.get("haptic") is True:
+            self._haptic_card = FoldingTile("hapticSecondaryCard")
+            self._build_haptic_controls(self._haptic_card)
+            self._haptic_card.set_arrange(self._arrange_haptic)
+            self.place(self._haptic_card, 0, 3)
 
-    def set_workspace(self, preview: QWidget, preview_controls: QWidget, sync: QWidget) -> None:
-        """Keep the same editors alive while arranging the lighting workbench."""
-        self._workspace_columns = []
-        if self._lighting_levels is not None:
-            level_control = self.findChild(QWidget, "lightingLevelControl")
-            self.findChild(LightingLevelScale).hide()
-            self._lighting_level_value.hide()
-            level_row = QHBoxLayout()
-            gauge = UsageRings()
-            gauge.setObjectName("lightingLevelGauge")
-            gauge.setMinimumSize(84, 84)
-            gauge.setMaximumSize(92, 92)
-            gauge.set_labels("LIGHT", "")
-            level_row.addWidget(gauge)
-            segments = QHBoxLayout()
-            segments.setSpacing(2)
-            buttons = []
-            for index, name in enumerate(("关", "低", "中", "高", "最高")):
-                button = QPushButton(name, objectName="lightingLevelSegment")
-                button.setCheckable(True)
-                button.setProperty("levelValue", index)
-                button.setMinimumWidth(0)
-                button.setStyleSheet("QPushButton { padding: 0 4px; min-width: 24px; min-height: 32px; border: none; border-radius: 16px; } QPushButton:checked { background: #EFEAE0; color: #242320; }")
-                def select(_checked=False, value=index):
-                    previous = self._lighting_brightness.value()
-                    self._lighting_brightness.setValue(value)
-                    if previous == value:
-                        self._use_selected_lighting_level()
-                button.clicked.connect(select)
-                buttons.append(button)
-                segments.addWidget(button)
-            level_row.addLayout(segments, 1)
-            level_control.layout().insertLayout(0, level_row)
-            def refresh(lighting):
-                selected_level = self._lighting_brightness.value()
-                maximum_level = len(self._lighting_levels) - 1
-                user_percentage = (
-                    round(selected_level / maximum_level * 100)
-                    if lighting.get("enabled") and maximum_level > 0
-                    else 0
-                )
-                gauge.set_usage(seven_day=user_percentage, five_hour=None)
-                for index, button in enumerate(buttons):
-                    button.setChecked(index == self._lighting_brightness.value() and
-                                      (self._lighting_level_touched or self._lighting_level_is_standard))
-            self.lighting_changed.connect(refresh)
-            refresh(self.lighting_value())
-        if self._haptic_card is not None:
-            help_panel = QWidget()
-            help_layout = QVBoxLayout(help_panel)
-            help_layout.setContentsMargins(0, 0, 0, 0)
-            for note in self._haptic_card.findChildren(QLabel, "hapticHelp"):
-                self._haptic_card.layout().removeWidget(note)
-                help_layout.addWidget(note)
-            help_button = QPushButton("震动说明", objectName="expandHapticHelp")
-            help_button.setCheckable(True)
-            help_button.toggled.connect(help_panel.setVisible)
-            self._haptic_card.layout().addWidget(help_button)
-            self._haptic_card.layout().addWidget(help_panel)
-            help_panel.hide()
-        for card in (self._light_card, self._screen_card, self._haptic_card):
-            if card is not None:
-                self._cards_layout.removeWidget(card)
-        left = QWidget(objectName="lightingLeftColumn")
-        left_layout = QVBoxLayout(left)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(16)
-        left_layout.addWidget(self._light_card)
-        self._light_card.layout().addWidget(preview_controls)
-        if self._screen_card is not None:
-            left_layout.addWidget(self._screen_card)
-        left_layout.addStretch(1)
-        right = QWidget(objectName="lightingRightColumn")
-        right_layout = QVBoxLayout(right)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(16)
-        if self._haptic_card is not None:
-            right_layout.addWidget(self._haptic_card)
-        right_layout.addWidget(sync)
-        right_layout.addStretch(1)
-        for content, name in ((left, "lightingLeftScroll"), (right, "lightingRightScroll")):
-            scroll = QScrollArea(objectName=name)
-            scroll.setWidgetResizable(True)
-            scroll.setFrameShape(QFrame.NoFrame)
-            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-            scroll.setWidget(content)
-            self._workspace_columns.append(scroll)
-        self._workspace_preview = preview
-        self._compact_cards = None
-        self.setMinimumHeight(600)
-        self._layout_workspace()
+    # -- the wall ------------------------------------------------------------
 
-    def _layout_workspace(self) -> None:
-        compact = self.width() < 1080
-        if compact == self._compact_cards:
-            return
-        self._compact_cards = compact
-        left, right = self._workspace_columns
-        for widget in (left, right, self._workspace_preview):
-            self._cards_layout.removeWidget(widget)
-        for col in range(3):
-            self._cards_layout.setColumnStretch(col, 0)
-        for row in range(3):
-            self._cards_layout.setRowStretch(row, 0)
-        if compact:
-            self._cards_layout.addWidget(self._workspace_preview, 0, 0, 1, 2)
-            self._cards_layout.addWidget(left, 1, 0)
-            self._cards_layout.addWidget(right, 1, 1)
-            left.setMinimumHeight(600)
-            right.setMinimumHeight(600)
-            self._cards_layout.setColumnStretch(0, 1)
-            self._cards_layout.setColumnStretch(1, 1)
-        else:
-            left.setMinimumHeight(0)
-            right.setMinimumHeight(0)
-            self._cards_layout.addWidget(left, 0, 0)
-            self._cards_layout.addWidget(self._workspace_preview, 0, 1)
-            self._cards_layout.addWidget(right, 0, 2)
-            for col, stretch in enumerate((3, 4, 3)):
-                self._cards_layout.setColumnStretch(col, stretch)
-            self._cards_layout.setRowStretch(0, 1)
+    def set_workspace(self, preview_toggle: QWidget, preview_status: QWidget) -> None:
+        """Put the main window's live-preview switch and its status line in 按键灯光."""
+        self._preview_title.show()
+        self._preview_toggle_slot.addWidget(preview_toggle)
+        self._preview_status_slot.addWidget(preview_status)
 
-    def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802
-        super().resizeEvent(event)
-        if self._workspace_columns is not None:
-            self._layout_workspace()
+    def set_device_connected(self, connected: bool) -> None:
+        """Without a device the function keys show one dimmed colour (设备图 v0.5)."""
+        self._device_view.set_connected(connected)
+
+    def open_tile(self, tile: FoldingTile | None) -> None:
+        """Open 屏幕 or 震动 over the other one, or close the open one (None).
+
+        Opening widens it with a bounce and closing shrinks it back (-08 答复第 3 件).
+        """
+        if tile is self._open_tile:
             return
-        compact = self.width() < 820
-        if compact == self._compact_cards:
+        running = getattr(self, "_tile_morph", None)
+        if running is not None and shiboken6.isValid(running):
+            running.finish()   # a click while one plays: the old overlay goes first, never two
+        moving = tile if tile is not None else self._open_tile
+        before = self._tile_before(moving, opening=tile is not None) if moving is not None else None
+        self._open_tile_now(tile)
+        if before is not None:
+            self._morph_tile(moving, before, opening=tile is not None)
+
+    # -- 方块变宽 (-08 答复第 3 件): a still before, a still after, an overlay between ---
+
+    def _morph_span(self, host: QWidget) -> QRect:
+        """The two cells 屏幕 and 震动 share, with room for the bounce and the shadow."""
+        rects = [QRect(card.mapTo(host, QPoint(0, 0)), card.size())
+                 for card in (self._screen_card, self._haptic_card) if card is not None and card.isVisible()]
+        span = rects[0]
+        for rect in rects[1:]:
+            span = span.united(rect)
+        margin = tokens.TILE_OPEN_OVERSHOOT + 30
+        return span.adjusted(-margin, -20, margin, 40).intersected(host.rect())
+
+    def _tile_before(self, tile: FoldingTile, *, opening: bool):
+        if motion.reduces_motion() or not self.isVisible() or not tile.isVisible():
+            return None
+        host = self.window()
+        rect = QRectF(QRect(tile.mapTo(host, QPoint(0, 0)), tile.size()))
+        span = self._morph_span(host)
+        # Nothing is grabbed under the overlay: on the glass window such a still would
+        # carry the window's tint and darken the cells while it plays (真屏 11-22).
+        return rect, _tile_picture(tile), span, None
+
+    def _morph_tile(self, tile: FoldingTile, before, *, opening: bool) -> None:
+        host = self.window()
+        start, old, span, base = before
+        # The controls the new look needs were just put into the tile: lay them out first.
+        # Only layout events: flushing every posted event here would paint the opened
+        # tile for one frame before the overlay exists (the flash at the start).
+        QApplication.sendPostedEvents(None, QEvent.Type.LayoutRequest)
+        if tile.layout() is not None:
+            tile.layout().activate()
+        end = QRectF(QRect(tile.mapTo(host, QPoint(0, 0)), tile.size()))
+        new = _tile_picture(tile)
+        # Opening: the tile it covers stays shown under the overlay until covered.
+        covered = None
+        if opening:
+            covered = self._haptic_card if tile is self._screen_card else self._screen_card
+        self._tile_morph = TileMorph(host, base=base, base_at=span, start=start, end=end, old=old, new=new,
+                                     opening=opening, radius=float(WALL_RADIUS), veiled=tile, reveal=covered)
+
+    def _open_tile_now(self, tile: FoldingTile | None) -> None:
+        previous = self._open_tile
+        if previous is not None:
+            previous.set_expanded(False)
+            self.move(previous, 0, 2 if previous is self._screen_card else 3)
+        for other in (self._screen_card, self._haptic_card):
+            if other is not None:
+                other.show()
+        self._open_tile = tile
+        app = QApplication.instance()
+        if tile is None:
+            app.removeEventFilter(self)
             return
-        self._compact_cards = compact
-        for card in (self._light_card, self._screen_card, self._haptic_card):
-            if card is not None:
-                self._cards_layout.removeWidget(card)
-        self._cards_layout.addWidget(self._light_card, 0, 0, 1 if compact else 2, 1)
-        if self._screen_card is not None:
-            self._cards_layout.addWidget(self._screen_card, 1, 0 if compact else 1)
-        if self._haptic_card is not None:
-            if compact:
-                self._cards_layout.addWidget(self._haptic_card, 2, 0)
-            else:
-                self._cards_layout.addWidget(self._haptic_card, 0, 1)
-        self._cards_layout.setColumnStretch(1, 0 if compact else 2)
+        covered = self._haptic_card if tile is self._screen_card else self._screen_card
+        if covered is not None:
+            covered.hide()
+        tile.set_expanded(True)
+        self.move(tile, 0, 2)
+        tile.raise_()
+        if previous is None:
+            app.installEventFilter(self)
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt virtual method
+        tile = self._open_tile
+        if tile is not None and tile.isVisible():
+            if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
+                if (isinstance(watched, QWidget) and watched.window() is self.window()
+                        and QApplication.activeModalWidget() is None):
+                    self.open_tile(None)
+                    return True
+            elif event.type() == QEvent.Type.MouseButtonPress and isinstance(watched, QWidget):
+                inside = watched is tile or tile.isAncestorOf(watched)
+                popup = QApplication.activePopupWidget() is not None
+                if not inside and not popup and watched.window() is self.window():
+                    self.open_tile(None)
+        return False
+
+    def hideEvent(self, event) -> None:  # noqa: N802 - Qt virtual method
+        self.open_tile(None)
+        super().hideEvent(event)
+
+    # -- values --------------------------------------------------------------
 
     def values(self) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
         lighting = self.lighting_value()
@@ -628,10 +641,9 @@ class PreferencesEditor(QWidget):
 
         display = copy.deepcopy(self._display)
         if self._features.get("display") is True:
-            rotation_button = self._display_rotation_group.checkedButton()
             display.update(
                 brightness=self._display_brightness.value(),
-                rotation=int(rotation_button.property("rotationValue")),
+                rotation=int(self._display_rotation.value()),
                 show_control_hints=self._display_hints.isChecked(),
             )
         return lighting, haptic, display
@@ -680,108 +692,81 @@ class PreferencesEditor(QWidget):
             ]
         set_translatable_text(self._lighting_level_value, text)
 
-    def _lighting_group(self) -> QWidget:
-        group = V4Card(role="primary", dots=True)
-        group.setObjectName("lightingFocusCard")
-        layout = QVBoxLayout(group)
-        layout.setContentsMargins(18, 16, 18, 16)
-        layout.setSpacing(10)
-        layout.addWidget(Boring5RLabel("LIGHT", color="#A5A195", scale=0.9))
-        layout.addWidget(QLabel("灯光", objectName="lightingModuleTitle"))
-        form = QFormLayout()
-        if self._lighting_levels is None:
-            self._lighting_enabled = QCheckBox(
-                "启用灯光", objectName="lightingEnabled"
-            )
-            self._lighting_enabled.setChecked(self._original_lighting_enabled)
-            self._lighting_enabled.toggled.connect(self._emit_lighting_changed)
-            form.addRow("总开关", self._lighting_enabled)
-            self._lighting_brightness = QSpinBox(objectName="lightingBrightness")
-            brightness_range = self._rules.lighting_brightness
-            self._lighting_brightness.setRange(
-                brightness_range.minimum, brightness_range.maximum
-            )
-            self._lighting_brightness.setSuffix(" %")
-            self._lighting_brightness.setValue(self._original_lighting_brightness)
-            self._lighting_brightness.valueChanged.connect(
-                self._emit_lighting_changed
-            )
-            form.addRow("全局亮度", self._lighting_brightness)
-        else:
-            level_control = QWidget(objectName="lightingLevelControl")
-            level_control.setMinimumWidth(0)
-            level_control.setMaximumWidth(410)
-            level_layout = QVBoxLayout(level_control)
-            level_layout.setContentsMargins(0, 0, 0, 0)
-            level_layout.setSpacing(3)
+    def _select_light_key(self, control_id: str) -> None:
+        """A function key picked on the device picture: show its colour row."""
+        button = self._light_buttons.get(control_id)
+        if button is None:
+            return
+        self._device_view.set_selected(control_id)
+        number = control_id.split(".")[-1]
+        self._color_row.set_key(f"{translate_ui_text('键')} {number}", _rgb_tuple(button.value()))
 
-            slider_row = QHBoxLayout()
-            self._lighting_brightness = QSlider(
-                Qt.Orientation.Horizontal,
-                objectName="lightingBrightness",
-            )
-            self._lighting_brightness.setRange(0, len(self._lighting_levels) - 1)
-            self._lighting_brightness.setSingleStep(1)
-            self._lighting_brightness.setPageStep(1)
-            self._lighting_brightness.setTickInterval(1)
-            self._lighting_brightness.setTickPosition(
-                QSlider.TickPosition.TicksBelow
-            )
-            self._lighting_brightness.setMinimumWidth(250)
-            self._lighting_brightness.setMaximumWidth(340)
-            initial_index = _initial_lighting_level_index(
-                self._original_lighting_enabled,
-                self._original_lighting_brightness,
-                self._lighting_levels,
-            )
-            self._lighting_brightness.setValue(initial_index)
-            set_translatable_accessible_name(
-                self._lighting_brightness, "亮度档位"
-            )
-            level_scale = LightingLevelScale(
-                self._lighting_brightness,
-                _lighting_level_names(len(self._lighting_levels)),
-            )
-            level_scale.setMinimumWidth(210)
-            slider_row.addWidget(level_scale, 1)
-            self._lighting_level_value = QLabel(objectName="lightingLevelValue")
-            self._lighting_level_value.setMinimumWidth(42)
-            self._lighting_level_value.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            slider_row.addWidget(self._lighting_level_value)
-            slider_row.setAlignment(
-                self._lighting_level_value, Qt.AlignmentFlag.AlignTop
-            )
-            level_layout.addLayout(slider_row)
+    def _choose_light_color(self, rgb) -> None:
+        """A preset (or 不亮, stored as black) for the picked key; shows at once."""
+        button = self._light_buttons.get(self._device_view.selected())
+        if button is not None:
+            button._set_rgb(tuple(rgb) if rgb is not None else (0, 0, 0), emit=True)
 
-            if not self._lighting_level_is_standard:
-                self._lighting_level_note = QLabel(
-                    "当前旧配置值会保持不变；拖动后将使用设备的 0–4 档位。",
-                    objectName="muted",
-                )
-                self._lighting_level_note.setWordWrap(True)
-                level_layout.addWidget(self._lighting_level_note)
+    def _show_lighting(self, lighting: dict[str, Any]) -> None:
+        """Paint the keys in their light colours at the chosen brightness."""
+        colors = lighting.get("under_key", [])
+        self._device_view.set_key_colors({
+            control_id: _rgb_tuple(colors[int(control_id.split(".")[-1]) - 1])
+            for control_id in self._light_buttons
+            if int(control_id.split(".")[-1]) - 1 < len(colors)
+        })
+        self._device_view.set_brightness(self._brightness_fraction(lighting))
 
-            self._refresh_lighting_level_value()
-            self._lighting_brightness.valueChanged.connect(
-                self._use_selected_lighting_level
-            )
-            form.addRow(QLabel("亮度档位"))
-            form.addRow(level_control)
-        layout.addLayout(form)
+    def _brightness_fraction(self, lighting: dict[str, Any]) -> float:
+        if not lighting.get("enabled"):
+            return 0.0
+        brightness = _integer(lighting.get("brightness"), 0)
+        if self._lighting_levels is not None:
+            return _lighting_level_fraction(brightness, self._lighting_levels)
+        maximum = self._rules.lighting_brightness.maximum
+        return brightness / maximum if maximum else 0.0
+
+    # -- 按键灯光 (2 × 2) -------------------------------------------------------
+
+    def _lighting_tile(self) -> WallTile:
+        tile = WallTile(2, 2)
+        tile.setObjectName("lightingFocusCard")
+        box = tile.box
+        box.setSpacing(6)
+        self._preview_title = _name("设备实时预览", "wallTileNote")
+        self._preview_title.hide()
+        self._preview_toggle_slot = QHBoxLayout()
+        self._preview_toggle_slot.setContentsMargins(0, 0, 0, 0)
+        header = _row(TileIcon("sun"), title_label("按键灯光"), None, self._preview_title, spacing=9)
+        header.addLayout(self._preview_toggle_slot)
+        self._preview_title.hide()  # shown once the main window supplies the switch
+        box.addLayout(header)
+        self._preview_status_slot = QHBoxLayout()
+        self._preview_status_slot.setContentsMargins(37, 0, 0, 0)
+        box.addLayout(self._preview_status_slot)
+        # The device picture is the key picker; the row under it gives the
+        # chosen key one of the preset colours (灯光页 v0.2 第 3 张).
+        self._device_view = DeviceTopView()
+        self._device_view.setObjectName("lightingDevicePreview")
+        self._device_view.key_selected.connect(self._select_light_key)
+        box.addWidget(self._device_view, 1)
+        self._color_row = ColorPresetRow()
+        self._color_row.setObjectName("lightingColorRow")
+        self._color_row.color_chosen.connect(self._choose_light_color)
+        box.addWidget(self._color_row)
 
         status_count = _integer(self._features.get("status_rgb_count"), 0)
-        under_key_count = _integer(self._features.get("under_key_rgb_count"), 0)
         status_values = self._lighting.get("status")
         if status_count > 0 and isinstance(status_values, list):
-            layout.addWidget(QLabel("状态 RGB"))
             status_grid = QGridLayout()
             for index, value in enumerate(status_values[:status_count]):
                 button = RgbButton(f"状态灯 {index + 1}", value)
                 button.value_changed.connect(self._emit_lighting_changed)
                 self._status_colors.append(button)
                 status_grid.addWidget(button, index // 4, index % 4)
-            layout.addLayout(status_grid)
+            box.addLayout(status_grid)
 
+        under_key_count = _integer(self._features.get("under_key_rgb_count"), 0)
         under_key_values = self._lighting.get("under_key")
         if under_key_count > 0 and isinstance(under_key_values, list):
             for index, value in enumerate(under_key_values[:under_key_count]):
@@ -791,160 +776,82 @@ class PreferencesEditor(QWidget):
                     or control_id in self._agent_status_control_ids
                 ):
                     continue
-                # The device model is the visible selector. Keep the existing
-                # RGB button as the dialog/value controller so the write and
-                # readback paths remain unchanged, but do not render a second
-                # row of six competing swatches in the side panel.
-                button = RgbButton(
-                    f"功能键 {index + 1}",
-                    value,
-                    group,
-                    control_id=control_id,
-                )
+                # The device picture is the visible selector; this button keeps
+                # the value and the colour dialog so writes stay unchanged.
+                button = RgbButton(f"功能键 {index + 1}", value, tile, control_id=control_id)
                 button.setProperty("underKeyIndex", index)
                 button.value_changed.connect(self._emit_lighting_changed)
                 self._under_key_colors.append((index, button))
                 button.hide()
-            if self._agent_status_control_ids:
-                layout.addWidget(QLabel("状态灯", objectName="eyebrow"))
-                agent_note = QLabel(
-                    "状态灯由 Codex 自动控制。",
-                    objectName="statusKeyLightingNote",
-                )
-                agent_note.setWordWrap(True)
-                layout.addWidget(agent_note)
-        return group
-
-    def _haptic_group(self) -> QWidget:
-        group = V4Card(role="secondary")
-        group.setObjectName("hapticSecondaryCard")
-        layout = QVBoxLayout(group)
-        layout.setContentsMargins(18, 16, 18, 16)
-        layout.setSpacing(8)
-        layout.addWidget(Boring5RLabel("HAPTIC", color="#A5A195", scale=0.9))
-        layout.addWidget(QLabel("震动", objectName="hapticModuleTitle"))
-        form = QFormLayout()
-        form.setVerticalSpacing(8)
-        layout.addLayout(form)
-        self._haptic_enabled = QCheckBox("启用震动", objectName="hapticEnabled")
-        self._haptic_enabled.setChecked(self._haptic.get("enabled") is True)
-        form.addRow("总开关", self._haptic_enabled)
-        if self._haptic_levels is None:
-            self._haptic_strength = QSpinBox(objectName="hapticStrength")
-            strength_range = self._rules.haptic_strength
-            self._haptic_strength.setRange(strength_range.minimum, strength_range.maximum)
-            self._haptic_strength.setSuffix(" %")
-            self._haptic_strength.setValue(self._haptic_level_strength)
-            form.addRow("强度", self._slider_and_value(self._haptic_strength))
-        else:
-            self._haptic_strength = QComboBox(objectName="hapticStrength")
-            for label, strength in zip(
-                ("0 · 关闭震动", "1 · 低", "2 · 中", "3 · 高", "4 · 最高"),
-                self._haptic_levels,
-            ):
-                self._haptic_strength.addItem(label, strength)
-            self._haptic_strength.setPlaceholderText("旧配置保留，请选择档位")
-            self._sync_haptic_level()
-            self._haptic_strength.currentIndexChanged.connect(self._select_haptic_level)
-            self._haptic_enabled.toggled.connect(self._sync_haptic_level)
-            form.addRow("强度档位", self._haptic_strength)
-        self._haptic_duration = QSpinBox(objectName="hapticDuration")
-        duration_range = self._rules.haptic_duration_ms
-        self._haptic_duration.setRange(duration_range.minimum, duration_range.maximum)
-        self._haptic_duration.setSuffix(" ms")
-        self._haptic_duration.setValue(
-            _integer(self._haptic.get("duration_ms"), duration_range.minimum)
-        )
-        form.addRow("时长", self._slider_and_value(self._haptic_duration))
-        channels_supported = self._features.get("haptic_channels") is True
-        self._haptic_on_press = QCheckBox(
-            "按键反馈" if channels_supported else "按键触发", objectName="hapticOnPress"
-        )
-        self._haptic_on_press.setChecked(self._haptic.get("on_press") is True)
-        form.addRow(self._haptic_on_press)
-        self._haptic_channels: dict[str, QCheckBox] = {}
-        if channels_supported:
-            for field, label, name in (
-                ("on_encoder", "旋钮旋转反馈", "hapticOnEncoder"),
-                ("on_joystick", "摇杆方向反馈", "hapticOnJoystick"),
-                ("on_task", "任务／计时提醒", "hapticOnTask"),
-            ):
-                checkbox = QCheckBox(label, objectName=name)
-                checkbox.setChecked(self._haptic.get(field, True) is True)
-                self._haptic_channels[field] = checkbox
-                form.addRow(checkbox)
-            notes = (
-                "适用于所有模式和配置方案。按下旋钮或摇杆属于按键反馈；任务／计时提醒包括 Codex、CC 和番茄钟。",
-                "关闭振动不影响按键动作、灯光和屏幕。保存到设备并完成回读后生效，不是实时预览。",
-                "设备自身的马达强度设置页会试振当前档位，即使总开关已关闭；选择 0 档停止。",
-            )
-        else:
-            self._haptic_on_profile = QCheckBox("Profile 切换触发", objectName="hapticOnProfile")
-            self._haptic_on_profile.setChecked(self._haptic.get("on_profile") is True)
-            form.addRow("Profile", self._haptic_on_profile)
-            notes = ("当前固件不支持分类振动开关，升级支持该功能的固件后可分别设置。",)
-        for text in notes:
-            note = QLabel(text, objectName="hapticHelp")
+        self._light_buttons = {button.property("controlId"): button for _index, button in self._under_key_colors}
+        self._color_row.setVisible(bool(self._light_buttons))
+        self.lighting_changed.connect(self._show_lighting)
+        if self._agent_status_control_ids:
+            note = _name("不带键号的 6 颗是状态灯，由 Codex 自动控制。", "wallTileNote")
             note.setWordWrap(True)
-            layout.addWidget(note)
-        self._haptic_enabled.toggled.connect(self._refresh_haptic_enabled)
-        self._refresh_haptic_enabled()
-        layout.addStretch(1)
-        return group
+            box.addWidget(note)
 
-    def _select_haptic_level(self, index: int) -> None:
-        if index < 0:
-            return
-        strength = self._haptic_strength.itemData(index)
-        if strength > 0:
-            self._haptic_level_strength = strength
-        # As in the device menu, level zero disables output but retains strength.
-        self._haptic_enabled.setChecked(strength > 0)
+        if self._lighting_levels is None:
+            self._lighting_enabled = QCheckBox(objectName="lightingEnabled")
+            set_translatable_accessible_name(self._lighting_enabled, "启用灯光")
+            self._lighting_enabled.setChecked(self._original_lighting_enabled)
+            self._lighting_enabled.toggled.connect(self._emit_lighting_changed)
+            self._lighting_brightness = QSpinBox(objectName="lightingBrightness")
+            brightness_range = self._rules.lighting_brightness
+            self._lighting_brightness.setRange(brightness_range.minimum, brightness_range.maximum)
+            self._lighting_brightness.setSuffix(" %")
+            self._lighting_brightness.setValue(self._original_lighting_brightness)
+            self._lighting_brightness.valueChanged.connect(self._emit_lighting_changed)
+            box.addLayout(_row(_name("亮度"), self._slider_and_value(self._lighting_brightness),
+                               self._lighting_enabled, spacing=12))
+            return tile
 
-    def _sync_haptic_level(self, *_args: object) -> None:
-        value = self._haptic_level_strength if self._haptic_enabled.isChecked() else 0
-        was_blocked = self._haptic_strength.blockSignals(True)
-        self._haptic_strength.setCurrentIndex(self._haptic_strength.findData(value))
-        self._haptic_strength.blockSignals(was_blocked)
-
-    def _refresh_haptic_enabled(self) -> None:
-        enabled = self._haptic_enabled.isChecked()
-        self._haptic_on_press.setEnabled(enabled)
-        for checkbox in self._haptic_channels.values():
-            checkbox.setEnabled(enabled)
-        if self._features.get("haptic_channels") is not True:
-            self._haptic_on_profile.setEnabled(enabled)
-
-    @staticmethod
-    def _slider_and_value(value: QSpinBox) -> QWidget:
-        row = QWidget()
-        layout = QHBoxLayout(row)
-        layout.setContentsMargins(0, 0, 0, 0)
-        slider = QSlider(Qt.Orientation.Horizontal, objectName=f"{value.objectName()}Slider")
-        slider.setRange(value.minimum(), value.maximum())
-        slider.setValue(value.value())
-        slider.setAccessibleName(value.objectName())
-        slider.valueChanged.connect(value.setValue)
-        value.valueChanged.connect(slider.setValue)
-        value.setMaximumWidth(110)
-        layout.addWidget(slider, 1)
-        layout.addWidget(value)
-        return row
-
-    def _display_group(self) -> QWidget:
-        group = V4Card(role="widget")
-        group.setObjectName("screenWidgetCard")
-        layout = QVBoxLayout(group)
-        layout.setContentsMargins(18, 18, 18, 18)
-        layout.setSpacing(12)
-        layout.addWidget(QLabel("屏幕", objectName="displayModuleTitle"))
-        form = QFormLayout()
-        form.setVerticalSpacing(10)
-        layout.addLayout(form)
-        self._display_brightness = QSlider(
-            Qt.Orientation.Horizontal,
-            objectName="displayBrightness",
+        if not self._lighting_level_is_standard:
+            # Takes the status line's place above the bar until the bar is moved.
+            self._lighting_level_note = _name(
+                "当前旧配置值会保持不变；拖动后将使用设备的 0–4 档位。", "wallTileNote")
+            self._lighting_level_note.setWordWrap(True)
+            box.addWidget(self._lighting_level_note)
+        # One continuous dot bar that snaps to the five levels on release
+        # (the designer, lighting page v0.4); the label on the right names the level.
+        self._lighting_brightness = DotMatrixSlider(
+            Qt.Orientation.Horizontal, objectName="lightingBrightness", snap=True,
         )
+        self._lighting_brightness.setRange(0, len(self._lighting_levels) - 1)
+        self._lighting_brightness.setSingleStep(1)
+        self._lighting_brightness.setPageStep(1)
+        self._lighting_brightness.setValue(_initial_lighting_level_index(
+            self._original_lighting_enabled, self._original_lighting_brightness, self._lighting_levels,
+        ))
+        if not self._lighting_level_is_standard:
+            self._lighting_brightness.set_between(_lighting_level_fraction(
+                self._original_lighting_brightness, self._lighting_levels
+            ))
+        set_translatable_accessible_name(self._lighting_brightness, "亮度档位")
+        self._lighting_level_value = QLabel(objectName="lightingLevelValue")
+        self._lighting_level_value.setMinimumWidth(42)
+        self._lighting_level_value.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._refresh_lighting_level_value()
+        self._lighting_brightness.valueChanged.connect(self._use_selected_lighting_level)
+        # Landing on the stop it already had still counts as choosing it
+        # (a saved in-between value is then replaced by that level).
+        self._lighting_brightness.sliderReleased.connect(self._use_selected_lighting_level)
+        level_row = _row(_name("亮度"), spacing=12)
+        level_row.addWidget(self._lighting_brightness, 1)
+        level_row.addWidget(self._lighting_level_value)
+        box.addLayout(level_row)
+        return tile
+
+    # -- 屏幕 (1 cell, opens to the right over 震动) ----------------------------
+
+    def _build_display_controls(self, tile: QWidget) -> None:
+        self._display_icon = TileIcon("screen")
+        self._display_title = title_label("屏幕")
+        self._display_open = RoundArrowButton("expandScreenTile", "屏幕的更多设置")
+        self._display_open.clicked.connect(lambda: self.open_tile(
+            None if self._open_tile is self._screen_card else self._screen_card))
+        self._display_brightness = DotMatrixSlider(Qt.Orientation.Horizontal, objectName="displayBrightness")
         brightness_range = self._rules.display_brightness
         self._display_brightness.setRange(brightness_range.minimum, brightness_range.maximum)
         self._display_brightness.setSingleStep(1)
@@ -953,69 +860,362 @@ class PreferencesEditor(QWidget):
         set_translatable_accessible_name(self._display_brightness, "屏幕亮度")
         self._display_brightness_value = QLabel(objectName="displayBrightnessValue")
         self._display_brightness_value.setProperty(SKIP_TRANSLATION_PROPERTY, True)
-        self._display_brightness_value.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._display_brightness_value.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._display_brightness_value.setMinimumWidth(38)
         self._display_brightness_value.setText(f"{self._display_brightness.value()}%")
         self._display_brightness.valueChanged.connect(
             lambda value: self._display_brightness_value.setText(f"{value}%")
         )
-        brightness_control = QWidget()
-        brightness_control.setObjectName("displayBrightnessControl")
-        brightness_layout = QHBoxLayout(brightness_control)
-        brightness_layout.setContentsMargins(0, 0, 0, 0)
-        brightness_layout.setSpacing(12)
-        brightness_layout.addWidget(self._display_brightness, 1)
-        brightness_layout.addWidget(self._display_brightness_value)
-        form.addRow("亮度", brightness_control)
-        rotation_control = QWidget(objectName="displayRotationControl")
-        rotation_layout = QHBoxLayout(rotation_control)
-        rotation_layout.setContentsMargins(4, 4, 4, 4)
-        rotation_layout.setSpacing(2)
-        self._display_rotation_group = QButtonGroup(self)
-        self._display_rotation_group.setObjectName("displayRotation")
-        self._display_rotation_group.setExclusive(True)
-        initial_rotation = _integer(
-            self._display.get("rotation"),
-            self._rules.display_rotations[0],
+        rotations = self._rules.display_rotations
+        initial_rotation = _integer(self._display.get("rotation"), rotations[0])
+        self._display_rotation = SegmentedControl(
+            [(value, f"{value}°") for value in rotations], initial_rotation,
+            object_name="displayRotationControl",
         )
-        for value in self._rules.display_rotations:
-            button = QPushButton(f"{value}°", objectName="displayRotationOption")
-            button.setCheckable(True)
+        set_translatable_accessible_name(self._display_rotation, "画面旋转")
+        for value, button in zip(rotations, self._display_rotation.buttons()):
+            # Names kept for the lighting page's change summary and tests.
+            button.setObjectName("displayRotationOption")
             button.setProperty("rotationValue", value)
             button.setProperty(SKIP_TRANSLATION_PROPERTY, True)
-            button.setChecked(value == initial_rotation)
-            self._display_rotation_group.addButton(button)
-            rotation_layout.addWidget(button, 1)
-        if self._display_rotation_group.checkedButton() is None:
-            self._display_rotation_group.buttons()[0].setChecked(True)
-        form.addRow("画面旋转", rotation_control)
-        self._display_hints = QCheckBox("显示控件提示", objectName="displayHints")
+        self._display_hints = QCheckBox(objectName="displayHints")
+        set_translatable_accessible_name(self._display_hints, "显示控件提示")
         self._display_hints.setChecked(self._display.get("show_control_hints") is True)
-        form.addRow("提示", self._display_hints)
-        icon_options = QWidget(objectName="screenIconOptions")
-        icon_layout = QVBoxLayout(icon_options)
-        icon_layout.setContentsMargins(0, 8, 0, 0)
-        def ensure_icon_editor(expanded: bool) -> None:
-            if expanded and icon_options.findChild(ScreenIconEditor) is None:
-                icon_editor = ScreenIconEditor(
-                    self._screen_icon_draft,
-                    device_supported=self._features.get("custom_home_icon") is True,
-                )
-                icon_layout.addWidget(icon_editor)
-                self.screen_icon_editor_created.emit(icon_editor)
-        expand_icons = QPushButton(objectName="expandScreenIcons")
-        expand_icons.setCheckable(True)
-        expand_icons.setProperty("buttonRole", "secondary")
-        set_translatable_text(expand_icons, "自定义屏幕图标 ›")
-        expand_icons.toggled.connect(lambda expanded: set_translatable_text(
-            expand_icons,
-            "自定义屏幕图标 ⌄" if expanded else "自定义屏幕图标 ›",
-        ))
-        expand_icons.toggled.connect(ensure_icon_editor)
-        expand_icons.toggled.connect(icon_options.setVisible)
-        layout.addWidget(expand_icons)
-        layout.addWidget(icon_options)
-        icon_options.hide()
-        return group
+        self._display_names = {
+            key: _name(text) for key, text in (
+                ("brightness", "亮度"), ("rotation", "画面旋转"), ("hints", "提示"),
+            )
+        }
+        self._display_hints_label = _name("显示控件提示", "lightingRowValue")
+        for widget in (self._display_icon, self._display_title, self._display_open,
+                       self._display_brightness, self._display_brightness_value, self._display_rotation,
+                       self._display_hints, self._display_hints_label, *self._display_names.values()):
+            widget.setParent(tile)
+
+    def _arrange_display(self, box: QVBoxLayout, expanded: bool) -> None:
+        self._display_open.set_direction("left" if expanded else "right")
+        set_translatable_accessible_name(
+            self._display_open, "收起屏幕设置" if expanded else "屏幕的更多设置")
+        if not expanded:
+            box.addLayout(_row(self._display_icon, None, self._display_open))
+            box.addStretch(1)
+            box.addLayout(_row(self._display_title))
+            line = _row(spacing=10)
+            line.addWidget(self._display_brightness, 1)
+            line.addWidget(self._display_brightness_value)
+            box.addLayout(line)
+            self._display_brightness.show()
+            self._display_brightness_value.show()
+            return
+        box.addLayout(_row(self._display_icon, self._display_title, None, self._display_open, spacing=9))
+        box.addSpacing(6)
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(14)
+        grid.setVerticalSpacing(10)
+        names = self._display_names
+        grid.addWidget(names["brightness"], 0, 0)
+        grid.addWidget(self._display_brightness, 0, 1, 1, 2)
+        grid.addWidget(self._display_brightness_value, 0, 3)
+        grid.addWidget(names["rotation"], 1, 0)
+        grid.addWidget(self._display_rotation, 1, 1, 1, 3)
+        grid.addWidget(names["hints"], 2, 0)
+        grid.addWidget(self._display_hints_label, 2, 1)
+        grid.addWidget(self._display_hints, 2, 3, Qt.AlignmentFlag.AlignRight)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(2, 1)
+        box.addLayout(grid)
+        box.addStretch(1)
+        for widget in (*names.values(), self._display_brightness, self._display_brightness_value,
+                       self._display_rotation, self._display_hints_label, self._display_hints):
+            widget.show()
+
+    # -- 震动 (1 cell, opens to the left over 屏幕) ------------------------------
+
+    def _build_haptic_controls(self, tile: QWidget) -> None:
+        self._haptic_icon = TileIcon("haptic")
+        self._haptic_title = title_label("震动")
+        self._haptic_enabled = QCheckBox(objectName="hapticEnabled")
+        set_translatable_accessible_name(self._haptic_enabled, "启用震动")
+        self._haptic_enabled.setChecked(self._haptic.get("enabled") is True)
+        self._haptic_more = QPushButton(objectName="expandHapticTile")
+        self._haptic_more.setProperty("wallRole", "link")
+        self._haptic_more.setCursor(Qt.CursorShape.PointingHandCursor)
+        set_translatable_text(self._haptic_more, "时长和分类 ›")
+        self._haptic_more.clicked.connect(lambda: self.open_tile(self._haptic_card))
+        self._haptic_close = RoundArrowButton("collapseHapticTile", "收起震动设置")
+        self._haptic_close.clicked.connect(lambda: self.open_tile(None))
+        self._haptic_help_button = QPushButton(objectName="expandHapticHelp")
+        self._haptic_help_button.setProperty("wallRole", "link")
+        self._haptic_help_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        set_translatable_text(self._haptic_help_button, "说明 ›")
+        self._haptic_help_button.clicked.connect(self._show_haptic_help)
+
+        if self._haptic_levels is None:
+            self._haptic_strength = QSpinBox(objectName="hapticStrength")
+            strength_range = self._rules.haptic_strength
+            self._haptic_strength.setRange(strength_range.minimum, strength_range.maximum)
+            self._haptic_strength.setSuffix(" %")
+            self._haptic_strength.setValue(self._haptic_level_strength)
+            self._haptic_strength_control = self._slider_and_value(self._haptic_strength)
+        else:
+            # 标准 / 强. Turning vibration off is the switch's job (the designer,
+            # 灯光页 v0.2 dropped "0 · 关闭震动"); an old strength outside the
+            # levels shows no choice and is kept until one is picked.
+            levels = tuple(level for level in self._haptic_levels if level > 0)
+            names = ("标准", "强") if len(levels) == 2 else tuple(str(i + 1) for i in range(len(levels)))
+            self._haptic_strength = SegmentedControl(
+                list(zip(levels, names)),
+                self._haptic_level_strength if self._haptic_level_strength in levels else None,
+                object_name="hapticStrength",
+            )
+            set_translatable_accessible_name(self._haptic_strength, "震动强度")
+            if self._haptic_level_strength not in levels:
+                group = self._haptic_strength.buttons()[0].group()
+                group.setExclusive(False)
+                for button in self._haptic_strength.buttons():
+                    button.setChecked(False)
+                group.setExclusive(True)
+            self._haptic_strength.valueChanged.connect(self._select_haptic_level)
+            self._haptic_strength_control = self._haptic_strength
+
+        self._haptic_duration = QSpinBox(objectName="hapticDuration")
+        duration_range = self._rules.haptic_duration_ms
+        self._haptic_duration.setRange(duration_range.minimum, duration_range.maximum)
+        self._haptic_duration.setSuffix(" ms")
+        self._haptic_duration.setValue(_integer(self._haptic.get("duration_ms"), duration_range.minimum))
+        self._haptic_duration_control = self._slider_and_value(self._haptic_duration)
+
+        channels_supported = self._features.get("haptic_channels") is True
+        self._haptic_on_press = QCheckBox(objectName="hapticOnPress")
+        self._haptic_on_press.setChecked(self._haptic.get("on_press") is True)
+        switches = [("按键反馈" if channels_supported else "按键触发", self._haptic_on_press)]
+        self._haptic_channels: dict[str, QCheckBox] = {}
+        if channels_supported:
+            for field, label, name in (
+                ("on_encoder", "旋钮反馈", "hapticOnEncoder"),
+                ("on_joystick", "摇杆反馈", "hapticOnJoystick"),
+                ("on_task", "任务与计时提醒", "hapticOnTask"),
+            ):
+                checkbox = QCheckBox(objectName=name)
+                checkbox.setChecked(self._haptic.get(field, True) is True)
+                self._haptic_channels[field] = checkbox
+                switches.append((label, checkbox))
+            self._haptic_help = HAPTIC_HELP
+        else:
+            self._haptic_on_profile = QCheckBox(objectName="hapticOnProfile")
+            self._haptic_on_profile.setChecked(self._haptic.get("on_profile") is True)
+            switches.append(("Profile 切换触发", self._haptic_on_profile))
+            self._haptic_help = LEGACY_HAPTIC_HELP
+        self._haptic_switches = []
+        for label, checkbox in switches:
+            set_translatable_accessible_name(checkbox, label)
+            self._haptic_switches.append((_name(label, "lightingRowValue"), checkbox))
+        self._haptic_names = {key: _name(text) for key, text in (("strength", "强度"), ("duration", "时长"))}
+        parts = [self._haptic_icon, self._haptic_title, self._haptic_enabled, self._haptic_more,
+                 self._haptic_close, self._haptic_help_button, self._haptic_strength_control,
+                 self._haptic_duration_control, *self._haptic_names.values()]
+        for name, checkbox in self._haptic_switches:
+            parts += [name, checkbox]
+        for widget in parts:
+            widget.setParent(tile)
+        self._haptic_enabled.toggled.connect(self._refresh_haptic_enabled)
+        self._refresh_haptic_enabled()
+
+    def _arrange_haptic(self, box: QVBoxLayout, expanded: bool) -> None:
+        box.setSpacing(2 if expanded else 4)
+        strength = self._haptic_strength_control
+        if strength.property("segmented"):
+            # The opened tile holds five lines in one cell's height.
+            strength.setProperty("compact", expanded)
+            strength.style().unpolish(strength)
+            strength.style().polish(strength)
+            for button in strength.findChildren(QPushButton):
+                button.style().unpolish(button)
+                button.style().polish(button)
+        if not expanded:
+            box.addLayout(_row(self._haptic_icon, None, self._haptic_enabled))
+            box.addStretch(1)
+            box.addLayout(_row(self._haptic_title))
+            box.addWidget(self._haptic_strength_control)
+            self._haptic_strength_control.show()
+            box.addLayout(_row(self._haptic_more, None))
+            return
+        box.addLayout(_row(self._haptic_icon, self._haptic_title, None, self._haptic_help_button,
+                           self._haptic_enabled, self._haptic_close, spacing=9))
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(14)
+        grid.setVerticalSpacing(6)
+        grid.addWidget(self._haptic_names["strength"], 0, 0)
+        grid.addWidget(self._haptic_strength_control, 0, 1)
+        grid.addWidget(self._haptic_names["duration"], 1, 0)
+        grid.addWidget(self._haptic_duration_control, 1, 1)
+        grid.setColumnStretch(1, 1)
+        box.addLayout(grid)
+        switches = QGridLayout()
+        switches.setContentsMargins(0, 0, 0, 0)
+        switches.setHorizontalSpacing(10)
+        switches.setVerticalSpacing(2)
+        for index, (name, checkbox) in enumerate(self._haptic_switches):
+            row, column = index // 2, 2 * (index % 2)
+            switches.addWidget(name, row, column)
+            switches.addWidget(checkbox, row, column + 1, Qt.AlignmentFlag.AlignRight)
+        # Share the width by how long the names are: Japanese ones run long.
+        for column in (0, 2):
+            widths = [name.sizeHint().width() for index, (name, _box) in enumerate(self._haptic_switches)
+                      if 2 * (index % 2) == column]
+            switches.setColumnStretch(column, max(widths, default=1))
+        box.addLayout(switches)
+        box.addStretch(1)
+        shown = [*self._haptic_names.values(), self._haptic_strength_control, self._haptic_duration_control]
+        for name, checkbox in self._haptic_switches:
+            shown += [name, checkbox]
+        for widget in shown:
+            widget.show()
+
+    def _show_haptic_help(self) -> None:
+        dialog = Dialog(self.window(), "震动说明", width=MEDIUM, object_name="hapticHelpDialog")
+        for text in self._haptic_help:
+            label = dialog.add_text(text, secondary=True)
+            label.setObjectName("hapticHelp")
+        dialog.open()
+
+    def _select_haptic_level(self, strength: int) -> None:
+        self._haptic_level_strength = strength
+
+    def _refresh_haptic_enabled(self) -> None:
+        enabled = self._haptic_enabled.isChecked()
+        for _name_label, checkbox in self._haptic_switches:
+            checkbox.setEnabled(enabled)
+
+    @staticmethod
+    def _slider_and_value(value: QSpinBox) -> QWidget:
+        """A dot bar with its value written beside it; the spin box stays as the model."""
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+        slider = DotMatrixSlider(Qt.Orientation.Horizontal, objectName=f"{value.objectName()}Slider")
+        slider.setRange(value.minimum(), value.maximum())
+        slider.setValue(value.value())
+        slider.setAccessibleName(value.objectName())
+        slider.valueChanged.connect(value.setValue)
+        value.valueChanged.connect(slider.setValue)
+        shown = QLabel(objectName=f"{value.objectName()}Value")
+        shown.setProperty("valuePill", True)
+        shown.setProperty(SKIP_TRANSLATION_PROPERTY, True)
+        shown.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        def show_value(number: int) -> None:
+            shown.setText(f"{number}{value.suffix()}")
+
+        value.valueChanged.connect(show_value)
+        show_value(value.value())
+        layout.addWidget(slider, 1)
+        layout.addWidget(shown)
+        layout.addWidget(value)
+        value.hide()
+        return row
+
+    # -- 屏幕图标 (2 × 1, opens a dialog) ---------------------------------------
+
+    def _screen_icon_tile(self) -> WallTile:
+        tile = WallTile(2, 1)
+        tile.setObjectName("screenIconTile")
+        open_dialog = RoundArrowButton("expandScreenIcons", "屏幕图标")
+        open_dialog.clicked.connect(self.open_screen_icons)
+        tile.box.addLayout(_row(TileIcon("image"), title_label("屏幕图标"), None, open_dialog, spacing=9))
+        tile.box.addStretch(1)
+        self._home_icon_preview = QLabel(objectName="homeIconPreview")
+        self._home_icon_preview.setFixedSize(HOME_ICON_PREVIEW, HOME_ICON_PREVIEW)
+        self._home_icon_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._home_icon_preview.setProperty(SKIP_TRANSLATION_PROPERTY, True)
+        self._home_icon_preview.setText("BORING")
+        self._home_icon_state = _name("首页图片：尚未读取", "lightingRowValue")
+        hint = _name("换设备待机首页的图片，或单独换各个小图标。", "wallTileNote")
+        hint.setWordWrap(True)
+        text = QVBoxLayout()
+        text.setContentsMargins(0, 0, 0, 0)
+        text.setSpacing(2)
+        text.addWidget(self._home_icon_state)
+        text.addWidget(hint)
+        bottom = _row(self._home_icon_preview, spacing=14)
+        bottom.addLayout(text, 1)
+        tile.box.addLayout(bottom)
+        return tile
+
+    def bind_home_icon(self, transfer) -> None:
+        """Show on the tile what the device's home picture is now."""
+        self._home_transfer = transfer
+        # A bound method of this editor: Qt drops the connection with the page.
+        transfer.changed.connect(self._sync_home_icon)
+        self._sync_home_icon()
+
+    def _sync_home_icon(self, *_args: object) -> None:
+        transfer = self._home_transfer
+        metadata = transfer.metadata
+        state = (
+            "首页图片：默认" if metadata and metadata["source"] == "default"
+            else "首页图片：自定义" if transfer.pixels is not None
+            else "首页图片：尚未读取"
+        )
+        set_translatable_text(self._home_icon_state, state)
+        if transfer.pixels is not None:
+            image = icon_preview(transfer.pixels)
+            self._home_icon_preview.setPixmap(QPixmap.fromImage(image).scaled(
+                self._home_icon_preview.size(), Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation))
+
+    def open_screen_icons(self) -> None:
+        """屏幕图标 dialog: 首页图片 and 其他图标（高级） (灯光页 v0.2 第 6 张)."""
+        dialog = self._screen_icon_dialog
+        if dialog is None:
+            dialog = Dialog(self.window(), "屏幕图标", width=LARGE, object_name="screenIconDialog")
+            pages = SegmentedControl(
+                [("home", "首页图片"), ("glyphs", "其他图标（高级）")], "home",
+                object_name="screenIconPages",
+            )
+            _home_button, glyph_button = pages.buttons()
+            glyph_button.setObjectName("expandScreenGlyphs")
+            pages.setMinimumWidth(300)
+            row = QHBoxLayout()
+            row.addWidget(pages)
+            row.addStretch(1)
+            dialog.body_layout().addLayout(row)
+            home = QWidget(objectName="screenIconOptions")
+            home_layout = QVBoxLayout(home)
+            home_layout.setContentsMargins(0, 0, 0, 0)
+            icon_editor = ScreenIconEditor(
+                self._screen_icon_draft,
+                device_supported=self._features.get("custom_home_icon") is True,
+            )
+            home_layout.addWidget(icon_editor)
+            glyphs = QWidget(objectName="screenGlyphOptions")
+            glyph_layout = QVBoxLayout(glyphs)
+            glyph_layout.setContentsMargins(0, 0, 0, 0)
+            glyphs.hide()
+            dialog.body_layout().addWidget(home)
+            dialog.body_layout().addWidget(glyphs)
+            opened = []
+
+            def show_page(page: str) -> None:
+                home.setVisible(page == "home")
+                glyphs.setVisible(page == "glyphs")
+                if page == "glyphs" and not opened:
+                    opened.append(True)
+                    self.screen_glyphs_opened.emit(glyph_layout)
+                elif page == "glyphs":
+                    self.screen_glyphs_opened.emit(None)
+                dialog.fit()
+
+            pages.valueChanged.connect(show_page)
+            self._screen_icon_dialog = dialog
+            # The dialog belongs to the window; it goes when this page goes.
+            self.destroyed.connect(dialog.deleteLater)
+            self.screen_icon_editor_created.emit(icon_editor)
+        dialog.open()
 
 
 def _rgb_tuple(value: dict[str, Any]) -> tuple[int, int, int]:
@@ -1043,6 +1243,19 @@ def _initial_lighting_level_index(
         range(1, len(levels)),
         key=lambda index: abs(levels[index] - value),
     )
+
+
+def _lighting_level_fraction(value: int, levels: tuple[int, ...]) -> float:
+    """Where a saved brightness sits along the level bar, 0..1, read between
+    the two levels around it (levels are not evenly spaced)."""
+    last = len(levels) - 1
+    if value <= levels[0]:
+        return 0.0
+    for index in range(1, len(levels)):
+        if value <= levels[index]:
+            low, high = levels[index - 1], levels[index]
+            return (index - 1 + (value - low) / (high - low)) / last
+    return 1.0
 
 
 def _lighting_level_names(count: int) -> tuple[str, ...]:

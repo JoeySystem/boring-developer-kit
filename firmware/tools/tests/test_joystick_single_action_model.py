@@ -14,6 +14,7 @@ class Model(ctypes.Structure):
         ("consistent_samples", ctypes.c_uint8),
         ("active_direction", ctypes.c_uint8),
         ("active", ctypes.c_bool),
+        ("wait_center", ctypes.c_bool),
         ("sample_seen", ctypes.c_bool),
         ("last_sample_count", ctypes.c_uint32),
     ]
@@ -43,6 +44,12 @@ class JoystickSingleActionModelTests(unittest.TestCase):
             check=True,
         )
         cls.library = ctypes.CDLL(str(library))
+        cls.library.joystick_single_action_model_reset_to_idle.argtypes = [
+            ctypes.POINTER(Model),
+        ]
+        cls.library.joystick_single_action_model_reset_latched.argtypes = [
+            ctypes.POINTER(Model),
+        ]
         cls.library.joystick_single_action_model_update.argtypes = [
             ctypes.POINTER(Model), ctypes.c_bool, ctypes.c_float,
             ctypes.c_uint32,
@@ -98,6 +105,31 @@ class JoystickSingleActionModelTests(unittest.TestCase):
         self.assertFalse(self.update(model, False).release)
         self.assertFalse(self.update(model, True, 0.75).press)
         self.assertTrue(self.update(model, True, 0.75).press)
+
+    def test_latched_reset_requires_center_before_a_new_press(self):
+        model = Model()
+        self.library.joystick_single_action_model_reset_latched(
+            ctypes.byref(model)
+        )
+        for _ in range(4):
+            result = self.update(model, True, 0.25)
+            self.assertFalse(result.press)
+            self.assertFalse(result.release)
+        centered = self.update(model, False)
+        self.assertFalse(centered.press)
+        self.assertFalse(centered.release)
+        self.assertFalse(model.wait_center)
+        self.assertFalse(self.update(model, True, 0.25).press)
+        self.assertTrue(self.update(model, True, 0.25).press)
+
+    def test_idle_reset_keeps_existing_two_sample_behavior(self):
+        model = Model()
+        self.library.joystick_single_action_model_reset_to_idle(
+            ctypes.byref(model)
+        )
+        self.assertFalse(model.wait_center)
+        self.assertFalse(self.update(model, True, 0.5).press)
+        self.assertTrue(self.update(model, True, 0.5).press)
 
 
 if __name__ == "__main__":

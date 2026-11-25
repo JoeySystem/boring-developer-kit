@@ -7,15 +7,17 @@ from controller_config.update_recovery import UpdateRecoveryStore
 
 import pytest
 from PySide6.QtCore import QSettings
-from PySide6.QtWidgets import QComboBox, QLabel, QMessageBox, QPushButton
+from PySide6.QtWidgets import QComboBox, QFrame, QLabel, QMessageBox, QPushButton, QWidget
 
 from controller_config.codex_agent_focus import AGENT_CLIENT_KEY, MacChatGPTActivator
 from controller_config.i18n import LanguageManager
+from controller_config.official_controls import MATRIX12_AGENT_STATUS_KEYS
 from controller_config.protocol.device_auth import DeviceTrustState
 from controller_config.views.desktop_update import DesktopUpdateUi
 from controller_config.transport.demo import DemoGateway, _power_v2_snapshot
 from controller_config.viewmodels.main import MainViewModel
 from controller_config.views.main_window import MainWindow
+from notice_helpers import answer_questions, answer_warnings
 
 
 def make_window(qtbot, contract, tmp_path, mode="codex", language="zh_CN", *, supported=False):
@@ -43,15 +45,16 @@ def make_window(qtbot, contract, tmp_path, mode="codex", language="zh_CN", *, su
 
 
 @pytest.mark.parametrize("language", ["zh_CN", "en_US", "ja_JP"])
-def test_normal_notice_has_working_update_entry_without_fake_setting(qtbot, contract, tmp_path, language):
+def test_normal_notice_points_to_the_firmware_update_without_a_fake_setting(qtbot, contract, tmp_path, language):
+    # Mode页 定稿 v1 (04): the Mode page has no 查看固件更新; the note says where it is.
     window, card, vm, _ = make_window(qtbot, contract, tmp_path, "normal", language)
     assert card.findChild(QComboBox) is None
     assert card.findChild(QPushButton, "applyMappingToDevice") is None
+    assert card.findChild(QPushButton, "normalAgentFirmwareUpdate") is None
     notice = card.findChild(QLabel, "normalAgentFirmwareNotice").text()
+    assert "Settings" in notice
     if language != "zh_CN":
         assert "需要支持" not in notice
-    card.findChild(QPushButton, "normalAgentFirmwareUpdate").click()
-    assert vm.page == "firmware"
     vm.shutdown()
 
 
@@ -75,14 +78,18 @@ def test_client_choice_reaches_activator_without_writing_device(qtbot, contract,
     vm.shutdown()
 
 
-def test_focus_failure_is_visible_and_reuses_one_dialog(qtbot, contract, tmp_path):
+def test_focus_failure_is_inline_and_keeps_recovery_action(qtbot, contract, tmp_path):
     window, _, vm, _ = make_window(qtbot, contract, tmp_path)
+    window.show()
     window.show_agent_focus_error("找不到已选择的桌面应用，请在状态灯按键设置中重新选择。")
     window.show_agent_focus_error("检测到多个桌面应用，请在状态灯按键设置中选择接收设备操作的应用。")
-    notices = window.findChildren(QMessageBox, "agentFocusError")
-    assert len(notices) == 1 and notices[0].isVisible()
-    assert "多个" in notices[0].text()
-    notices[0].close()
+    notice = window.findChild(QWidget, "agentFocusNotice")
+    assert notice.isVisible()
+    assert "多个" in window.findChild(QLabel, "agentFocusMessage").text()
+    assert not window.findChildren(QMessageBox, "agentFocusError")
+    window.findChild(QPushButton, "agentFocusSettings").click()
+    assert vm.page == "overview"
+    assert window._selected_control_id in MATRIX12_AGENT_STATUS_KEYS
     vm.shutdown()
 
 
@@ -97,7 +104,7 @@ def test_focus_error_refreshes_client_choices_in_open_inspector(qtbot, contract,
     clients["ChatGPT"] = Path("/Applications/ChatGPT.app")
     window.show_agent_focus_error("检测到多个桌面应用，请在状态灯按键设置中选择接收设备操作的应用。")
     assert window._current_mapping_card().findChild(QComboBox, "agentDesktopClient") is not None
-    window.findChild(QMessageBox, "agentFocusError").close()
+    window.findChild(QPushButton, "agentFocusDismiss").click()
     vm.shutdown()
 
 
@@ -161,12 +168,13 @@ def test_failed_read_exposes_retry_and_does_not_claim_saved(qtbot, contract, tmp
     window, card, vm, _ = make_window(qtbot, contract, tmp_path, "normal", supported=True)
     vm.normal_agent.completed("NORMAL_AGENT_BEHAVIOR_GET", {"result": {}})
     retry = card.findChild(QPushButton, "normalAgentRead")
-    assert not retry.isHidden() and retry.isEnabled()
+    unread = card.findChild(QFrame, "normalAgentUnread")   # 没读到设备里现在的设置 · 重新读取 (04)
+    assert not unread.isHidden() and retry.isEnabled()
     assert not card.findChild(QPushButton, "normalAgentApply").isEnabled()
     retry.click()
     assert vm.normal_agent.test_commands[-1].name == "NORMAL_AGENT_BEHAVIOR_GET"
     finish_read(vm, "status_only")
-    assert retry.isHidden()
+    assert unread.isHidden()   # read fine: the row goes away
     vm.shutdown()
 
 
@@ -207,13 +215,13 @@ def test_restart_blocks_pending_behavior_but_accepts_confirmed_status_card(qtbot
 def test_close_waits_for_readback_and_cancel_preserves_pending_choice(qtbot, contract, tmp_path, monkeypatch):
     window, card, vm, _ = make_window(qtbot, contract, tmp_path, "normal", supported=True)
     warnings = []
-    monkeypatch.setattr(QMessageBox, "warning", lambda *args: warnings.append(args))
+    answer_warnings(monkeypatch, lambda *args: warnings.append(args))
     event = QCloseEvent()
     window.closeEvent(event)
     assert not event.isAccepted() and warnings
     finish_read(vm, "open_conversation")
     vm.normal_agent.edit("status_only")
-    monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.Cancel)
+    answer_questions(monkeypatch, lambda *args: QMessageBox.Cancel)
     assert not window._confirm_discard_normal_agent_choices()
     assert vm.normal_agent.draft == "status_only"
     vm.normal_agent.edit("open_conversation")

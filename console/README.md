@@ -1,6 +1,6 @@
-# BORING 控制台社区源码 0.2.1
+# BORING 控制台社区源码 0.3.0
 
-随开发包 `v0.1.0-preview.10` 交付；SDK 1.1.0 / API 1.1。此目录是独立的社区适配源码，官方安装包见 [安装说明](../docs/install-console.md)。
+随开发包 `v0.1.0-preview.11` 交付；SDK 1.1.0 / API 1.1。此目录是独立的社区适配源码，官方安装包见 [安装说明](../docs/install-console.md)。
 
 ## 安装和运行
 
@@ -31,7 +31,7 @@ console/.venv/Scripts/python.exe -m controller_config --demo ready
 - 认证、配置确认和更新客户端源代码保留。源码开发态及原生包 production 策略沿用原设计；production 不接受测试根或缺失认证能力的设备。
 - 社区构建不能生成生产身份，不包含生产私钥或签发工具。
 - `firmware-source.json` 和 `app-update-source.json` 均未配置服务；源码构建不会加入官方应用更新渠道。维护包不在开发包中，官方导入要求有效的发布者签名。旧无签名维护 ZIP 不能直接通过此入口。
-- 0.2.1 同步语音应用设置、连接状态、草稿恢复、电脑端任务扩展与配置流程。具体范围见 [本轮变化](../docs/console-source.md)，自定义固件入口限制见 [固件维护边界](../docs/firmware-maintenance.md)。
+- 0.3.0 为界面重做版（Mode / Prompt / Settings、方块墙、三步蓝牙连接、遇到问题提示词等）。社区版不含豆包联动（占位模块始终显示未运行）、3D 模型与连接动画、新手引导动画和内置恢复固件。具体范围见 [本轮变化](../docs/console-source.md)，自定义固件入口限制见 [固件维护边界](../docs/firmware-maintenance.md)。
 - 可交互设备示意由 Qt 简单绘制；不附 Blender/STEP 产品模型、官方图标、固件屏幕素材或 Companion 引导素材，文字引导保留。
 
 ## 测试与构建
@@ -39,12 +39,12 @@ console/.venv/Scripts/python.exe -m controller_config --demo ready
 从仓库根目录运行定向回归（macOS 无窗口测试可在命令前设置 `QT_QPA_PLATFORM=offscreen:configfile=console/tests/offscreen.json`）：
 
 ```bash
-console/.venv/bin/python -m pytest -q console/tests/test_device_auth.py console/tests/test_bootstrap.py console/tests/test_packaged_contract.py console/tests/test_extension_sdk.py console/tests/test_extension_platform.py console/tests/test_extension_proposals.py console/tests/test_digital_font.py tests/test_public_materials.py
+console/.venv/bin/python -m pytest -q console/tests/test_device_auth.py console/tests/test_bootstrap.py console/tests/test_packaged_contract.py console/tests/test_extension_sdk.py console/tests/test_extension_platform.py console/tests/test_extension_proposals.py console/tests/test_digital_font.py console/tests/test_mode_page.py tests/test_public_materials.py
 ```
 
 无窗口环境使用随测试提供的 1920×1200 虚拟屏幕，避免默认 800×800 屏幕限制大窗口布局测试。
 
-本轮实际结果与未验收项见 [验证记录](../docs/verification-console-0.2.1.md)。源码测试、模拟事件、真实设备连接和实体按键触发分别记录。
+本轮实际结果与未验收项见 [验证记录](../docs/verification-sync-20261124.md)。源码测试、模拟事件、真实设备连接和实体按键触发分别记录。
 
 构建应用 wheel（仍需根目录协议与 SDK；不是独立安装包）：
 

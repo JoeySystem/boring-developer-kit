@@ -86,7 +86,7 @@ def test_non_official_about_page_has_switch_entry_without_update_controls(
     window, vm, _gateway, ui, _updater = _attach_update_ui(
         session, tmp_path, identity, confirm_switch=lambda _message: False
     )
-    window._settings_section = "system"
+    window._settings_section = "updates"
     vm.navigate("settings")
 
     assert ui.build_identity is identity
@@ -94,7 +94,10 @@ def test_non_official_about_page_has_switch_entry_without_update_controls(
     assert window.findChild(QLabel, "consoleBuildOrigin").text() == expected_source
     assert window.findChild(QPushButton, "switchOfficialVersion") is not None
     assert window.findChild(QPushButton, "checkDesktopUpdate") is None
-    assert window._nav_buttons["settings"].text() == "固件与系统"
+    assert window._nav_buttons["settings"].accessibleName() == "Settings"
+    assert window._nav_buttons["settings"].text() == (
+        "" if window._nav_buttons["settings"].property("compactNavigation") else "Settings"
+    )
     assert not window._nav_buttons["settings"].property("desktopUpdateState")
     assert ui.progress.isHidden()
     assert ui.row.isHidden()
@@ -106,7 +109,7 @@ def test_non_official_about_page_has_switch_entry_without_update_controls(
 def test_custom_demo_about_page_does_not_claim_official_origin(session):
     window, vm, _gateway, _snapshot, _store = session
     window._build_identity = BuildIdentity("custom")
-    window._settings_section = "system"
+    window._settings_section = "updates"
     vm.navigate("settings")
 
     assert window.findChild(QLabel, "consoleBuildOrigin").text() == "自定义版本"
@@ -144,7 +147,7 @@ def test_custom_switch_cancel_and_confirm_only_open_configured_download_page(
     )
     vm.rename_profile(vm.draft.config["active_profile"], "My DIY draft")
     dirty_before = vm.draft.is_dirty
-    window._settings_section = "system"
+    window._settings_section = "updates"
     vm.navigate("settings")
     switch = window.findChild(QPushButton, "switchOfficialVersion")
 
@@ -164,7 +167,7 @@ def test_custom_switch_cancel_and_confirm_only_open_configured_download_page(
 
 
 def test_custom_switch_open_failure_keeps_retry_action(
-    session, tmp_path
+    session, tmp_path, qtbot
 ):
     failures: list[str] = []
     window, vm, _gateway, _ui, _updater = _attach_update_ui(
@@ -178,9 +181,10 @@ def test_custom_switch_open_failure_keeps_retry_action(
         url_opener=lambda _url: False,
         open_failure_notifier=failures.append,
     )
-    window._settings_section = "system"
+    window._settings_section = "updates"
     vm.navigate("settings")
     switch = window.findChild(QPushButton, "switchOfficialVersion")
+    qtbot.waitUntil(lambda: switch.isVisibleTo(window), timeout=1000)
 
     switch.click()
 
@@ -193,7 +197,7 @@ def test_official_about_page_keeps_existing_update_check(session, tmp_path):
     window, vm, _gateway, _ui, updater = _attach_update_ui(
         session, tmp_path, BuildIdentity("official")
     )
-    window._settings_section = "system"
+    window._settings_section = "updates"
     vm.navigate("settings")
 
     assert window.findChild(QLabel, "consoleBuildOrigin").text() == "官方版本"
@@ -204,6 +208,7 @@ def test_official_about_page_keeps_existing_update_check(session, tmp_path):
     assert updater.calls == ["check"]
 
 
+@pytest.mark.skip(reason="社区版不配置官方下载源")
 def test_update_source_has_separate_official_download_feeds():
     path = Path(__file__).resolve().parents[1] / "src/controller_config/assets/app-update-source.json"
     config = json.loads(path.read_text(encoding="utf-8"))

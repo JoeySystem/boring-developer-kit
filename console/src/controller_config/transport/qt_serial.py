@@ -1,12 +1,21 @@
 from __future__ import annotations
 
 import secrets
+import time
+import os
+import json
 from collections import deque
+from dataclasses import replace
 
 from PySide6.QtCore import QObject, QMetaObject, QThread, QTimer, Qt, Signal, Slot
 from PySide6.QtSerialPort import QSerialPort, QSerialPortInfo
 
-from controller_config.models import PortCandidate
+from controller_config.connect_timing import TimingMark
+from controller_config.models import DeviceSnapshot, PortCandidate
+from controller_config.doubao_status import (
+    clear_status_command as clear_doubao_status, validate_response as validate_doubao_response,
+)
+from controller_config import desktop_status_wire as desktop
 from controller_config.agent_status import (
     AGENT_COMMANDS, SET_AGENT_STATUS, CLEAR_AGENT_STATUS,
     clear_status_command, validate_agent_response,
@@ -27,6 +36,7 @@ from controller_config.protocol.bootstrap import (
 from controller_config.protocol.contract import Contract
 from controller_config.protocol.device_auth import DeviceAuthenticator
 from controller_config.protocol.framing import (
+    BadFrameMonitor,
     FrameDecoder,
     FrameError,
     ProtocolVersionError,
@@ -39,21 +49,30 @@ class SerialWorker(QObject):
     agent_status_failed = Signal(object, object)
     candidates_found = Signal(object)
     progress = Signal(str)
+    # Connecting steps for the Mode page (design decision): ("connect", usb|bluetooth),
+    # ("send", command), (response name, detail), ("config_read", expected|started).
+    connect_step = Signal(str, str)
     snapshot_ready = Signal(object)
     status_updated = Signal(object)
     command_completed = Signal(str, object)
     command_failed = Signal(str, object)
     failure = Signal(object, str, str)
     disconnected = Signal(str)
+    # Recoverable link events for the diagnostics log: (category, detail).
+    link_warning = Signal(str, str)
 
     def __init__(
         self,
         contract: Contract,
         authenticator: DeviceAuthenticator | None = None,
+        *,
+        config_cache: object | None = None,
     ) -> None:
         super().__init__()
         self._contract = contract
         self._authenticator = authenticator
+        self._config_cache = config_cache
+        self._timing: list[TimingMark] = []
         self._candidates_by_port: dict[str, PortCandidate] = {}
         self._serial: QSerialPort | None = None
         self._session: BootstrapSession | StatusSession | CommandSession | None = None
@@ -63,6 +82,9 @@ class SerialWorker(QObject):
             protocol_major=contract.protocol_major,
             protocol_minor=contract.protocol_minor,
         )
+        self._bad_frames = BadFrameMonitor()
+        self._peer_minor_reported = False
+        self._status_failures = 0
         self._request_timer: QTimer | None = None
         self._presence_timer: QTimer | None = None
         self._status_timer: QTimer | None = None
@@ -70,6 +92,9 @@ class SerialWorker(QObject):
         self._port_name = ""
         self._request_id = secrets.randbits(32) or 1
         self._agent_status_sent = False
+        self._doubao_status_sent = False
+        self._desktop_status_sent = False
+        self._maintenance_only = False
 
     @Slot()
     def scan(self) -> None:
@@ -108,6 +133,8 @@ class SerialWorker(QObject):
         self._closing = False
         self._port_name = port_name
         self._decoder.reset()
+        self._timing = [TimingMark("connect", time.monotonic(), "usb")]
+        self.connect_step.emit("connect", "usb")
         serial = QSerialPort(self)
         serial.setPortName(port_name)
         serial.readyRead.connect(self._on_ready_read)
@@ -136,6 +163,11 @@ class SerialWorker(QObject):
     def _start_bootstrap(self, port_name: str, advertised_serial: str = "") -> None:
         """Start the transport-independent WMP bootstrap on an open channel."""
 
+        self._maintenance_only = False
+        self._mark_step("channel_open")
+        self._bad_frames.reset()
+        self._peer_minor_reported = False
+        self._status_failures = 0
         self._request_timer = QTimer(self)
         self._request_timer.setSingleShot(True)
         self._request_timer.setInterval(2500)
@@ -159,16 +191,50 @@ class SerialWorker(QObject):
             failed=self._on_bootstrap_failed,
             authenticator=self._authenticator,
             next_request_id=self._allocate_request_id,
+            config_cache=self._config_cache,
+            step_completed=self._mark_step,
+            command_started=self._command_started,
         )
         self._session.start()
 
+    def _mark_step(self, step: str, detail: str = "") -> None:
+        self._timing.append(TimingMark(step, time.monotonic(), detail))
+        self.connect_step.emit(step, detail)
+        session = self._session
+        if step == "HELLO" and isinstance(session, BootstrapSession) and session.expects_config_read():
+            self.connect_step.emit("config_read", "expected")
+
+    def _command_started(self, name: str) -> None:
+        self.connect_step.emit("send", name)
+        if name == "GET_CONFIG":
+            self.connect_step.emit("config_read", "started")
+
     @Slot()
     def close(self) -> None:
+        # A-05: close() can be re-entered from error signals emitted while it
+        # disposes the channel; the nested call must be a no-op.
+        if getattr(self, "_in_close", False):
+            return
+        self._in_close = True
+        try:
+            self._close()
+        finally:
+            self._in_close = False
+
+    def _flush_before_close(self, serial: object) -> None:
+        """USB CDC flushes synchronously (blocking I/O, no event loop)."""
+        serial.waitForBytesWritten(150)
+
+    def _close(self) -> None:
         self._closing = True
         # Closing cannot wait for the normal request queue. Send a best-effort
         # CLEAR on the still-owned port; lease expiry is the crash fallback.
-        if self._agent_status_sent and self._serial is not None and self._serial.isOpen():
-            command = clear_status_command()
+        clear_commands = ([clear_status_command()] if self._agent_status_sent else [])
+        if self._doubao_status_sent:
+            clear_commands.append(clear_doubao_status())
+        if self._desktop_status_sent:
+            clear_commands.append(desktop.clear_status_command())
+        for command in clear_commands if self._serial is not None and self._serial.isOpen() else []:
             frame = encode_request(
                 protocol_major=self._contract.protocol_major,
                 protocol_minor=self._contract.protocol_minor,
@@ -176,8 +242,11 @@ class SerialWorker(QObject):
                 payload=command.payload, max_payload_bytes=self._contract.max_payload_bytes,
             )
             self._serial.write(frame)
-            self._serial.waitForBytesWritten(150)
+            self._flush_before_close(self._serial)
         self._agent_status_sent = False
+        self._doubao_status_sent = False
+        self._desktop_status_sent = False
+        self._maintenance_only = False
         if self._request_timer is not None:
             self._request_timer.stop()
             self._request_timer.deleteLater()
@@ -191,8 +260,20 @@ class SerialWorker(QObject):
             self._status_timer.deleteLater()
             self._status_timer = None
         self._session = None
+        dropped = list(self._queued_commands)
         self._queued_commands.clear()
         self._dispose_serial()
+        self._fail_dropped_commands(dropped, "连接已关闭")
+
+    def _fail_dropped_commands(self, commands: list[Command], reason: str) -> None:
+        """A-04: every queued command that will never be sent gets a failure
+        receipt, so no caller waits forever for a reply."""
+
+        for command in commands:
+            error = BootstrapError.command_dropped(command.name, reason)
+            if command.name in AGENT_COMMANDS:
+                self.agent_status_failed.emit(command, error)
+            self.command_failed.emit(command.name, error)
 
     def _send_command(self, command: Command, request_id: int) -> None:
         serial = self._serial
@@ -203,17 +284,33 @@ class SerialWorker(QObject):
             return
         if not isinstance(self._session, StatusSession):
             self.progress.emit(f"正在读取：{command.name}")
-        frame = encode_request(
-            protocol_major=self._contract.protocol_major,
-            protocol_minor=self._contract.protocol_minor,
-            message_type=command.message_type,
-            request_id=request_id,
-            payload=command.payload,
-            max_payload_bytes=self._contract.max_payload_bytes,
-        )
+        try:
+            frame = encode_request(
+                protocol_major=self._contract.protocol_major,
+                protocol_minor=self._contract.protocol_minor,
+                message_type=command.message_type,
+                request_id=request_id,
+                payload=command.payload,
+                max_payload_bytes=self._contract.max_payload_bytes,
+            )
+        except FrameError as exc:
+            # A-04: an unencodable request (e.g. payload over the shared
+            # limit) ends its own session instead of hanging without a timer.
+            self._end_session_with_error(BootstrapError(
+                BootstrapKind.READ_FAILED,
+                "请求无法发送到设备",
+                f"{command.name}：{exc}",
+                error_name="ENCODE_FAILED",
+            ))
+            return
         written = serial.write(frame)
         if command.name == SET_AGENT_STATUS:
-            self._agent_status_sent = True
+            if command.payload.get("source") == "doubao":
+                self._doubao_status_sent = True
+            elif desktop.is_desktop(command):
+                self._desktop_status_sent = True
+            else:
+                self._agent_status_sent = True
         if written != len(frame):
             self.failure.emit(BootstrapKind.READ_FAILED, "无法向设备发送读取请求", serial.errorString())
             self.close()
@@ -229,11 +326,9 @@ class SerialWorker(QObject):
         if serial is None or session is None:
             return
         try:
-            frames = self._decoder.feed(bytes(serial.readAll()))
-            for frame in frames:
-                if frame.request_id == session.current_request_id and self._request_timer is not None:
-                    self._request_timer.stop()
-                session.accept(frame)
+            data = bytes(serial.readAll())
+            self._note_incoming(data)
+            frames = self._decoder.feed(data)
         except FrameError as exc:
             incompatible = (
                 isinstance(exc, ProtocolVersionError)
@@ -242,8 +337,77 @@ class SerialWorker(QObject):
             )
             kind = BootstrapKind.INCOMPATIBLE if incompatible else BootstrapKind.READ_FAILED
             message = "这台设备与当前 BORING 控制台不兼容" if incompatible else "设备返回了无法解析的数据"
-            self.failure.emit(kind, message, str(exc))
+            command = session.current_command
+            detail = f"USB 命令：{command.name if command else '未知'}；端口：{self._port_name}\n{exc}"
+            self.failure.emit(kind, message, detail)
             self.close()
+            return
+        if self._handle_frame_discards(session):
+            return
+        self._report_newer_peer_minor()
+        for frame in frames:
+            session = self._session
+            if session is None:
+                break
+            if frame.request_id == session.current_request_id and self._request_timer is not None:
+                self._request_timer.stop()
+            try:
+                session.accept(frame)
+            except Exception as exc:  # noqa: BLE001 - a slot must not raise (A-04)
+                command = getattr(session, "current_command", None)
+                self.link_warning.emit(
+                    "SESSION_ERROR",
+                    f"{command.name if command else '未知命令'} 处理响应时出错：{exc!r}",
+                )
+                if self._session is session:
+                    self._end_session_with_error(BootstrapError(
+                        BootstrapKind.READ_FAILED,
+                        "设备响应无法处理",
+                        f"{command.name if command else '未知命令'}：{exc!r}",
+                        error_name="INTERNAL",
+                    ))
+
+    def _note_incoming(self, _data: bytes) -> None:
+        """Bytes arrived. USB keeps one budget for the whole reply."""
+
+    def _end_session_with_error(self, error: BootstrapError) -> None:
+        session = self._session
+        finish = getattr(session, "_finish_error", None)
+        if session is None or getattr(session, "finished", False) or finish is None:
+            return
+        finish(error)
+
+    def _handle_frame_discards(self, session: object) -> bool:
+        """Log skipped frames; return True when they clustered and the link
+        was closed. A discarded in-flight response is left to the request
+        timer, so the command's own timeout/retry rule applies (A-03)."""
+
+        discards = self._decoder.take_discards()
+        if not discards:
+            return False
+        for discard in discards:
+            self.link_warning.emit("FRAME_DISCARDED", discard.describe())
+        if not self._bad_frames.record(len(discards)):
+            return False
+        command = getattr(session, "current_command", None)
+        self.failure.emit(
+            BootstrapKind.READ_FAILED,
+            "设备返回了无法解析的数据",
+            f"USB 命令：{command.name if command else '未知'}；端口：{self._port_name}\n"
+            f"短时间内连续收到损坏的数据帧，最近一次：{discards[-1].describe()}",
+        )
+        self.close()
+        return True
+
+    def _report_newer_peer_minor(self) -> None:
+        if self._peer_minor_reported or not self._decoder.peer_is_newer:
+            return
+        self._peer_minor_reported = True
+        self.link_warning.emit(
+            "PROTOCOL",
+            f"设备协议较新（minor {self._decoder.peer_protocol_minor} > "
+            f"{self._contract.protocol_minor}），建议更新控制台",
+        )
 
     @Slot(QSerialPort.SerialPortError)
     def _on_serial_error(self, error: QSerialPort.SerialPortError) -> None:
@@ -270,21 +434,78 @@ class SerialWorker(QObject):
 
     @Slot()
     def _poll_status(self) -> None:
+        if self._maintenance_only:
+            return
         serial = self._serial
         if serial is None or not serial.isOpen() or self._session is not None:
             return
+        self._status_started_monotonic = time.monotonic()
         self._session = StatusSession(
             contract=self._contract,
             send=self._send_command,
             completed=self._on_status_complete,
-            failed=self._on_bootstrap_failed,
+            failed=self._on_status_failed,
             request_id=self._allocate_request_id(),
         )
         self._session.start()
 
+    # Desktop key and encoder events are read by polling GET_STATUS on the
+    # connection that holds the lease (no push over BLE). Keep it <= 500.
+    DESKTOP_STATUS_POLL_MS = desktop.POLL_INTERVAL_MS
+
+    # A-01: an established link survives isolated GET_STATUS failures (NACK
+    # such as BUSY, timeout, malformed result). Only this many consecutive
+    # failed polls, or a closed channel, ends the connection.
+    STATUS_FAILURE_LIMIT = 3
+
+    def _on_status_failed(self, error: BootstrapError) -> None:
+        serial = self._serial
+        if serial is None or not serial.isOpen():
+            self._on_bootstrap_failed(error)
+            return
+        self._status_failures += 1
+        self.link_warning.emit(
+            "STATUS_POLL",
+            f"GET_STATUS 失败 {self._status_failures}/{self.STATUS_FAILURE_LIMIT}："
+            f"{error}；{error.technical}",
+        )
+        if self._status_failures >= self.STATUS_FAILURE_LIMIT:
+            self._on_bootstrap_failed(
+                BootstrapError(
+                    error.kind,
+                    str(error),
+                    f"连续 {self._status_failures} 次状态同步失败；最近一次：{error.technical}",
+                    error_name=error.error_name,
+                    details=error.details,
+                )
+            )
+            return
+        if self._request_timer is not None:
+            self._request_timer.stop()
+        self._session = None
+        self._run_queued_command()
+        if (
+            not self._maintenance_only
+            and self._session is None
+            and self._status_timer is not None
+            and not self._status_timer.isActive()
+        ):
+            self._status_timer.start()
+
     @Slot(object)
     def execute_command(self, command: object) -> None:
         if not isinstance(command, Command):
+            return
+        firmware_commands = {"FW_STATUS": 0x42, "FW_BEGIN": 0x40, "FW_DATA": 0x41,
+                             "FW_END": 0x43, "FW_ABORT": 0x44}
+        if self._maintenance_only and firmware_commands.get(command.name) != command.message_type:
+            error = BootstrapError(
+                BootstrapKind.READ_FAILED, "当前连接仅允许固件维护",
+                f"固件维护连接不支持 {command.name}；请更新后重新连接以读取配置。",
+            )
+            if command.name in AGENT_COMMANDS:
+                self.agent_status_failed.emit(command, error)
+            self.command_failed.emit(command.name, error)
             return
         serial = self._serial
         if serial is None or not serial.isOpen():
@@ -303,7 +524,12 @@ class SerialWorker(QObject):
         if command.name == "GET_CONFIG":
             validator = self._contract.validate_config_response
         elif command.name in AGENT_COMMANDS:
-            validator = lambda payload: validate_agent_response(command.name, payload)
+            if command.payload.get("source") == "doubao":
+                validator = lambda payload: validate_doubao_response(command, payload)
+            elif desktop.is_desktop(command):
+                validator = lambda payload: desktop.validate_response(command, payload)
+            else:
+                validator = lambda payload: validate_agent_response(command.name, payload)
         elif command.name in {SET_LIGHTING_PREVIEW, CLEAR_LIGHTING_PREVIEW}:
             validator = lambda payload: validate_lighting_preview_response(
                 command.name, payload
@@ -327,7 +553,12 @@ class SerialWorker(QObject):
             # cannot complete device B's pending snapshot.
             signal.emit(command, result)
         if not failed and command.name == CLEAR_AGENT_STATUS:
-            self._agent_status_sent = False
+            if command.payload.get("source") == "doubao":
+                self._doubao_status_sent = False
+            elif desktop.is_desktop(command):
+                self._desktop_status_sent = False
+            else:
+                self._agent_status_sent = False
         if failed:
             self._on_command_failed(command.name, result)
         else:
@@ -337,21 +568,65 @@ class SerialWorker(QObject):
     def set_status_poll_interval(self, interval_ms: int) -> None:
         if self._status_timer is not None:
             self._status_timer.setInterval(max(100, interval_ms))
-            if self._session is None and not self._status_timer.isActive():
+            if not self._maintenance_only and self._session is None and not self._status_timer.isActive():
                 self._status_timer.start()
 
     def _on_bootstrap_complete(self, snapshot: object) -> None:
         if self._request_timer is not None:
             self._request_timer.stop()
         self._session = None
+        if isinstance(snapshot, DeviceSnapshot) and self._timing:
+            snapshot = replace(snapshot, connect_timing=tuple(self._timing))
+        self._maintenance_only = bool(getattr(snapshot, "maintenance_only", False))
+        if self._maintenance_only:
+            dropped = list(self._queued_commands)
+            self._queued_commands.clear()
+            self._fail_dropped_commands(dropped, "当前连接仅允许固件维护")
+            if self._status_timer is not None:
+                self._status_timer.stop()
         self.snapshot_ready.emit(snapshot)
-        if self._status_timer is not None:
+        if self._status_timer is not None and not self._maintenance_only:
             self._status_timer.start()
 
     def _on_status_complete(self, status: dict) -> None:
         if self._request_timer is not None:
             self._request_timer.stop()
         self._session = None
+        doubao = status.get("doubao_status") or {}
+        path = os.environ.get("BORING_DOUBAO_DIAGNOSTICS")
+        if path:
+            try:
+                now = time.monotonic()
+                with open(path + ".poll.jsonl", "a", encoding="utf-8") as stream:
+                    stream.write(json.dumps(dict(time=time.time(), monotonic=now,
+                        port=self._port_name,
+                        roundtrip_ms=round((now-getattr(self, "_status_started_monotonic", now))*1000, 1),
+                        sequence=(status.get("doubao_navigation") or {}).get("sequence"))) + "\n")
+            except OSError:
+                pass
+        if self._status_timer is not None and self._status_timer.interval() <= 500:
+            navigation_active = doubao.get("active") and doubao.get("selected")
+            leased = status.get(desktop.STATUS_FIELD) or {}
+            # BLE replies already spend a connection interval transferring the
+            # full status. Avoid adding another 100ms after every completed
+            # reply. _poll_status still permits only one in-flight request.
+            interval = ((10 if self._port_name.startswith("ble:") else 100) if navigation_active
+                        else self.DESKTOP_STATUS_POLL_MS if leased.get("active") and leased.get("selected")
+                        else 500)
+            self._status_timer.setInterval(interval)
+        event = status.get("doubao_navigation") or {}
+        sequence = event.get("sequence")
+        if sequence != getattr(self, "_navigation_logged", None):
+            self._navigation_logged = sequence
+            path = os.environ.get("BORING_DOUBAO_DIAGNOSTICS")
+            if path:
+                try:
+                    with open(path + ".usb.jsonl", "a", encoding="utf-8") as stream:
+                        stream.write(json.dumps(dict(time=time.time(), monotonic=time.monotonic(),
+                            event=event, poll_interval_ms=self._status_timer.interval())) + "\n")
+                except (OSError, AttributeError):
+                    pass
+        self._status_failures = 0
         self.status_updated.emit(status)
         self._run_queued_command()
 
@@ -362,7 +637,8 @@ class SerialWorker(QObject):
         self.command_completed.emit(command_name, payload)
         self._run_queued_command()
         if (
-            self._session is None
+            not self._maintenance_only
+            and self._session is None
             and self._status_timer is not None
             and not self._status_timer.isActive()
         ):
@@ -375,7 +651,8 @@ class SerialWorker(QObject):
         self.command_failed.emit(command_name, error)
         self._run_queued_command()
         if (
-            self._session is None
+            not self._maintenance_only
+            and self._session is None
             and self._status_timer is not None
             and not self._status_timer.isActive()
         ):
@@ -388,7 +665,9 @@ class SerialWorker(QObject):
     def _queue_command(self, command: Command) -> None:
         if command.name == CLEAR_AGENT_STATUS:
             self._queued_commands = deque(
-                queued for queued in self._queued_commands if queued.name not in AGENT_COMMANDS
+                queued for queued in self._queued_commands
+                if queued.name not in AGENT_COMMANDS
+                or queued.payload.get("source") != command.payload.get("source")
             )
         if command.name == SET_LIGHTING_PREVIEW:
             for index in range(len(self._queued_commands) - 1, -1, -1):
@@ -440,12 +719,14 @@ class SerialGateway(QObject):
     agent_status_failed = Signal(object, object)
     candidates_found = Signal(object)
     progress = Signal(str)
+    connect_step = Signal(str, str)
     snapshot_ready = Signal(object)
     status_updated = Signal(object)
     command_completed = Signal(str, object)
     command_failed = Signal(str, object)
     failure = Signal(object, str, str)
     disconnected = Signal(str)
+    link_warning = Signal(str, str)
 
     _scan_requested = Signal()
     _connect_requested = Signal(str)
@@ -457,10 +738,12 @@ class SerialGateway(QObject):
         contract: Contract,
         authenticator: DeviceAuthenticator | None = None,
         parent: QObject | None = None,
+        *,
+        config_cache: object | None = None,
     ) -> None:
         super().__init__(parent)
         self._thread = QThread(self)
-        self._worker = SerialWorker(contract, authenticator)
+        self._worker = SerialWorker(contract, authenticator, config_cache=config_cache)
         self._worker.moveToThread(self._thread)
         self._scan_requested.connect(self._worker.scan)
         self._connect_requested.connect(self._worker.connect_port)
@@ -468,6 +751,7 @@ class SerialGateway(QObject):
         self._status_interval_requested.connect(self._worker.set_status_poll_interval)
         self._worker.candidates_found.connect(self.candidates_found)
         self._worker.progress.connect(self.progress)
+        self._worker.connect_step.connect(self.connect_step)
         self._worker.snapshot_ready.connect(self.snapshot_ready)
         self._worker.status_updated.connect(self.status_updated)
         self._worker.command_completed.connect(self.command_completed)
@@ -476,6 +760,7 @@ class SerialGateway(QObject):
         self._worker.agent_status_failed.connect(self.agent_status_failed)
         self._worker.failure.connect(self.failure)
         self._worker.disconnected.connect(self.disconnected)
+        self._worker.link_warning.connect(self.link_warning)
         self._thread.finished.connect(self._worker.deleteLater)
         self._thread.start()
 

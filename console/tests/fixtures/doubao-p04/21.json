@@ -1,0 +1,1661 @@
+{
+  "active_id": "38447422301865986",
+  "captured_at": 1792344161.4521832,
+  "process_session": "6596",
+  "fixture_source": "2026-10-19 actual P04 UIA; only current document nodes retained",
+  "nodes": [
+    {
+      "depth": 9,
+      "name": "",
+      "id": "RootWebArea",
+      "kind": "DocumentControl",
+      "class": "",
+      "value": "chrome://doubaowork-chat/chat/38447422301865986"
+    },
+    {
+      "depth": 16,
+      "name": "doc_editor",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative w-full flex-shrink flex-grow basis-0 min-h-100 flex items-center flex-col flow-disable-select-bar flow-ext-disable-select-bar"
+    },
+    {
+      "depth": 17,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "message-list-zLoNs1 opacity-0 opacity-100"
+    },
+    {
+      "depth": 18,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "v_list-D34x3M"
+    },
+    {
+      "depth": 19,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "scroller v_list_scroller-BxcoIX"
+    },
+    {
+      "depth": 20,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "scroll_holder"
+    },
+    {
+      "depth": 20,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "list_items"
+    },
+    {
+      "depth": 21,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "v_list_row"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "v_list_top_indicator-OESqxW"
+    },
+    {
+      "depth": 21,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": " v_list_row"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative min-w-0 max-w-full container-AsfIjW"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 24,
+      "name": "BORING 验收 06 - 银杏。只回复 “银杏 06 已收到”。不使用工具，不创建文件。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "message-action-bar-raqbg0 flex flex-row w-full group relative justify-end -right-10"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "TextControl",
+      "class": "\n        shrink-0 self-center text-14 leading-20 whitespace-nowrap\n        text-dbx-text-secondary\n        mr-14\n      "
+    },
+    {
+      "depth": 24,
+      "name": "昨天 23:39",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 21,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": " v_list_row"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative grid w-full grid-cols-[minmax(0,1fr)_auto]"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative z-0 max-w-full min-w-0"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 25,
+      "name": "银杏 06 已收到",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "朗读",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": "size-18"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "消耗 0.01%",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "min-w-0 truncate"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "消耗 0.01%",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "radix-:r1tq:",
+      "kind": "ButtonControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "TextControl",
+      "class": "\n        shrink-0 self-center text-14 leading-20 whitespace-nowrap\n        text-dbx-text-secondary\n        ml-14\n      "
+    },
+    {
+      "depth": 23,
+      "name": "昨天 23:39",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 21,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": " v_list_row"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative min-w-0 max-w-full container-AsfIjW"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 24,
+      "name": "银杏 06 已收到。这段话是我用语音转录的方式输入的。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "message-action-bar-raqbg0 flex flex-row w-full group relative justify-end -right-10"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "TextControl",
+      "class": "\n        shrink-0 self-center text-14 leading-20 whitespace-nowrap\n        text-dbx-text-secondary\n        mr-14\n      "
+    },
+    {
+      "depth": 24,
+      "name": "昨天 23:48",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 21,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": " v_list_row"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative grid w-full grid-cols-[minmax(0,1fr)_auto]"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative z-0 max-w-full min-w-0"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 25,
+      "name": "明白了，这条消息是通过语音转录输入的。收到「银杏 06 已收到」的确认。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 25,
+      "name": "有什么需要我做的吗？",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "朗读",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": "size-18"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "消耗 <0.01%",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "min-w-0 truncate"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "消耗 <0.01%",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "radix-:r1u5:",
+      "kind": "ButtonControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "TextControl",
+      "class": "\n        shrink-0 self-center text-14 leading-20 whitespace-nowrap\n        text-dbx-text-secondary\n        ml-14\n      "
+    },
+    {
+      "depth": 23,
+      "name": "昨天 23:48",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 21,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": " v_list_row"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative min-w-0 max-w-full container-AsfIjW"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 24,
+      "name": "这是手动语音验收 6 号。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "message-action-bar-raqbg0 flex flex-row w-full group relative justify-end -right-10"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "TextControl",
+      "class": "\n        shrink-0 self-center text-14 leading-20 whitespace-nowrap\n        text-dbx-text-secondary\n        mr-14\n      "
+    },
+    {
+      "depth": 24,
+      "name": "昨天 23:49",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 21,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": " v_list_row"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative grid w-full grid-cols-[minmax(0,1fr)_auto]"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative z-0 max-w-full min-w-0"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 25,
+      "name": "收到，确认这是手动语音验收 6 号（银杏 06）。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 25,
+      "name": "如果验收流程还有其他步骤或需要我配合的，随时告诉我。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "朗读",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": "size-18"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "消耗 <0.01%",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "min-w-0 truncate"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "消耗 <0.01%",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "radix-:r1t0:",
+      "kind": "ButtonControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "TextControl",
+      "class": "\n        shrink-0 self-center text-14 leading-20 whitespace-nowrap\n        text-dbx-text-secondary\n        ml-14\n      "
+    },
+    {
+      "depth": 23,
+      "name": "昨天 23:49",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 21,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": " v_list_row"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative min-w-0 max-w-full container-AsfIjW"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 24,
+      "name": "这里是实体语音验收 6 号。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "message-action-bar-raqbg0 flex flex-row w-full group relative justify-end -right-10"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "TextControl",
+      "class": "\n        shrink-0 self-center text-14 leading-20 whitespace-nowrap\n        text-dbx-text-secondary\n        mr-14\n      "
+    },
+    {
+      "depth": 24,
+      "name": "今天 00:05",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 21,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": " v_list_row"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative grid w-full grid-cols-[minmax(0,1fr)_auto]"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "relative z-0 max-w-full min-w-0"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 25,
+      "name": "收到，确认为实体语音验收 6 号（银杏 06）。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "container-enLQFx"
+    },
+    {
+      "depth": 25,
+      "name": "如有后续验收步骤或需要处理的事项，随时告诉我。",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "朗读",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": "size-18"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "消耗 <0.01%",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "min-w-0 truncate"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "消耗 <0.01%",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "radix-:r1tc:",
+      "kind": "ButtonControl",
+      "class": ""
+    },
+    {
+      "depth": 23,
+      "name": "",
+      "id": "",
+      "kind": "ButtonControl",
+      "class": "flex shrink-0 items-center justify-center font-[400] whitespace-nowrap ring-dbx-fill-highlight-disable select-none [&_svg]:shrink-0 text-[14px] leading-[22px] gap-[4px] rounded-dbx-sm p-[4px] transition-colors duration-150 ease-out bg-transparent hover:bg-dbx-fill-trans-10-hover [&:is(:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])),:where(:is([aria-haspopup=\"dialog\"],[aria-haspopup=\"menu\"])[data-state=\"open\"]:not([data-slot=\"alert-dialog-trigger\"])_*))]:bg-dbx-fill-trans-10-hover outline-transparent outline-none [&_svg:not([class*=\"size-\"])]:size-[16px] [&_svg[data-dbx-name=button-caret]:not([class*=\"size-\"])]:size-[10px] relative h-fit cursor-pointer text-dbx-text-secondary"
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": ""
+    },
+    {
+      "depth": 24,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "absolute inset-[-6px] opacity-0"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "TextControl",
+      "class": "\n        shrink-0 self-center text-14 leading-20 whitespace-nowrap\n        text-dbx-text-secondary\n        ml-14\n      "
+    },
+    {
+      "depth": 23,
+      "name": "今天 00:05",
+      "id": "",
+      "kind": "TextControl",
+      "class": ""
+    },
+    {
+      "depth": 21,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "v_list_row"
+    },
+    {
+      "depth": 22,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "v_list_bottom_indicator-nnTzdE"
+    },
+    {
+      "depth": 18,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "bottom-center-button-dVN2oK max-dbx-xs:!bottom-0"
+    },
+    {
+      "depth": 19,
+      "name": "",
+      "id": "",
+      "kind": "GroupControl",
+      "class": "bottom-primary-actions-b1uY6K"
+    },
+    {
+      "depth": 20,
+      "name": "",
+      "id": "to-bottom-button",
+      "kind": "GroupControl",
+      "class": "container-t76uxW to-bottom-button-ANxzJd hidden-cdwmlP"
+    },
+    {
+      "depth": 21,
+      "name": "",
+      "id": "",
+      "kind": "ImageControl",
+      "class": "icon-CZ9clO"
+    }
+  ]
+}

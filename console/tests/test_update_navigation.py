@@ -15,7 +15,7 @@ def test_navigation_opens_updates_and_install_requires_explicit_click(update_ses
     ui.reminders = UpdateReminders(QSettings(str(tmp_path / 'reminders.ini'), QSettings.IniFormat))
     button = window._nav_buttons['settings']
     updater.publish('available', version='0.2.0')
-    assert button.accessibleName() == '固件与系统'
+    assert button.accessibleName() == 'Settings'
     assert ui.row.isHidden()
     button.click()
     assert vm.page == 'settings'
@@ -25,7 +25,7 @@ def test_navigation_opens_updates_and_install_requires_explicit_click(update_ses
     assert updater.calls == ['download']
     QApplication.processEvents()
     assert button.property('desktopUpdateProgress') == 25
-    assert button.accessibleName() == '固件与系统'
+    assert button.accessibleName() == 'Settings'
     assert not ui.progress.isHidden()
     button.click()
     assert updater.calls == ['download']
@@ -49,18 +49,18 @@ def test_firmware_dot_and_simultaneous_desktop_offer(update_session, tmp_path):
     button = window._nav_buttons['settings']
     assert button.property('firmwareUpdateAvailable') is True
     assert fw.row.isHidden()
-    assert button.text() == '固件与系统'
+    assert button.accessibleName() == 'Settings'
     button.click()
     assert vm.page == 'settings'
     updater.publish('available', version='0.2.0')
-    assert button.accessibleName() == '固件与系统'
+    assert button.accessibleName() == 'Settings'
     assert button.property('firmwareUpdateAvailable') is True
     assert not button.firmware_notice_visible()
     gateway.disconnected.emit('test disconnect')
     assert button.property('firmwareUpdateAvailable') is False
-    assert button.accessibleName() == '固件与系统'
+    assert button.accessibleName() == 'Settings'
     updater.publish('current')
-    assert button.text() == '固件与系统'
+    assert button.accessibleName() == 'Settings'
 
 
 def test_navigation_snooze_and_custom_firmware(update_session, tmp_path, monkeypatch):
@@ -69,11 +69,11 @@ def test_navigation_snooze_and_custom_firmware(update_session, tmp_path, monkeyp
     button = window._nav_buttons['settings']
     updater.publish('available', version='0.2.0')
     ui.snooze_update()
-    assert button.text() == '固件与系统'
+    assert button.accessibleName() == 'Settings'
     monkeypatch.setattr(updater, 'check', lambda: updater.publish('checking'))
     ui.check()
     updater.publish('available', version='0.2.0')
-    assert button.accessibleName() == '固件与系统'
+    assert button.accessibleName() == 'Settings'
     fw, snap = offer((window, vm, gateway, snapshot, store))
     gateway.snapshot_ready.emit(replace(snap, versions={**snap.versions, 'build_id':'custom-demo-01'}))
     assert button.property('firmwareUpdateAvailable') is False
@@ -115,6 +115,25 @@ def test_navigation_ready_respects_existing_restart_guard(update_session, qtbot,
     assert updater.calls.count('install') == 1
 
 
+def _settled_nav_geometry(window, qtbot):
+    """Top-tab positions once layout stops moving.
+
+    A fixed 100 ms wait was not enough under load (full runs with a busy machine
+    compared a half-laid-out row). Flush pending layout requests until two reads agree.
+    """
+    from PySide6.QtCore import QEvent
+    from PySide6.QtWidgets import QApplication
+    reads = []
+
+    def stable() -> bool:
+        QApplication.sendPostedEvents(None, QEvent.Type.LayoutRequest)
+        reads.append([(b.mapTo(window, b.rect().topLeft()), b.size()) for b in window._nav_buttons.values()])
+        return len(reads) >= 2 and reads[-1] == reads[-2]
+
+    qtbot.waitUntil(stable, timeout=3000)
+    return reads[-1]
+
+
 def test_navigation_keeps_positions_and_settings_shortcut(update_session, qtbot):
     from PySide6.QtCore import Qt
     window, vm, _, _, _, ui, updater, _ = update_session
@@ -127,22 +146,20 @@ def test_navigation_keeps_positions_and_settings_shortcut(update_session, qtbot)
             button.setProperty('compactNavigation', compact)
             updater.publish('current')
             button.set_active(False)
-            qtbot.wait(100)  # Settle parent layouts after changing locale/compact mode.
-            before = [(b.mapTo(window, b.rect().topLeft()), b.size()) for b in window._nav_buttons.values()]
+            before = _settled_nav_geometry(window, qtbot)
             updater.publish('available', version='0.2.0')
             button.set_active(False)
-            qtbot.wait(100)  # Settle parent layouts after changing locale/compact mode.
-            assert button.accessibleName() == window._language_manager.translate('固件与系统')
+            assert button.accessibleName() == 'Settings'  # 页签名三种语言下都不变
             assert button.text() == ('' if compact else button.accessibleName())
             assert not button.icon().isNull()
-            assert [(b.mapTo(window, b.rect().topLeft()), b.size()) for b in window._nav_buttons.values()] == before, (language, compact)
+            assert _settled_nav_geometry(window, qtbot) == before, (language, compact)
     from PySide6.QtGui import QKeySequence
     from PySide6.QtTest import QTest
     window.raise_()
     window.activateWindow()
     qtbot.waitUntil(window.isActiveWindow)
     assert window._nav_buttons['settings'].isEnabled()
-    QTest.keySequence(window, QKeySequence('Ctrl+4'))
+    QTest.keySequence(window, QKeySequence('Ctrl+3'))
     qtbot.waitUntil(lambda: vm.page == 'settings')
     assert updater.calls == []  # The settings shortcut must never trigger a restart.
 

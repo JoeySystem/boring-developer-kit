@@ -1,0 +1,1038 @@
+[
+  {
+    "line": 17582,
+    "eventName": "on_message_session_start",
+    "meta": {
+      "chat_session_id": "b1aebea7-9395-4733-bb47-876aba939b20",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: Init, message:Init",
+      "resumed": "0",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 17611,
+    "eventName": "on_message_sending_start",
+    "meta": {
+      "chat_session_id": "b1aebea7-9395-4733-bb47-876aba939b20",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: MessageSessionStart, message:Init",
+      "resumed": "0",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 17954,
+    "eventName": "on_message_sending_end",
+    "meta": {
+      "chat_session_id": "b1aebea7-9395-4733-bb47-876aba939b20",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: MessageSendingStage, message:Init",
+      "resumed": "0",
+      "send_message_id": "58966893433983490"
+    }
+  },
+  {
+    "line": 17955,
+    "eventName": "on_batch_message_receiving_start",
+    "meta": {
+      "chat_session_id": "b1aebea7-9395-4733-bb47-876aba939b20",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: MessageSendingStage, message:Init",
+      "resumed": "0",
+      "send_message_id": "58966893433983490"
+    }
+  },
+  {
+    "line": 18051,
+    "eventName": "on_message_receiving_start",
+    "meta": {
+      "chat_session_id": "b1aebea7-9395-4733-bb47-876aba939b20",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:Init",
+      "receive_message_id": "58968733627289602",
+      "resumed": "0",
+      "send_message_id": "58966893433983490"
+    }
+  },
+  {
+    "line": 18052,
+    "eventName": "on_batch_message_receiving_first_update",
+    "meta": {
+      "chat_session_id": "b1aebea7-9395-4733-bb47-876aba939b20",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_message_id": "58968733627289602",
+      "resumed": "0",
+      "send_message_id": "58966893433983490"
+    }
+  },
+  {
+    "line": 18106,
+    "eventName": "on_message_session_start",
+    "meta": {
+      "chat_session_id": "b1aebea7-9395-4733-bb47-876aba939b20",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "resumed": "1",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 18107,
+    "eventName": "on_message_receiving_start",
+    "meta": {
+      "chat_session_id": "b1aebea7-9395-4733-bb47-876aba939b20",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_message_id": "58968733627289602",
+      "resumed": "1",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 18112,
+    "eventName": "on_batch_message_receiving_first_update",
+    "meta": {
+      "chat_session_id": "b1aebea7-9395-4733-bb47-876aba939b20",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_message_id": "58968733627289602",
+      "resumed": "1",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 18581,
+    "eventName": "on_message_receiving_end",
+    "meta": {
+      "chat_session_id": "b1aebea7-9395-4733-bb47-876aba939b20",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_err": "",
+      "receive_message_id": "58968733627289602",
+      "receive_success": "1",
+      "resumed": "0",
+      "send_message_id": "58966893433983490"
+    }
+  },
+  {
+    "line": 18601,
+    "eventName": "on_batch_message_receiving_end",
+    "meta": {
+      "chat_session_id": "b1aebea7-9395-4733-bb47-876aba939b20",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageEnd",
+      "receive_err": "",
+      "receive_message_id": "58968733627289602",
+      "receive_success": "1",
+      "resumed": "0",
+      "send_message_id": "58966893433983490",
+      "session_success": "1"
+    }
+  },
+  {
+    "line": 18602,
+    "eventName": "on_message_session_end",
+    "meta": {
+      "agent_error": "0",
+      "cancel_source": "",
+      "chat_session_id": "b1aebea7-9395-4733-bb47-876aba939b20",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageEnd",
+      "receive_err": "",
+      "receive_message_id": "58968733627289602",
+      "receive_success": "1",
+      "resumed": "0",
+      "send_message_id": "58966893433983490",
+      "session_err": "",
+      "session_success": "1"
+    }
+  },
+  {
+    "line": 18608,
+    "eventName": "on_message_receiving_end",
+    "meta": {
+      "chat_session_id": "b1aebea7-9395-4733-bb47-876aba939b20",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_err": "",
+      "receive_message_id": "58968733627289602",
+      "receive_success": "1",
+      "resumed": "1",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 18610,
+    "eventName": "app_icon_badge_conversation_changed",
+    "meta": {
+      "changes": [
+        {
+          "change": "add",
+          "conversation_id": "38447205414643970",
+          "from_count": 0,
+          "from_kind": "none",
+          "to_count": 1,
+          "to_kind": "unread"
+        }
+      ]
+    }
+  },
+  {
+    "line": 18622,
+    "eventName": "on_message_session_end",
+    "meta": {
+      "agent_error": "0",
+      "cancel_source": "",
+      "chat_session_id": "b1aebea7-9395-4733-bb47-876aba939b20",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageEnd",
+      "receive_err": "",
+      "receive_message_id": "58968733627289602",
+      "receive_success": "1",
+      "resumed": "1",
+      "send_message_id": "",
+      "session_err": "",
+      "session_success": "1"
+    }
+  },
+  {
+    "line": 19001,
+    "eventName": "app_icon_badge_conversation_changed",
+    "meta": {
+      "changes": [
+        {
+          "change": "remove",
+          "conversation_id": "38447205414643970",
+          "from_count": 1,
+          "from_kind": "unread",
+          "to_count": 0,
+          "to_kind": "none"
+        }
+      ]
+    }
+  },
+  {
+    "line": 19443,
+    "eventName": "on_message_session_start",
+    "meta": {
+      "chat_session_id": "70bae68d-6c5b-4af4-a98f-3ae404f45011",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: Init, message:Init",
+      "resumed": "0",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 19471,
+    "eventName": "on_message_sending_start",
+    "meta": {
+      "chat_session_id": "70bae68d-6c5b-4af4-a98f-3ae404f45011",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: MessageSessionStart, message:Init",
+      "resumed": "0",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 19818,
+    "eventName": "on_message_sending_end",
+    "meta": {
+      "chat_session_id": "70bae68d-6c5b-4af4-a98f-3ae404f45011",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: MessageSendingStage, message:Init",
+      "resumed": "0",
+      "send_message_id": "58959753699800322"
+    }
+  },
+  {
+    "line": 19819,
+    "eventName": "on_batch_message_receiving_start",
+    "meta": {
+      "chat_session_id": "70bae68d-6c5b-4af4-a98f-3ae404f45011",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: MessageSendingStage, message:Init",
+      "resumed": "0",
+      "send_message_id": "58959753699800322"
+    }
+  },
+  {
+    "line": 19933,
+    "eventName": "on_message_receiving_start",
+    "meta": {
+      "chat_session_id": "70bae68d-6c5b-4af4-a98f-3ae404f45011",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:Init",
+      "receive_message_id": "58958350572843522",
+      "resumed": "0",
+      "send_message_id": "58959753699800322"
+    }
+  },
+  {
+    "line": 19934,
+    "eventName": "on_batch_message_receiving_first_update",
+    "meta": {
+      "chat_session_id": "70bae68d-6c5b-4af4-a98f-3ae404f45011",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_message_id": "58958350572843522",
+      "resumed": "0",
+      "send_message_id": "58959753699800322"
+    }
+  },
+  {
+    "line": 19972,
+    "eventName": "on_message_session_start",
+    "meta": {
+      "chat_session_id": "70bae68d-6c5b-4af4-a98f-3ae404f45011",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "resumed": "1",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 19973,
+    "eventName": "on_message_receiving_start",
+    "meta": {
+      "chat_session_id": "70bae68d-6c5b-4af4-a98f-3ae404f45011",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_message_id": "58958350572843522",
+      "resumed": "1",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 19978,
+    "eventName": "on_batch_message_receiving_first_update",
+    "meta": {
+      "chat_session_id": "70bae68d-6c5b-4af4-a98f-3ae404f45011",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_message_id": "58958350572843522",
+      "resumed": "1",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 20099,
+    "eventName": "sdk.message.break.branch",
+    "meta": {
+      "conversation_id": "38447205414643970"
+    }
+  },
+  {
+    "line": 20106,
+    "eventName": "on_message_receiving_end",
+    "meta": {
+      "chat_session_id": "70bae68d-6c5b-4af4-a98f-3ae404f45011",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_err": "broken",
+      "receive_message_id": "58958350572843522",
+      "receive_success": "0",
+      "resumed": "0",
+      "send_message_id": "58959753699800322"
+    }
+  },
+  {
+    "line": 20112,
+    "eventName": "on_batch_message_receiving_end",
+    "meta": {
+      "chat_session_id": "70bae68d-6c5b-4af4-a98f-3ae404f45011",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_err": "broken",
+      "receive_message_id": "58958350572843522",
+      "receive_success": "0",
+      "resumed": "0",
+      "send_message_id": "58959753699800322",
+      "session_success": "0"
+    }
+  },
+  {
+    "line": 20113,
+    "eventName": "on_message_session_end",
+    "meta": {
+      "agent_error": "0",
+      "cancel_source": "user",
+      "chat_session_id": "70bae68d-6c5b-4af4-a98f-3ae404f45011",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_err": "broken",
+      "receive_message_id": "58958350572843522",
+      "receive_success": "0",
+      "resumed": "0",
+      "send_message_id": "58959753699800322",
+      "session_err": "broken",
+      "session_success": "0"
+    }
+  },
+  {
+    "line": 20142,
+    "eventName": "sdk.message.break.branch",
+    "meta": {
+      "conversation_id": "38447205414643970"
+    }
+  },
+  {
+    "line": 20145,
+    "eventName": "sdk.message.break.branch",
+    "meta": {
+      "conversation_id": "38447205414643970"
+    }
+  },
+  {
+    "line": 20150,
+    "eventName": "on_message_receiving_end",
+    "meta": {
+      "chat_session_id": "70bae68d-6c5b-4af4-a98f-3ae404f45011",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_err": "broken",
+      "receive_message_id": "58958350572843522",
+      "receive_success": "0",
+      "resumed": "1",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 20153,
+    "eventName": "on_message_session_end",
+    "meta": {
+      "agent_error": "0",
+      "cancel_source": "",
+      "chat_session_id": "70bae68d-6c5b-4af4-a98f-3ae404f45011",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_err": "broken",
+      "receive_message_id": "58958350572843522",
+      "receive_success": "0",
+      "resumed": "1",
+      "send_message_id": "",
+      "session_err": "broken",
+      "session_success": "0"
+    }
+  },
+  {
+    "line": 20154,
+    "eventName": "sdk.message.break.branch",
+    "meta": {
+      "conversation_id": "38447205414643970"
+    }
+  },
+  {
+    "line": 20162,
+    "eventName": "rd_flow_message_streaming_finished",
+    "meta": {
+      "conversation_id": "38447205414643970",
+      "is_interrupted": 1,
+      "result": "Broken"
+    }
+  },
+  {
+    "line": 21945,
+    "eventName": "on_message_session_start",
+    "meta": {
+      "chat_session_id": "17bce85b-4594-43c8-a5b9-921fe1f50d2e",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: Init, message:Init",
+      "resumed": "0",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 21974,
+    "eventName": "on_message_sending_start",
+    "meta": {
+      "chat_session_id": "17bce85b-4594-43c8-a5b9-921fe1f50d2e",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: MessageSessionStart, message:Init",
+      "resumed": "0",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 22323,
+    "eventName": "on_message_sending_end",
+    "meta": {
+      "chat_session_id": "17bce85b-4594-43c8-a5b9-921fe1f50d2e",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: MessageSendingStage, message:Init",
+      "resumed": "0",
+      "send_message_id": "58959708085422338"
+    }
+  },
+  {
+    "line": 22324,
+    "eventName": "on_batch_message_receiving_start",
+    "meta": {
+      "chat_session_id": "17bce85b-4594-43c8-a5b9-921fe1f50d2e",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: MessageSendingStage, message:Init",
+      "resumed": "0",
+      "send_message_id": "58959708085422338"
+    }
+  },
+  {
+    "line": 22396,
+    "eventName": "on_message_receiving_start",
+    "meta": {
+      "chat_session_id": "17bce85b-4594-43c8-a5b9-921fe1f50d2e",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:Init",
+      "receive_message_id": "58958343184834562",
+      "resumed": "0",
+      "send_message_id": "58959708085422338"
+    }
+  },
+  {
+    "line": 22397,
+    "eventName": "on_batch_message_receiving_first_update",
+    "meta": {
+      "chat_session_id": "17bce85b-4594-43c8-a5b9-921fe1f50d2e",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_message_id": "58958343184834562",
+      "resumed": "0",
+      "send_message_id": "58959708085422338"
+    }
+  },
+  {
+    "line": 22462,
+    "eventName": "on_message_session_start",
+    "meta": {
+      "chat_session_id": "17bce85b-4594-43c8-a5b9-921fe1f50d2e",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "resumed": "1",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 22463,
+    "eventName": "on_message_receiving_start",
+    "meta": {
+      "chat_session_id": "17bce85b-4594-43c8-a5b9-921fe1f50d2e",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_message_id": "58958343184834562",
+      "resumed": "1",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 22468,
+    "eventName": "on_batch_message_receiving_first_update",
+    "meta": {
+      "chat_session_id": "17bce85b-4594-43c8-a5b9-921fe1f50d2e",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_message_id": "58958343184834562",
+      "resumed": "1",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 23690,
+    "eventName": "on_message_receiving_end",
+    "meta": {
+      "chat_session_id": "17bce85b-4594-43c8-a5b9-921fe1f50d2e",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_err": "",
+      "receive_message_id": "58958343184834562",
+      "receive_success": "1",
+      "resumed": "1",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 23698,
+    "eventName": "on_message_receiving_end",
+    "meta": {
+      "chat_session_id": "17bce85b-4594-43c8-a5b9-921fe1f50d2e",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_err": "",
+      "receive_message_id": "58958343184834562",
+      "receive_success": "1",
+      "resumed": "0",
+      "send_message_id": "58959708085422338"
+    }
+  },
+  {
+    "line": 23727,
+    "eventName": "on_batch_message_receiving_end",
+    "meta": {
+      "chat_session_id": "17bce85b-4594-43c8-a5b9-921fe1f50d2e",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageEnd",
+      "receive_err": "",
+      "receive_message_id": "58958343184834562",
+      "receive_success": "1",
+      "resumed": "0",
+      "send_message_id": "58959708085422338",
+      "session_success": "1"
+    }
+  },
+  {
+    "line": 23728,
+    "eventName": "on_message_session_end",
+    "meta": {
+      "agent_error": "0",
+      "cancel_source": "",
+      "chat_session_id": "17bce85b-4594-43c8-a5b9-921fe1f50d2e",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageEnd",
+      "receive_err": "",
+      "receive_message_id": "58958343184834562",
+      "receive_success": "1",
+      "resumed": "0",
+      "send_message_id": "58959708085422338",
+      "session_err": "",
+      "session_success": "1"
+    }
+  },
+  {
+    "line": 23731,
+    "eventName": "on_message_session_end",
+    "meta": {
+      "agent_error": "0",
+      "cancel_source": "",
+      "chat_session_id": "17bce85b-4594-43c8-a5b9-921fe1f50d2e",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageEnd",
+      "receive_err": "",
+      "receive_message_id": "58958343184834562",
+      "receive_success": "1",
+      "resumed": "1",
+      "send_message_id": "",
+      "session_err": "",
+      "session_success": "1"
+    }
+  },
+  {
+    "line": 54754,
+    "eventName": "on_message_session_start",
+    "meta": {
+      "chat_session_id": "e9874c40-e7ba-4659-99b6-5869e0a0a1d6",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: Init, message:Init",
+      "resumed": "0",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 54793,
+    "eventName": "on_message_sending_start",
+    "meta": {
+      "chat_session_id": "e9874c40-e7ba-4659-99b6-5869e0a0a1d6",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: MessageSessionStart, message:Init",
+      "resumed": "0",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 55135,
+    "eventName": "on_message_sending_end",
+    "meta": {
+      "chat_session_id": "e9874c40-e7ba-4659-99b6-5869e0a0a1d6",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: MessageSendingStage, message:Init",
+      "resumed": "0",
+      "send_message_id": "58968951543832322"
+    }
+  },
+  {
+    "line": 55136,
+    "eventName": "on_batch_message_receiving_start",
+    "meta": {
+      "chat_session_id": "e9874c40-e7ba-4659-99b6-5869e0a0a1d6",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: MessageSendingStage, message:Init",
+      "resumed": "0",
+      "send_message_id": "58968951543832322"
+    }
+  },
+  {
+    "line": 55230,
+    "eventName": "on_message_receiving_start",
+    "meta": {
+      "chat_session_id": "e9874c40-e7ba-4659-99b6-5869e0a0a1d6",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:Init",
+      "receive_message_id": "58957252859459842",
+      "resumed": "0",
+      "send_message_id": "58968951543832322"
+    }
+  },
+  {
+    "line": 55232,
+    "eventName": "on_batch_message_receiving_first_update",
+    "meta": {
+      "chat_session_id": "e9874c40-e7ba-4659-99b6-5869e0a0a1d6",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_message_id": "58957252859459842",
+      "resumed": "0",
+      "send_message_id": "58968951543832322"
+    }
+  },
+  {
+    "line": 55307,
+    "eventName": "on_message_session_start",
+    "meta": {
+      "chat_session_id": "e9874c40-e7ba-4659-99b6-5869e0a0a1d6",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "resumed": "1",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 55308,
+    "eventName": "on_message_receiving_start",
+    "meta": {
+      "chat_session_id": "e9874c40-e7ba-4659-99b6-5869e0a0a1d6",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_message_id": "58957252859459842",
+      "resumed": "1",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 55313,
+    "eventName": "on_batch_message_receiving_first_update",
+    "meta": {
+      "chat_session_id": "e9874c40-e7ba-4659-99b6-5869e0a0a1d6",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_message_id": "58957252859459842",
+      "resumed": "1",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 55776,
+    "eventName": "on_message_receiving_end",
+    "meta": {
+      "chat_session_id": "e9874c40-e7ba-4659-99b6-5869e0a0a1d6",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_err": "",
+      "receive_message_id": "58957252859459842",
+      "receive_success": "1",
+      "resumed": "0",
+      "send_message_id": "58968951543832322"
+    }
+  },
+  {
+    "line": 55785,
+    "eventName": "rd_flow_message_streaming_finished",
+    "meta": {
+      "conversation_id": "38447205414643970",
+      "is_interrupted": 0,
+      "result": "Success"
+    }
+  },
+  {
+    "line": 55791,
+    "eventName": "app_icon_badge_conversation_changed",
+    "meta": {
+      "changes": [
+        {
+          "change": "add",
+          "conversation_id": "38447205414643970",
+          "from_count": 0,
+          "from_kind": "none",
+          "to_count": 1,
+          "to_kind": "unread"
+        }
+      ]
+    }
+  },
+  {
+    "line": 55806,
+    "eventName": "on_batch_message_receiving_end",
+    "meta": {
+      "chat_session_id": "e9874c40-e7ba-4659-99b6-5869e0a0a1d6",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageEnd",
+      "receive_err": "",
+      "receive_message_id": "58957252859459842",
+      "receive_success": "1",
+      "resumed": "0",
+      "send_message_id": "58968951543832322",
+      "session_success": "1"
+    }
+  },
+  {
+    "line": 55807,
+    "eventName": "on_message_session_end",
+    "meta": {
+      "agent_error": "0",
+      "cancel_source": "",
+      "chat_session_id": "e9874c40-e7ba-4659-99b6-5869e0a0a1d6",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageEnd",
+      "receive_err": "",
+      "receive_message_id": "58957252859459842",
+      "receive_success": "1",
+      "resumed": "0",
+      "send_message_id": "58968951543832322",
+      "session_err": "",
+      "session_success": "1"
+    }
+  },
+  {
+    "line": 55813,
+    "eventName": "app_icon_badge_conversation_changed",
+    "meta": {
+      "changes": [
+        {
+          "change": "remove",
+          "conversation_id": "38447205414643970",
+          "from_count": 1,
+          "from_kind": "unread",
+          "to_count": 0,
+          "to_kind": "none"
+        }
+      ]
+    }
+  },
+  {
+    "line": 55830,
+    "eventName": "on_message_receiving_end",
+    "meta": {
+      "chat_session_id": "e9874c40-e7ba-4659-99b6-5869e0a0a1d6",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_err": "",
+      "receive_message_id": "58957252859459842",
+      "receive_success": "1",
+      "resumed": "1",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 55833,
+    "eventName": "on_message_session_end",
+    "meta": {
+      "agent_error": "0",
+      "cancel_source": "",
+      "chat_session_id": "e9874c40-e7ba-4659-99b6-5869e0a0a1d6",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageEnd",
+      "receive_err": "",
+      "receive_message_id": "58957252859459842",
+      "receive_success": "1",
+      "resumed": "1",
+      "send_message_id": "",
+      "session_err": "",
+      "session_success": "1"
+    }
+  },
+  {
+    "line": 62356,
+    "eventName": "on_message_session_start",
+    "meta": {
+      "chat_session_id": "65e1b3f4-a3c4-4001-af04-ac16b8df55d7",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: Init, message:Init",
+      "resumed": "0",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 62389,
+    "eventName": "on_message_sending_start",
+    "meta": {
+      "chat_session_id": "65e1b3f4-a3c4-4001-af04-ac16b8df55d7",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: MessageSessionStart, message:Init",
+      "resumed": "0",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 62730,
+    "eventName": "on_message_sending_end",
+    "meta": {
+      "chat_session_id": "65e1b3f4-a3c4-4001-af04-ac16b8df55d7",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: MessageSendingStage, message:Init",
+      "resumed": "0",
+      "send_message_id": "58956976178060034"
+    }
+  },
+  {
+    "line": 62731,
+    "eventName": "on_batch_message_receiving_start",
+    "meta": {
+      "chat_session_id": "65e1b3f4-a3c4-4001-af04-ac16b8df55d7",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: MessageSendingStage, message:Init",
+      "resumed": "0",
+      "send_message_id": "58956976178060034"
+    }
+  },
+  {
+    "line": 62812,
+    "eventName": "on_message_receiving_start",
+    "meta": {
+      "chat_session_id": "65e1b3f4-a3c4-4001-af04-ac16b8df55d7",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:Init",
+      "receive_message_id": "58957264149115906",
+      "resumed": "0",
+      "send_message_id": "58956976178060034"
+    }
+  },
+  {
+    "line": 62813,
+    "eventName": "on_batch_message_receiving_first_update",
+    "meta": {
+      "chat_session_id": "65e1b3f4-a3c4-4001-af04-ac16b8df55d7",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_message_id": "58957264149115906",
+      "resumed": "0",
+      "send_message_id": "58956976178060034"
+    }
+  },
+  {
+    "line": 62885,
+    "eventName": "on_message_session_start",
+    "meta": {
+      "chat_session_id": "65e1b3f4-a3c4-4001-af04-ac16b8df55d7",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "resumed": "1",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 62886,
+    "eventName": "on_message_receiving_start",
+    "meta": {
+      "chat_session_id": "65e1b3f4-a3c4-4001-af04-ac16b8df55d7",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_message_id": "58957264149115906",
+      "resumed": "1",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 62891,
+    "eventName": "on_batch_message_receiving_first_update",
+    "meta": {
+      "chat_session_id": "65e1b3f4-a3c4-4001-af04-ac16b8df55d7",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_message_id": "58957264149115906",
+      "resumed": "1",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 63836,
+    "eventName": "on_message_receiving_end",
+    "meta": {
+      "chat_session_id": "65e1b3f4-a3c4-4001-af04-ac16b8df55d7",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_err": "",
+      "receive_message_id": "58957264149115906",
+      "receive_success": "1",
+      "resumed": "0",
+      "send_message_id": "58956976178060034"
+    }
+  },
+  {
+    "line": 63856,
+    "eventName": "on_batch_message_receiving_end",
+    "meta": {
+      "chat_session_id": "65e1b3f4-a3c4-4001-af04-ac16b8df55d7",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageEnd",
+      "receive_err": "",
+      "receive_message_id": "58957264149115906",
+      "receive_success": "1",
+      "resumed": "0",
+      "send_message_id": "58956976178060034",
+      "session_success": "1"
+    }
+  },
+  {
+    "line": 63857,
+    "eventName": "on_message_session_end",
+    "meta": {
+      "agent_error": "0",
+      "cancel_source": "",
+      "chat_session_id": "65e1b3f4-a3c4-4001-af04-ac16b8df55d7",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageEnd",
+      "receive_err": "",
+      "receive_message_id": "58957264149115906",
+      "receive_success": "1",
+      "resumed": "0",
+      "send_message_id": "58956976178060034",
+      "session_err": "",
+      "session_success": "1"
+    }
+  },
+  {
+    "line": 63860,
+    "eventName": "app_icon_badge_conversation_changed",
+    "meta": {
+      "changes": [
+        {
+          "change": "add",
+          "conversation_id": "38447205414643970",
+          "from_count": 0,
+          "from_kind": "none",
+          "to_count": 1,
+          "to_kind": "unread"
+        }
+      ]
+    }
+  },
+  {
+    "line": 63875,
+    "eventName": "on_message_receiving_end",
+    "meta": {
+      "chat_session_id": "65e1b3f4-a3c4-4001-af04-ac16b8df55d7",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageStart",
+      "receive_err": "",
+      "receive_message_id": "58957264149115906",
+      "receive_success": "1",
+      "resumed": "1",
+      "send_message_id": ""
+    }
+  },
+  {
+    "line": 63878,
+    "eventName": "on_message_session_end",
+    "meta": {
+      "agent_error": "0",
+      "cancel_source": "",
+      "chat_session_id": "65e1b3f4-a3c4-4001-af04-ac16b8df55d7",
+      "conversation_id": "38447205414643970",
+      "lifecycle_state": "session: SyncMessageReceivingStage, message:MessageEnd",
+      "receive_err": "",
+      "receive_message_id": "58957264149115906",
+      "receive_success": "1",
+      "resumed": "1",
+      "send_message_id": "",
+      "session_err": "",
+      "session_success": "1"
+    }
+  }
+]

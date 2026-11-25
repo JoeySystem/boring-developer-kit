@@ -1,4 +1,5 @@
 #include "action_engine.h"
+#include "boot_guard.h"
 
 #include <limits.h>
 #include <stdio.h>
@@ -10,8 +11,10 @@
 #include "codex_micro_protocol.h"
 #include "claude_code_shortcuts.h"
 #include "claude_status.h"
+#include "desktop_agent_status.h"
 #include "config_protocol.h"
 #include "config_store.h"
+#include "battery_guard_model.h"
 #include "board_display_logic.h"
 #include "diagnostic_capture_model.h"
 #include "double_click_model.h"
@@ -20,6 +23,8 @@
 #include "encoder_haptic_model.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_timer.h"
+#include "battery_display.h"
 #include "cw2015.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -39,6 +44,7 @@
 #include "quick_config_model.h"
 #include "status_indicator.h"
 #include "under_key_self_test.h"
+#include "usb_link_model.h"
 #include "usb_service.h"
 
 #define LOCAL_LONG_PRESS_MS 2000
@@ -48,7 +54,9 @@
 #define FUNCTION_CENTER_HOLD_MS 2000
 #endif
 #define PROMPT_PALETTE_HOLD_MS 800
-#define BLE_SLOT_CLEAR_HOLD_MS 3000
+#define BLE_HOST_HINT_REPEAT_MS 30000
+/* Holding the Bluetooth key this long adds a computer instead of switching. */
+#define BLE_ADD_HOST_HOLD_MS 2000
 #define LOCAL_PAGE_TIMEOUT_MS 10000
 #define DOUBLE_CLICK_MOTION_TOLERANCE 1
 #define ALERT_HAPTIC_STRENGTH 60
@@ -65,6 +73,16 @@
 #define BATTERY_SPLASH_MAX_WAIT_MS 3000
 #define BATTERY_SPLASH_VALID_DURATION_MS 3000
 #define ROUND_FEEDBACK_DURATION_MS 2000
+/* Low-battery guard presentation (policy thresholds: battery_guard_model.h). */
+#define LOW_BATTERY_NOTICE_MS 3000
+#define LOW_BATTERY_NOTICE_REPEAT_MS (5U * 60U * 1000U)
+#define LOW_BATTERY_OFF_NOTICE_MS 3000
+#define LOW_BATTERY_GUARD_POLL_MS 1000
+#define LOW_BATTERY_SAMPLE_MAX_AGE_MS 6000
+#define LOW_BATTERY_BREATH_FRAME_MS 60
+#define LOW_BATTERY_BREATH_MAX_RED 40
+#define LOW_BATTERY_OFF_HAPTIC_STRENGTH 50
+#define LOW_BATTERY_OFF_HAPTIC_MS 120
 #define EDA_CANVAS_PAN_MOUSE_BUTTON (1u << 1)
 #define KEY_STATUS_LED_COUNT 6
 #define ARRAY_COUNT(values) (sizeof(values) / sizeof((values)[0]))
@@ -117,9 +135,7 @@ static quick_config_model_t s_quick_config;
 static bool s_system_select_active;
 static config_platform_t s_system_selection = CONFIG_PLATFORM_MACOS;
 static uint8_t s_platform_context = UINT8_MAX;
-static config_platform_t s_context_preference;
-static bool s_platform_restore_needed;
-static bool s_platform_restore_applying;
+static bool s_platform_setup_needed;
 static bool s_system_save_pending;
 static bool s_system_return_to_settings;
 static bool s_usb_mounted;
@@ -135,7 +151,22 @@ static bool s_shutdown_pulsed;
 static TickType_t s_shutdown_power_at;
 static bool s_battery_splash_active;
 static bool s_usb_standby_active;
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+static usb_standby_trace_t s_usb_standby_trace;
+/* Why the pending shutdown parks in USB standby if the MCU survives it. */
+static usb_standby_entry_reason_t s_shutdown_standby_reason;
+#endif
 static bool s_usb_charge_session_at_boot;
+/* Low-battery guard. A protective shutdown keeps the user's ON intent. */
+static battery_guard_model_t s_battery_guard;
+static TickType_t s_battery_guard_polled_at;
+static bool s_low_battery_boot_blocked;
+static bool s_low_battery_shutdown;
+static bool s_low_battery_locked_standby;
+static bool s_low_battery_notice_due;
+static TickType_t s_low_battery_notice_next_at;
+static TickType_t s_low_battery_breath_frame_at;
+static bool s_low_battery_breath_shown;
 static TickType_t s_battery_splash_started_at;
 static TickType_t s_battery_splash_valid_at;
 static TickType_t s_battery_splash_next_retry_at;
@@ -149,6 +180,7 @@ static TickType_t s_boot_animation_started_at;
 static TickType_t s_boot_animation_last_frame_at;
 static uint8_t s_boot_animation_last_density;
 static idle_standby_model_t s_idle_standby;
+static usb_link_model_t s_usb_link;
 static light_idle_model_t s_light_idle = {.percent = 100};
 static bool s_idle_standby_wake_wait;
 static bool s_round_feedback_active;
@@ -167,22 +199,22 @@ static bool s_function_key_action_pressed;
 static bool s_function_key_press_feedback_sent;
 static bool s_prompt_palette_key_gesture_active;
 static bool s_prompt_palette_key_action_pressed;
-static bool s_prompt_palette_key_feedback_sent;
 static TickType_t s_prompt_palette_key_pressed_at;
-static board_control_t s_ble_slot_combo_control = BOARD_CONTROL_COUNT;
-static uint8_t s_ble_slot_combo_slot;
-static TickType_t s_ble_slot_combo_pressed_at;
-static bool s_ble_slot_clear_fired;
-static uint8_t s_ble_slot_progress_percent;
+/* The Bluetooth key (K8 while K3 is held), from its press to its release. */
+static board_control_t s_ble_host_key_control = BOARD_CONTROL_COUNT;
+static TickType_t s_ble_host_key_pressed_at;
+static bool s_ble_host_key_hold_done;
 static bool s_function_key_release_pending;
 static TickType_t s_function_key_pressed_at;
 static TickType_t s_function_key_release_at;
 static bool s_tap_release_pending[BOARD_CONTROL_COUNT];
-static bool s_tap_release_wait_poll[BOARD_CONTROL_COUNT];
+static TickType_t s_tap_release_at[BOARD_CONTROL_COUNT];
 static double_click_model_t s_encoder_gesture;
 static double_click_model_t s_joystick_gesture;
 #define CONFIGURABLE_KEY_GESTURE_COUNT 5
 static key_gesture_model_t s_key_gestures[CONFIGURABLE_KEY_GESTURE_COUNT];
+static key_pulse_model_t s_key_pulses[CONFIGURABLE_KEY_GESTURE_COUNT];
+static config_action_t s_key_pulse_actions[CONFIGURABLE_KEY_GESTURE_COUNT];
 static config_action_t s_key_gesture_actions[CONFIGURABLE_KEY_GESTURE_COUNT];
 static encoder_haptic_model_t s_encoder_haptic;
 static joystick_radial_haptic_model_t s_joystick_radial_haptic;
@@ -195,6 +227,7 @@ static codex_micro_mode_t s_encoder_gesture_mode;
 static unsigned s_encoder_motion_count;
 static unsigned s_joystick_excursions;
 static bool s_joystick_direction_active;
+static bool s_joystick_suspect;
 static eda_canvas_pan_model_t s_eda_canvas_pan;
 static bool s_encoder_direct_press;
 static bool s_joystick_direct_press;
@@ -210,7 +243,6 @@ typedef enum {
     LOCAL_PAGE_NONE = 0,
     LOCAL_PAGE_FUNCTION,
     LOCAL_PAGE_SETTINGS,
-    LOCAL_PAGE_STANDBY,
     LOCAL_PAGE_RESTART_CONFIRM,
     LOCAL_PAGE_TIMER_SETUP,
     LOCAL_PAGE_TIMER_DETAIL,
@@ -224,7 +256,6 @@ typedef enum {
 static local_page_t s_local_page;
 static uint8_t s_function_cursor;
 static uint8_t s_settings_cursor;
-static size_t s_standby_minutes_index;
 static bool s_local_confirm_selected;
 static bool s_cancel_yes;
 static uint8_t s_prompt_palette_selected_id;
@@ -242,12 +273,29 @@ static uint32_t s_mist_connection_started_ms;
 #define MIST_RESTART_NOTICE_MS 600U
 static uint16_t s_mist_read_index;
 static int s_mist_navigation_delta;
-static bool s_mist_status_return_function;
 #endif
 
 static const uint8_t LIGHTING_LEVELS[] = {0, 10, 20, 40, 80};
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+/* The Power V2 motor barely registers at 40 and 50 percent: levels 1 and 2
+ * reuse the former level 3 and 4 strengths. Stored values below 60 percent
+ * are migrated by config_store. */
+static const uint8_t HAPTIC_LEVELS[] = {0, 60, 80};
+_Static_assert(sizeof(HAPTIC_LEVELS) / sizeof(HAPTIC_LEVELS[0]) ==
+                   BOARD_ROUND_HAPTIC_MAX_LEVEL + 1U,
+               "haptic table must match the round display range");
+#else
 static const uint8_t HAPTIC_LEVELS[] = {0, 40, 50, 60, 80};
-static const uint8_t STANDBY_MINUTES[] = {0, 5, 15, 30};
+#endif
+/*
+ * Idle standby is switched off (2026-11-12): once in it only the
+ * joystick woke the device, keys and the knob did not, and it bought little
+ * battery life. The minutes a user saved earlier stay in NVS ("idle_min")
+ * and are not read, so the model is never armed and the paths below that
+ * enter and leave idle standby are not reached. USB standby, the power-off
+ * paths and the idle dimming of lights and screen are separate and unchanged.
+ */
+#define IDLE_STANDBY_MINUTES 0u
 static const size_t MATRIX12_AGENT_KEY_INDICES[KEY_STATUS_LED_COUNT] = {
     0, 1, 3, 4, 5, 6,
 };
@@ -289,19 +337,29 @@ static void handle_double_click_actions(board_control_t control, uint8_t actions
 static void poll_pomodoro(void);
 static void poll_codex_attention_notification(void);
 static void poll_joystick_excursion_haptic(void);
+static void poll_joystick_suspect(void);
 static void start_boot_animation(void);
 static void poll_boot_animation(void);
 static void enter_initial_page(void);
 static void start_usb_battery_splash(void);
-static void enter_usb_standby(void);
+static void enter_usb_standby(usb_standby_entry_reason_t reason);
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+static bool s_restart_on_standby_wake;
+#endif
 static void poll_usb_standby(void);
-static void wake_from_usb_standby(void);
+static void wake_from_usb_standby(usb_standby_wake_reason_t reason);
 static void poll_round_feedback(void);
 static void dispatch_latched_standard_action(board_control_t control,
                                              config_action_t action,
                                              const char *short_name,
                                              bool pressed);
 static void poll_battery_status(void);
+static void poll_battery_guard(void);
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+static bool low_battery_breath_active(void);
+#endif
+static void begin_shutdown(const board_mist_view_t *, uint32_t, bool,
+                           usb_standby_entry_reason_t);
 static void sync_connection_and_mode_state(void);
 static void reset_mode_sensitive_input_state(void);
 static void enter_local_input_ownership(void);
@@ -337,13 +395,8 @@ static int current_battery_percent(int64_t *sample_time_ms)
     if (!valid) {
         return -1;
     }
-    int battery_percent = (int)(battery.soc_percent + 0.5f);
-    if (battery_percent < 0) {
-        battery_percent = 0;
-    } else if (battery_percent > 100) {
-        battery_percent = 100;
-    }
-    return battery_percent;
+    /* The number the user sees; the low-battery guard reads the raw value. */
+    return (int)battery_display_percent(battery.soc_percent);
 }
 
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
@@ -507,6 +560,28 @@ static void pulse_press_feedback(void)
     }
 }
 
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+static void pulse_physical_button_feedback(const board_event_t *event)
+{
+    const bool physical_press = event->pressed &&
+        (event->control == BOARD_CONTROL_ENCODER_PRESS
+            ? event->feedback_only
+            : !event->feedback_only &&
+              (board_control_key_index(event->control, NULL) ||
+               event->control == BOARD_CONTROL_JOYSTICK_PRESS));
+    if (!physical_press ||
+        s_shutdown_active || s_usb_standby_active || s_battery_splash_active ||
+        !s_feedback.haptic_enabled || !s_feedback.haptic_on_press ||
+        s_feedback.haptic_strength == 0) {
+        return;
+    }
+    /* Direct key feedback takes priority over an unfinished task reminder. */
+    cancel_codex_attention_haptic();
+    (void)board_haptic_pulse(s_feedback.haptic_strength,
+                             s_feedback.haptic_duration_ms);
+}
+#endif
+
 static void pulse_control_press_feedback(board_control_t control)
 {
     if (encoder_rotation_control(control)) {
@@ -514,9 +589,11 @@ static void pulse_control_press_feedback(board_control_t control)
         return;
     }
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
-    /* These controls have dedicated physical-feedback paths on Power V2. */
+    /* Buttons already vibrate at their physical down edge on Power V2. */
     if (control == BOARD_CONTROL_ENCODER_PRESS ||
-        joystick_direction_control(control)) {
+        control == BOARD_CONTROL_JOYSTICK_PRESS ||
+        joystick_direction_control(control) ||
+        board_control_key_index(control, NULL)) {
         return;
     }
 #endif
@@ -526,10 +603,6 @@ static void pulse_control_press_feedback(board_control_t control)
     }
     if (control == function_center_control() &&
         s_function_key_press_feedback_sent) {
-        return;
-    }
-    if (control == BOARD_CONTROL_KEY_12 &&
-        s_prompt_palette_key_feedback_sent) {
         return;
     }
     pulse_press_feedback();
@@ -696,6 +769,16 @@ static void render_under_key_output(board_rgb_t *output)
             .blue = lighting_scale_channel(color.blue, brightness),
         };
     }
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    if (low_battery_breath_active()) {
+        const uint8_t red = battery_guard_breath_level(
+            ticks_to_ms(xTaskGetTickCount()), LOW_BATTERY_BREATH_MAX_RED);
+        for (size_t index = 0;
+             index < ARRAY_COUNT(s_feedback.under_key_rgb); ++index) {
+            output[index] = (board_rgb_t) {.red = red};
+        }
+    }
+#endif
     if (!s_codex_key_status_active) {
         return;
     }
@@ -774,7 +857,7 @@ static void poll_light_idle(void)
         !diagnostic_capture_model_owns_input(&s_diagnostic_capture) &&
         !board_joystick_calibration_active() && !firmware_update_is_active() &&
         !config_protocol_screen_icon_upload_active() && !config_store_has_pending() &&
-        board_inputs_neutral();
+        board_keys_neutral();
     if (light_idle_model_poll(&s_light_idle, ticks_to_ms(xTaskGetTickCount()), eligible) &&
         !light_idle_outputs_blocked()) {
         apply_light_idle_output();
@@ -915,6 +998,9 @@ static void show_status(const char *hint)
     const bool ble_connected = codex_micro_ble_connected();
     const codex_micro_mode_t mode = codex_micro_mode();
     const char *effective_hint = hint;
+    if (effective_hint == NULL && board_joystick_suspect()) {
+        effective_hint = "CALIBRATE JOYSTICK";
+    }
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
     const int battery_percent = current_battery_percent(NULL);
     const board_round_mode_t round_mode =
@@ -926,8 +1012,22 @@ static void show_status(const char *hint)
         : ble_connected ? BOARD_ROUND_LINK_BLE
                         : BOARD_ROUND_LINK_DISCONNECTED;
     (void)effective_hint;
+    if (boot_guard_safe_mode()) {
+        /* Stability item 6, first batch: fixed text until the screen is
+         * designed with the UI owner. Restarting tries a normal boot. */
+        (void)round_mode;
+        (void)round_link;
+        (void)battery_percent;
+        /* Interim product text: no "safe
+         * mode" wording for users; replaced when the final copy arrives.
+         * Each row fits the round screen (test_safe_mode_screen_text). */
+        (void)board_display_show_local("REPAIR", "PLUG USB", "OPEN APP",
+                                       "TO FIX", 0xFD20);
+        return;
+    }
     (void)board_display_show_round_home(round_mode, round_link,
-                                        battery_percent);
+                                        battery_percent,
+                                        board_joystick_suspect());
     return;
 #endif
     uint8_t profile_id = 0;
@@ -996,7 +1096,10 @@ static void enter_initial_page(void)
     const bool product_target = board_is_product_target();
     const bool platform_selected =
         config_store_get_platform() != CONFIG_PLATFORM_UNSELECTED;
-    if (product_target && !platform_selected) {
+    /* The repair state runs the built-in defaults, which have no OS yet.
+     * A choice made there cannot be saved, so it would only hide the repair
+     * instruction. */
+    if (product_target && !platform_selected && !boot_guard_safe_mode()) {
         enter_system_select();
     } else if (board_display_boot_should_start(
                    product_target, s_firmware_error, platform_selected)) {
@@ -1012,7 +1115,9 @@ static void finish_battery_splash(void)
         return;
     }
     s_battery_splash_active = false;
-    enter_usb_standby();
+    /* Only the boot splash starts a standby period; a splash shown while
+     * already parked (USB plug-in, power button on a low cell) does not. */
+    enter_usb_standby(USB_STANDBY_ENTRY_BOOT);
 }
 
 static void set_usb_standby_outputs(void)
@@ -1056,18 +1161,47 @@ static void start_usb_battery_splash(void)
 
 static void sync_ble_to_usb_data_link(void)
 {
+    /* The battery splash belongs to the OFF state (USB charge session): BLE
+     * stays as standby left it. */
     if (s_shutdown_active || s_usb_standby_active ||
-        s_idle_standby.active) {
+        s_idle_standby.active || s_battery_splash_active) {
         return;
     }
-    /* A charger is not a USB host: keep BLE available without a live link. */
-    codex_micro_set_ble_suspended(usb_service_is_mounted());
+    /* A charger is not a USB host: keep BLE available without a live link.
+     * The model debounces the raw link so a brief bus suspend, a host
+     * re-enumeration or the enumeration window at boot does not drop and
+     * re-advertise BLE. */
+    const bool usb_owns_link = usb_link_model_update(
+        &s_usb_link, ticks_to_ms(xTaskGetTickCount()),
+        (usb_link_input_t)usb_service_link_state());
+    codex_micro_set_ble_suspended_for_source(
+        usb_owns_link, CODEX_MICRO_BLE_DISCONNECT_USB);
 }
 
-static void enter_usb_standby(void)
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+static uint32_t usb_standby_now_ms(void)
+{
+    /* Same clock as GET_STATUS usb_standby.uptime_ms. */
+    return (uint32_t)(esp_timer_get_time() / 1000);
+}
+#endif
+
+static void enter_usb_standby(usb_standby_entry_reason_t reason)
 {
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
-    codex_micro_set_ble_suspended(true);
+    /* With USB power the MCU survives the OFF pulse; restart on the next
+     * wake so OFF/ON clears runtime state (an exhausted heap stayed through
+     * repeated OFF/ON on a returned unit and on 586EC). */
+    s_restart_on_standby_wake = reason == USB_STANDBY_ENTRY_POWER_BUTTON;
+    if (usb_standby_trace_enter(&s_usb_standby_trace, reason,
+                                usb_standby_now_ms())) {
+        ESP_LOGI(TAG, "USB standby #%u entered: %s",
+                 (unsigned)s_usb_standby_trace.entries,
+                 usb_standby_entry_reason_name(reason));
+        config_protocol_set_usb_standby_trace(&s_usb_standby_trace);
+    }
+    codex_micro_set_ble_suspended_for_source(
+        true, CODEX_MICRO_BLE_DISCONNECT_STANDBY);
     board_set_power_button_wake_mode(true);
     s_battery_splash_active = false;
     s_usb_standby_active = true;
@@ -1084,12 +1218,73 @@ static void enter_usb_standby(void)
     codex_micro_set_input_suppressed(true);
     s_usb_mounted = usb_service_is_mounted();
     set_usb_standby_outputs();
+#else
+    (void)reason;
 #endif
 }
+
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+static void guard_sample_from_gauge(battery_guard_sample_t *sample)
+{
+    fuel_gauge_sample_t raw;
+    const bool valid = fuel_gauge_latest(&raw);
+    /* Same clock as cw2015.c's last_update_time_ms. */
+    const int64_t age_ms = esp_timer_get_time() / 1000 - raw.last_update_time_ms;
+    float millivolts = raw.voltage_v * 1000.0f + 0.5f;
+    if (millivolts < 0.0f) millivolts = 0.0f;
+    if (millivolts > 65535.0f) millivolts = 65535.0f;
+    float percent = raw.soc_percent + 0.5f;
+    if (percent < 0.0f) percent = 0.0f;
+    if (percent > 100.0f) percent = 100.0f;
+    *sample = (battery_guard_sample_t) {
+        /* A stale cached value must not keep a critical hold running. */
+        .valid = valid && raw.last_update_time_ms > 0 &&
+                 age_ms >= 0 && age_ms <= LOW_BATTERY_SAMPLE_MAX_AGE_MS,
+        .voltage_mv = (uint16_t)millivolts,
+        .soc_percent = (uint8_t)percent,
+    };
+}
+#endif
+
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+/* Locked standby holds while the cell reads below the resume threshold. A
+ * failed gauge never holds: it must not trap the device in standby. */
+static bool low_battery_standby_holds(void)
+{
+    if (!s_low_battery_locked_standby) {
+        return false;
+    }
+    battery_guard_sample_t sample;
+    guard_sample_from_gauge(&sample);
+    return battery_guard_sample_usable(&sample) &&
+           sample.voltage_mv < BATTERY_GUARD_RESUME_MV;
+}
+#endif
 
 static void poll_usb_standby(void)
 {
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    if (s_low_battery_shutdown) {
+        /* The power-off pulse was survived: external power holds the MCU.
+         * Park in standby with the saved ON intent until the cell recovers. */
+        s_low_battery_shutdown = false;
+        s_low_battery_locked_standby = true;
+        battery_guard_model_init(&s_battery_guard);
+        config_protocol_set_power_guard_state("locked_standby");
+    }
+    if (s_low_battery_locked_standby) {
+        battery_guard_sample_t sample;
+        guard_sample_from_gauge(&sample);
+        if (battery_guard_model_resume_ready(&s_battery_guard,
+                                             ticks_to_ms(xTaskGetTickCount()),
+                                             &sample)) {
+            ESP_LOGI(TAG, "cell recovered to %u mV: resuming saved ON session",
+                     (unsigned)sample.voltage_mv);
+            (void)config_store_set_low_battery_lock(false);
+            wake_from_usb_standby(USB_STANDBY_WAKE_BATTERY_RECOVERED);
+            return;
+        }
+    }
     const bool mounted = usb_service_is_mounted();
     if (mounted && !s_usb_mounted) {
         s_usb_mounted = true;
@@ -1100,7 +1295,7 @@ static void poll_usb_standby(void)
 #endif
 }
 
-static void wake_from_usb_standby(void)
+static void wake_from_usb_standby(usb_standby_wake_reason_t reason)
 {
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
     bool restart_for_name = false;
@@ -1116,14 +1311,44 @@ static void wake_from_usb_standby(void)
         strcmp(saved_name, codex_micro_ble_device_name()) != 0 &&
         !config_protocol_restart_busy();
 #endif
+    /* Config migrations run only at boot and this wake is not one: restart
+     * once so an OFF/ON cycle applies them, as it does a saved BLE name. */
+    const bool restart_for_migration = !restart_for_name &&
+        !config_protocol_restart_busy() && config_store_boot_migration_pending();
+    const bool restart_for_power_cycle = !restart_for_name &&
+        !restart_for_migration && s_restart_on_standby_wake &&
+        !config_protocol_restart_busy();
     const esp_err_t power_result = config_store_set_user_powered_on(true);
     if (power_result != ESP_OK) {
         ESP_LOGW(TAG, "cannot save ON intent on USB wake: %s",
                  esp_err_to_name(power_result));
     }
-    if (restart_for_name && power_result == ESP_OK) {
+    /* Found on 68DE8 (11-11): in safe mode (and any read-only storage) the
+     * ON intent cannot be saved, so OFF/ON never restarted and the device
+     * could not leave safe mode. The OFF intent was not saved either, so the
+     * stored intent is still ON and the restart comes back powered on. */
+    config_store_status_t store_status;
+    config_store_get_status(&store_status);
+    const bool intent_saved_or_read_only =
+        power_result == ESP_OK || store_status.storage_degraded;
+    if ((restart_for_name || restart_for_migration || restart_for_power_cycle) &&
+        intent_saved_or_read_only) {
+        /* A restart is not a wake: the reboot shows in FW_STATUS. */
+        ESP_LOGI(TAG, "USB standby wake (%s) restarts to apply %s",
+                 usb_standby_wake_reason_name(reason),
+                 restart_for_name ? "the BLE name"
+                 : restart_for_migration ? "config migrations"
+                                         : "a clean start after power-off");
+        s_restart_on_standby_wake = false;
         action_engine_request_restart();
         return;
+    }
+    if (usb_standby_trace_wake(&s_usb_standby_trace, reason,
+                               usb_standby_now_ms())) {
+        ESP_LOGI(TAG, "USB standby wake #%u: %s",
+                 (unsigned)s_usb_standby_trace.wakes,
+                 usb_standby_wake_reason_name(reason));
+        config_protocol_set_usb_standby_trace(&s_usb_standby_trace);
     }
     board_set_power_button_wake_mode(false);
     s_usb_standby_active = false;
@@ -1137,6 +1362,8 @@ static void wake_from_usb_standby(void)
     start_boot_animation();
     s_mist_connection_pending = usb_service_is_mounted() ? 1u
         : codex_micro_ble_connected() ? 2u : 0u;
+#else
+    (void)reason;
 #endif
 }
 
@@ -1147,7 +1374,8 @@ static void enter_idle_standby(void)
     clear_pending_gestures(false);
     enter_local_input_ownership();
     usb_service_release_all();
-    codex_micro_set_ble_suspended(true);
+    codex_micro_set_ble_suspended_for_source(
+        true, CODEX_MICRO_BLE_DISCONNECT_STANDBY);
     s_idle_standby_wake_wait = false;
     s_boot_animation_active = false;
     s_round_feedback_active = false;
@@ -1161,6 +1389,7 @@ static void wake_from_idle_standby(void)
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
     idle_standby_model_wake(&s_idle_standby,
                             ticks_to_ms(xTaskGetTickCount()));
+    s_low_battery_notice_due = s_battery_guard.level != BATTERY_GUARD_NORMAL;
     s_idle_standby_wake_wait = true;
     sync_ble_to_usb_data_link();
     leave_local_input_ownership();
@@ -1298,6 +1527,8 @@ static void render_mist_battery(void)
         .a = current_battery_percent(NULL),
         /* The local read-only page is static; retain the USB splash motion. */
         .b = s_battery_splash_active ? 1 : 0,
+        .c = s_battery_splash_active && s_low_battery_locked_standby
+                 ? BOARD_MIST_BATTERY_EMPTY : BOARD_MIST_BATTERY_PERCENT,
         .phase = 1,
     };
     (void)board_display_show_mist(&view);
@@ -1357,8 +1588,7 @@ static void poll_mist_connection_notice(void)
     if (s_mist_connection_pending == 0 || s_idle_standby.active ||
         s_system_select_active || s_quick_config_active ||
         s_local_page != LOCAL_PAGE_NONE || s_pomodoro.state == POMODORO_ALERT ||
-        s_boot_animation_active || s_round_feedback_active ||
-        s_platform_restore_applying) return;
+        s_boot_animation_active || s_round_feedback_active) return;
     s_mist_connection_output = s_mist_connection_pending;
     s_mist_connection_pending = 0;
     s_mist_connection_visible = true;
@@ -2148,9 +2378,9 @@ static void leave_local_input_ownership(void)
 static void poll_local_input_ownership(void)
 {
     if (s_host_output_state != HOST_OUTPUT_WAIT_NEUTRAL ||
-        s_platform_restore_applying || s_system_save_pending ||
+        s_system_save_pending ||
         config_protocol_calibration_ownership_requested() ||
-        !board_inputs_neutral()) {
+        !board_keys_neutral()) {
         return;
     }
     if (config_protocol_calibration_output_interlock_active()) {
@@ -2166,11 +2396,31 @@ static void poll_local_input_ownership(void)
     show_status(NULL);
 }
 
+/*
+ * USB standby skips poll_local_input_ownership(), so a calibration or
+ * diagnostic session that ended there would keep its output interlock
+ * forever: GET_STATUS then reports inputs_neutral=false and the service
+ * tool's idle acceptance fails. Release it once inputs are neutral, without
+ * redrawing or re-enabling input: the unit stays OFF.
+ */
+static void poll_standby_input_ownership(void)
+{
+    if (s_host_output_state != HOST_OUTPUT_WAIT_NEUTRAL ||
+        config_protocol_calibration_ownership_requested() ||
+        !board_keys_neutral()) {
+        return;
+    }
+    if (config_protocol_calibration_output_interlock_active()) {
+        config_protocol_release_calibration_output_interlock();
+    }
+    s_host_output_state = HOST_OUTPUT_ENABLED;
+}
+
 static void set_hid_usage(usb_service_source_t source, uint16_t usage, bool pressed)
 {
     if (usage >= 224 && usage <= 231) {
         usb_service_set_modifier(source, (uint8_t)usage, pressed);
-    } else if (usage <= UINT8_MAX) {
+    } else if (usage != 0 && usage <= UINT8_MAX) {
         usb_service_set_key(source, (uint8_t)usage, pressed);
     }
 }
@@ -2179,10 +2429,22 @@ static void execute_action(const config_action_t *action, bool pressed,
                            usb_service_source_t source)
 {
     if (action->type == CONFIG_ACTION_KEY) {
+        /* A chord goes out like a person types it: modifiers down before the
+         * key, key up before the modifiers, each in its own report. */
+        const bool chord = action->modifier_count > 0 && action->usage != 0;
+        if (!pressed && chord) {
+            set_hid_usage(source, action->usage, false);
+            usb_service_commit_keyboard();
+        }
         for (size_t index = 0; index < action->modifier_count; ++index) {
             usb_service_set_modifier(source, action->modifiers[index], pressed);
         }
-        set_hid_usage(source, action->usage, pressed);
+        if (pressed && chord) {
+            usb_service_commit_keyboard();
+        }
+        if (!(chord && !pressed)) {
+            set_hid_usage(source, action->usage, pressed);
+        }
         usb_service_commit_keyboard();
     } else if (pressed && action->type == CONFIG_ACTION_CONSUMER) {
         usb_service_tap_consumer(action->usage);
@@ -2315,21 +2577,82 @@ static void dispatch_control(board_control_t control, bool pressed)
     dispatch_action_for_control(&action, control, pressed, action.short_name);
 }
 
-/* Gesture output is a complete pulse. Both reports enter the existing USB/BLE
- * keyboard queue, so a double click cannot briefly start dictation first. */
+/* Send one step of a gesture keystroke. Feedback (haptic, key light) follows
+ * the key itself; modifier-only steps change nothing but the HID report. */
+static void run_key_pulse_step(size_t index, key_pulse_step_t step)
+{
+    const board_control_t control = (board_control_t)(BOARD_CONTROL_KEY_8 + index);
+    const config_action_t *action = &s_key_pulse_actions[index];
+    config_action_t part = *action;
+    switch (step) {
+    case KEY_PULSE_STEP_MODIFIERS_DOWN:
+    case KEY_PULSE_STEP_MODIFIERS_UP:
+        part.usage = 0;
+        execute_action(&part, step == KEY_PULSE_STEP_MODIFIERS_DOWN,
+                       (usb_service_source_t)control);
+        break;
+    case KEY_PULSE_STEP_KEY_DOWN:
+        dispatch_action_for_control(action, control, true, action->short_name);
+        break;
+    case KEY_PULSE_STEP_KEY_UP:
+        part.modifier_count = 0;
+        dispatch_action_for_control(&part, control, false, action->short_name);
+        break;
+    case KEY_PULSE_STEP_NONE:
+    default:
+        break;
+    }
+}
+
+/* Release whatever a pending gesture keystroke still holds, right away. */
+static void finish_key_pulses(void)
+{
+    for (size_t index = 0; index < CONFIGURABLE_KEY_GESTURE_COUNT; ++index) {
+        key_pulse_step_t step;
+        while ((step = key_pulse_model_finish(&s_key_pulses[index])) !=
+               KEY_PULSE_STEP_NONE) {
+            run_key_pulse_step(index, step);
+        }
+    }
+}
+
+static void poll_key_pulses(void)
+{
+    const uint32_t now_ms = ticks_to_ms(xTaskGetTickCount());
+    for (size_t index = 0; index < CONFIGURABLE_KEY_GESTURE_COUNT; ++index) {
+        key_pulse_step_t step;
+        while ((step = key_pulse_model_poll(&s_key_pulses[index], now_ms)) !=
+               KEY_PULSE_STEP_NONE) {
+            run_key_pulse_step(index, step);
+        }
+    }
+}
+
+/* Gesture output is one complete keystroke sent like a person types it:
+ * modifiers first, key held KEY_PULSE_HOLD_MS, then released in reverse.
+ * Only a decided gesture starts it, so a double click cannot briefly start
+ * dictation first. */
 static void dispatch_key_gesture(board_control_t control,
                                  key_gesture_result_t result)
 {
     if (result == KEY_GESTURE_NONE) return;
-    config_action_t action = s_key_gesture_actions[control - BOARD_CONTROL_KEY_8];
+    const size_t index = (size_t)(control - BOARD_CONTROL_KEY_8);
+    config_action_t action = s_key_gesture_actions[index];
     action.type = CONFIG_ACTION_KEY;
     if (result == KEY_GESTURE_DOUBLE) {
         action.usage = action.double_usage;
         action.modifier_count = action.double_modifier_count;
         memcpy(action.modifiers, action.double_modifiers, sizeof(action.modifiers));
     }
-    dispatch_action_for_control(&action, control, true, action.short_name);
-    dispatch_action_for_control(&action, control, false, action.short_name);
+    /* A previous keystroke on this key is completed before the next starts. */
+    key_pulse_step_t step;
+    while ((step = key_pulse_model_finish(&s_key_pulses[index])) != KEY_PULSE_STEP_NONE) {
+        run_key_pulse_step(index, step);
+    }
+    s_key_pulse_actions[index] = action;
+    run_key_pulse_step(index, key_pulse_model_start(
+        &s_key_pulses[index], action.modifier_count > 0,
+        ticks_to_ms(xTaskGetTickCount())));
 }
 
 static bool route_key_gesture_action(const board_event_t *event,
@@ -2339,6 +2662,7 @@ static bool route_key_gesture_action(const board_event_t *event,
     if (config_store_has_pending() ||
         (!usb_service_is_mounted() && !codex_micro_ble_connected())) {
         memset(s_key_gestures, 0, sizeof(s_key_gestures));
+        finish_key_pulses();
         return true;
     }
     const size_t index = event->control - BOARD_CONTROL_KEY_8;
@@ -2399,6 +2723,42 @@ static bool route_codex_voice_override_event(const board_event_t *event)
     return true;
 }
 
+/* A selected Power V2 voice action has one physical meaning in Normal and
+ * Codex, regardless of the active Profile. Claude Code keeps its Space key. */
+static bool route_global_voice_event(const board_event_t *event)
+{
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    const codex_micro_mode_t mode = codex_micro_mode();
+    if ((mode != CODEX_MICRO_MODE_NORMAL && mode != CODEX_MICRO_MODE_CODEX) ||
+        (event->control != BOARD_CONTROL_KEY_8 &&
+         !(mode == CODEX_MICRO_MODE_NORMAL && event->control == BOARD_CONTROL_KEY_11))) {
+        return false;
+    }
+    config_action_t action;
+    if (!config_store_get_global_voice_action(&action)) return false;
+    if (event->control == BOARD_CONTROL_KEY_11) {
+        memset(&action, 0, sizeof(action));
+        action.type = CONFIG_ACTION_KEY;
+        action.usage = 40; /* Enter: Normal's separate send key. Codex Key 11 already sends. */
+    }
+    if (action.type == CONFIG_ACTION_KEY_GESTURE) {
+        return route_key_gesture_action(event, &action);
+    }
+    if (event->pressed) {
+        if (s_active_action_valid[event->control] || config_store_has_pending() ||
+            (!usb_service_is_mounted() && !codex_micro_ble_connected())) return true;
+    } else if (!s_active_action_valid[event->control]) {
+        return true;
+    }
+    dispatch_latched_standard_action(event->control, action,
+                                     action.short_name, event->pressed);
+    return true;
+#else
+    (void)event;
+    return false;
+#endif
+}
+
 static void poll_key_gestures(void)
 {
     if ((codex_micro_mode() != CODEX_MICRO_MODE_NORMAL &&
@@ -2409,6 +2769,7 @@ static void poll_key_gestures(void)
         s_local_page != LOCAL_PAGE_NONE || s_pomodoro.state == POMODORO_ALERT ||
         (!usb_service_is_mounted() && !codex_micro_ble_connected())) {
         memset(s_key_gestures, 0, sizeof(s_key_gestures));
+        finish_key_pulses();
         return;
     }
     for (size_t index = 0; index < CONFIGURABLE_KEY_GESTURE_COUNT; ++index) {
@@ -2530,7 +2891,7 @@ static void poll_single_action_joystick(void)
         s_usb_standby_active || s_battery_splash_active || s_idle_standby.active ||
         s_pomodoro.state == POMODORO_ALERT ||
         diagnostic_capture_model_owns_input(&s_diagnostic_capture)) {
-        joystick_single_action_model_reset(&s_single_action_joystick);
+        joystick_single_action_model_reset_latched(&s_single_action_joystick);
         return;
     }
     float angle = 0.0f;
@@ -2538,7 +2899,7 @@ static void poll_single_action_joystick(void)
     board_joystick_diagnostics_t diagnostics;
     if (!board_get_joystick_diagnostics(&diagnostics) ||
         !diagnostics.supported) {
-        joystick_single_action_model_reset(&s_single_action_joystick);
+        joystick_single_action_model_reset_latched(&s_single_action_joystick);
         return;
     }
     const joystick_single_action_result_t result =
@@ -2755,6 +3116,7 @@ static void route_main_event(const board_event_t *event)
     }
     size_t key_index = 0;
     const codex_micro_mode_t mode = codex_micro_mode();
+    if (route_global_voice_event(event)) return;
     /* External dictation does not depend on the official Codex agent link. */
     if (mode == CODEX_MICRO_MODE_CODEX &&
         route_codex_voice_override_event(event)) return;
@@ -2820,6 +3182,13 @@ static void route_main_event(const board_event_t *event)
     dispatch_control(event->control, event->pressed);
 }
 
+/* At least one tick, so a USB service pass always sees the press. */
+static TickType_t synthetic_tap_hold_ticks(void)
+{
+    const TickType_t ticks = pdMS_TO_TICKS(KEY_PULSE_HOLD_MS);
+    return ticks > 0 ? ticks : 1;
+}
+
 static void route_tap(board_control_t control)
 {
     const board_event_t press = {.control = control, .pressed = true};
@@ -2833,7 +3202,7 @@ static void schedule_tap_release(board_control_t control)
         return;
     }
     s_tap_release_pending[control] = true;
-    s_tap_release_wait_poll[control] = true;
+    s_tap_release_at[control] = xTaskGetTickCount() + synthetic_tap_hold_ticks();
 }
 
 static void poll_tap_releases(void)
@@ -2842,9 +3211,9 @@ static void poll_tap_releases(void)
         if (!s_tap_release_pending[control]) {
             continue;
         }
-        /* Guarantee one USB service pass observes the synthesized press. */
-        if (s_tap_release_wait_poll[control]) {
-            s_tap_release_wait_poll[control] = false;
+        /* Hold the synthesized press like a person would (KEY_PULSE_HOLD_MS);
+         * hotkey listeners miss chords that last a single USB poll. */
+        if ((int32_t)(xTaskGetTickCount() - s_tap_release_at[control]) < 0) {
             continue;
         }
         s_tap_release_pending[control] = false;
@@ -2853,6 +3222,7 @@ static void poll_tap_releases(void)
     }
 }
 
+#if !CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
 static const char *mode_change_hint(codex_micro_mode_t mode)
 {
     switch (mode) {
@@ -2867,6 +3237,7 @@ static const char *mode_change_hint(codex_micro_mode_t mode)
         return "KEY MODE";
     }
 }
+#endif
 
 static void handle_double_click_actions(board_control_t control, uint8_t actions)
 {
@@ -2884,11 +3255,10 @@ static void handle_double_click_actions(board_control_t control, uint8_t actions
     if ((actions & DOUBLE_CLICK_ACTION_DOUBLE) == 0) {
         return;
     }
-    const bool matrix12_joystick_mode_toggle =
-        control == BOARD_CONTROL_JOYSTICK_PRESS &&
-        codex_micro_active_key_layout() == CODEX_MICRO_KEY_LAYOUT_MATRIX12;
-    if (control == BOARD_CONTROL_ENCODER_PRESS ||
-        matrix12_joystick_mode_toggle) {
+    /* Only the knob switches modes. A double click on the joystick button is
+     * uncomfortable (the stick sways sideways when pressed down), so it no
+     * longer does, on Matrix12 as on every other layout. */
+    if (control == BOARD_CONTROL_ENCODER_PRESS) {
         const codex_micro_mode_t previous_mode = codex_micro_mode();
         const codex_micro_mode_t mode = codex_micro_toggle_mode();
         if (mode == previous_mode) {
@@ -2919,6 +3289,7 @@ static void handle_double_click_actions(board_control_t control, uint8_t actions
     }
 }
 
+#if !CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
 static void format_timer(char output[12])
 {
     const uint32_t seconds =
@@ -2928,6 +3299,7 @@ static void format_timer(char output[12])
     snprintf(output, 12, "%02u:%02u", (unsigned)(seconds / 60U),
              (unsigned)(seconds % 60U));
 }
+#endif
 
 static void render_local_page(void)
 {
@@ -2949,7 +3321,6 @@ static void render_local_page(void)
             BOARD_ROUND_PAGE_ICON_SYSTEM,
             BOARD_ROUND_PAGE_ICON_HAPTIC,
             BOARD_ROUND_PAGE_ICON_LIGHTING,
-            BOARD_ROUND_PAGE_ICON_STANDBY,
             BOARD_ROUND_PAGE_ICON_RESTART,
         };
         render_mist_carousel(settings_icons, ARRAY_COUNT(settings_icons), s_settings_cursor);
@@ -2968,11 +3339,6 @@ static void render_local_page(void)
         } else {
             render_mist_carousel(system_icons, ARRAY_COUNT(system_icons), windows ? 1u : 0u);
         }
-    } else if (s_local_page == LOCAL_PAGE_STANDBY) {
-        (void)board_display_show_round_standby(
-            STANDBY_MINUTES[s_standby_minutes_index],
-            config_store_get_standby_minutes(),
-            BOARD_ROUND_SETTING_EDITING, s_local_confirm_selected);
     } else if (s_local_page == LOCAL_PAGE_RESTART_CONFIRM) {
         (void)board_display_show_round_icon_choice(
             BOARD_ROUND_PAGE_ICON_BACK, BOARD_ROUND_PAGE_ICON_RESTART,
@@ -2984,8 +3350,6 @@ static void render_local_page(void)
     } else if (s_local_page == LOCAL_PAGE_PROMPT_PALETTE) {
         (void)board_display_show_round_prompt_palette(
             s_prompt_palette_selected_id);
-    } else if (s_local_page == LOCAL_PAGE_STATUS_DETAIL) {
-        render_mist_connection();
     }
 #else
     char value[20];
@@ -2995,20 +3359,11 @@ static void render_local_page(void)
             s_function_cursor, "TURN PRESS SELECT", 0x001F);
     } else if (s_local_page == LOCAL_PAGE_SETTINGS) {
         static const char *const settings_names[] = {
-            "HAPTIC", "LIGHTING", "STANDBY", "RESTART",
+            "HAPTIC", "LIGHTING", "RESTART",
         };
         (void)board_display_show_local(
             "SETTINGS", settings_names[s_settings_cursor],
             "TURN TO SELECT", "PRESS TO OPEN", 0x001F);
-    } else if (s_local_page == LOCAL_PAGE_STANDBY) {
-        const uint8_t minutes = STANDBY_MINUTES[s_standby_minutes_index];
-        if (minutes == 0) {
-            snprintf(value, sizeof(value), "OFF");
-        } else {
-            snprintf(value, sizeof(value), "%u MIN", (unsigned)minutes);
-        }
-        (void)board_display_show_local("STANDBY", value,
-                                       "TURN SET TIME", "PRESS SAVE", 0xFD20);
     } else if (s_local_page == LOCAL_PAGE_RESTART_CONFIRM) {
         (void)board_display_show_two_choice(
             "RESTART DEVICE", "CANCEL", "RESTART",
@@ -3101,7 +3456,7 @@ static void enter_os_settings(bool from_settings)
     s_quick_config_active = false;
     s_quick_config_pending_footer = NULL;
     s_encoder_pressed = false;
-    s_platform_restore_needed = false;
+    s_platform_setup_needed = false;
     s_system_save_pending = false;
     s_system_return_to_settings = from_settings;
     const config_platform_t saved = config_store_get_platform();
@@ -3115,7 +3470,6 @@ static void enter_os_settings(bool from_settings)
 static void finish_os_settings_save(void)
 {
     s_system_save_pending = false;
-    s_context_preference = config_store_get_context_platform(s_platform_context);
     pulse_save_feedback();
     s_encoder_pressed = false;
     s_local_last_input_at = xTaskGetTickCount();
@@ -3177,14 +3531,7 @@ static void return_local_ui_one_level(void)
         return;
     }
 
-    if (s_local_page == LOCAL_PAGE_STATUS_DETAIL) {
-#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
-        if (s_mist_status_return_function) show_function_center(s_function_cursor);
-        else exit_local_page();
-#else
-        exit_local_page();
-#endif
-    } else if (s_local_page == LOCAL_PAGE_PROMPT_PALETTE) {
+    if (s_local_page == LOCAL_PAGE_PROMPT_PALETTE) {
         exit_local_page();
     } else if (s_local_page == LOCAL_PAGE_BATTERY) {
         show_function_center(2);
@@ -3202,8 +3549,7 @@ static void return_local_ui_one_level(void)
         } else {
             exit_local_page();
         }
-    } else if (s_local_page == LOCAL_PAGE_STANDBY ||
-               s_local_page == LOCAL_PAGE_RESTART_CONFIRM) {
+    } else if (s_local_page == LOCAL_PAGE_RESTART_CONFIRM) {
         s_local_page = LOCAL_PAGE_SETTINGS;
         render_local_page();
     } else if (s_local_page == LOCAL_PAGE_TIMER_CANCEL) {
@@ -3295,35 +3641,11 @@ static void confirm_local_page(void)
         } else if (setting == 1) {
             s_local_page = LOCAL_PAGE_NONE;
             enter_quick_config(QUICK_CONFIG_ITEM_LIGHTING);
-        } else if (setting == 2) {
-            s_local_page = LOCAL_PAGE_STANDBY;
-            s_standby_minutes_index = nearest_level(
-                STANDBY_MINUTES, ARRAY_COUNT(STANDBY_MINUTES),
-                config_store_get_standby_minutes());
-            s_local_confirm_selected = true;
-            render_local_page();
         } else {
             s_local_page = LOCAL_PAGE_RESTART_CONFIRM;
             s_local_confirm_selected = false;
             render_local_page();
         }
-    } else if (s_local_page == LOCAL_PAGE_STANDBY) {
-        const uint8_t minutes = STANDBY_MINUTES[s_standby_minutes_index];
-        const esp_err_t saved = config_store_set_standby_minutes(minutes);
-        if (saved == ESP_OK) {
-            idle_standby_model_set_timeout(
-                &s_idle_standby, minutes,
-                ticks_to_ms(xTaskGetTickCount()));
-        }
-        s_local_page = LOCAL_PAGE_NONE;
-        leave_local_input_ownership();
-        if (saved == ESP_OK) {
-            pulse_save_feedback();
-        }
-        show_feedback(saved == ESP_OK ? STATUS_FEEDBACK_SUCCESS
-                                     : STATUS_FEEDBACK_ERROR,
-                      saved == ESP_OK ? "STANDBY SAVED"
-                                      : "STANDBY SAVE ERROR");
     } else if (s_local_page == LOCAL_PAGE_RESTART_CONFIRM) {
         if (s_local_confirm_selected) {
             action_engine_request_restart();
@@ -3382,7 +3704,6 @@ static void confirm_local_page(void)
 static void select_local_action(bool confirm_selected)
 {
     if ((s_local_page != LOCAL_PAGE_TIMER_SETUP &&
-         s_local_page != LOCAL_PAGE_STANDBY &&
          s_local_page != LOCAL_PAGE_RESTART_CONFIRM) ||
         s_local_confirm_selected == confirm_selected) {
         return;
@@ -3395,7 +3716,6 @@ static void select_local_action(bool confirm_selected)
 static void activate_local_action(void)
 {
     if ((s_local_page == LOCAL_PAGE_TIMER_SETUP ||
-         s_local_page == LOCAL_PAGE_STANDBY ||
          s_local_page == LOCAL_PAGE_RESTART_CONFIRM) &&
         !s_local_confirm_selected) {
         if (s_local_page == LOCAL_PAGE_RESTART_CONFIRM) {
@@ -3412,14 +3732,12 @@ static void activate_local_action(void)
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
 static bool handle_mist_read_event(const board_event_t *event)
 {
-    const bool readable = s_local_page == LOCAL_PAGE_STATUS_DETAIL ||
-        s_local_page == LOCAL_PAGE_SYSTEM ||
+    const bool readable = s_local_page == LOCAL_PAGE_SYSTEM ||
         (s_quick_config_active && !round_level_slice_active());
     if (!readable) return false;
     const bool vertical = event->control == BOARD_CONTROL_JOYSTICK_UP ||
                           event->control == BOARD_CONTROL_JOYSTICK_DOWN;
-    if (s_mist_read_index == 0 && !vertical &&
-        s_local_page != LOCAL_PAGE_STATUS_DETAIL) return false;
+    if (s_mist_read_index == 0 && !vertical) return false;
     s_local_last_input_at = xTaskGetTickCount();
     bool redraw = false;
     if (event->pressed && vertical) {
@@ -3492,19 +3810,6 @@ static void handle_local_event(const board_event_t *event)
     if (!event->pressed) {
         return;
     }
-#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
-    if (s_local_page == LOCAL_PAGE_FUNCTION &&
-        (event->control == BOARD_CONTROL_JOYSTICK_UP ||
-         event->control == BOARD_CONTROL_JOYSTICK_DOWN)) {
-        s_mist_connection_output = usb_service_is_mounted() ? 1u
-            : codex_micro_ble_connected() ? 2u : 0u;
-        s_mist_status_return_function = true;
-        s_mist_read_index = 0;
-        s_local_page = LOCAL_PAGE_STATUS_DETAIL;
-        render_local_page();
-        return;
-    }
-#endif
     if (s_local_page == LOCAL_PAGE_PROMPT_PALETTE) {
         uint8_t prompt_id = 0u;
         if (event->control >= BOARD_CONTROL_JOYSTICK_UP &&
@@ -3574,12 +3879,6 @@ static void handle_local_event(const board_event_t *event)
         }
         return;
     }
-    if (s_local_page == LOCAL_PAGE_STANDBY &&
-        (event->control == BOARD_CONTROL_JOYSTICK_LEFT ||
-         event->control == BOARD_CONTROL_JOYSTICK_RIGHT)) {
-        select_local_action(event->control == BOARD_CONTROL_JOYSTICK_RIGHT);
-        return;
-    }
     if (s_local_page == LOCAL_PAGE_RESTART_CONFIRM &&
         (event->control == BOARD_CONTROL_JOYSTICK_LEFT ||
          event->control == BOARD_CONTROL_JOYSTICK_RIGHT)) {
@@ -3616,9 +3915,9 @@ static void handle_local_event(const board_event_t *event)
     } else if (s_local_page == LOCAL_PAGE_SETTINGS) {
         const uint8_t previous = s_settings_cursor;
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
-        const uint8_t settings_count = 5u;
-#else
         const uint8_t settings_count = 4u;
+#else
+        const uint8_t settings_count = 3u;
 #endif
         if (encoder_rotation_control(event->control)) {
             s_settings_cursor =
@@ -3635,19 +3934,6 @@ static void handle_local_event(const board_event_t *event)
             ? wrap_discrete_selection(previous, 2u, delta) : (delta > 0 ? 1u : 0u);
         s_system_selection = selected == 0u ? CONFIG_PLATFORM_MACOS : CONFIG_PLATFORM_WINDOWS_LINUX;
         changed = previous != selected;
-    } else if (s_local_page == LOCAL_PAGE_STANDBY) {
-        if (event->control != BOARD_CONTROL_ENCODER_CCW &&
-            event->control != BOARD_CONTROL_ENCODER_CW) {
-            return;
-        }
-        const size_t previous = s_standby_minutes_index;
-        if (delta > 0 && s_standby_minutes_index + 1 <
-                             ARRAY_COUNT(STANDBY_MINUTES)) {
-            ++s_standby_minutes_index;
-        } else if (delta < 0 && s_standby_minutes_index > 0) {
-            --s_standby_minutes_index;
-        }
-        changed = previous != s_standby_minutes_index;
     } else if (s_local_page == LOCAL_PAGE_TIMER_SETUP) {
         if (event->control != BOARD_CONTROL_ENCODER_CCW &&
             event->control != BOARD_CONTROL_ENCODER_CW) {
@@ -3722,7 +4008,7 @@ static void poll_pomodoro(void)
         show_status(NULL);
     }
     if (s_pomodoro.state == POMODORO_ALERT && !s_alert_ack_armed &&
-        board_inputs_neutral()) {
+        board_keys_neutral()) {
         s_alert_ack_armed = true;
     }
 }
@@ -3730,6 +4016,8 @@ static void poll_pomodoro(void)
 static void poll_codex_attention_notification(void)
 {
     static bool previous_claude;
+    static bool previous_desktop;
+    static uint32_t previous_desktop_reset;
     const bool claude = codex_micro_mode() == CODEX_MICRO_MODE_CLAUDE_CODE;
     claude_status_model_t snapshot = {0};
     if (claude) {
@@ -3739,12 +4027,33 @@ static void poll_codex_attention_notification(void)
         cancel_codex_attention_haptic();
     }
     previous_claude = claude;
+    desktop_agent_model_t desktop;
+    desktop_agent_status_get(&desktop);
+    const bool desktop_owned =
+        codex_micro_mode() == CODEX_MICRO_MODE_NORMAL && desktop.claimed;
+    /* A lease ending or restarting cancels its unfinished reminder. */
+    if (desktop_owned != previous_desktop ||
+        (desktop_owned && desktop.reset_sequence != previous_desktop_reset)) {
+        cancel_codex_attention_haptic();
+    }
+    previous_desktop = desktop_owned;
+    previous_desktop_reset = desktop.reset_sequence;
+    const bool desktop_visual_changed =
+        desktop_owned && desktop_agent_status_take_visual_change(true);
     const codex_micro_attention_t notifications =
         codex_micro_take_attention_notification();
-    /* Visible reminders wake the lighting even when their motor channel is off. */
-    if (notifications != CODEX_ATTENTION_NONE) light_idle_note_activity();
+    /* Visible reminders and real desktop state changes wake the lighting even
+     * when the motor channel is off; heartbeats alone do not. */
+    if (desktop_visual_changed || notifications != CODEX_ATTENTION_NONE) {
+        if (s_idle_standby.active) {
+            wake_from_idle_standby();
+        }
+        light_idle_note_activity();
+    }
     const bool enabled =
-        (claude ? snapshot.active : codex_micro_connected()) &&
+        (claude ? snapshot.active
+                : desktop_owned ? desktop.active || codex_micro_connected()
+                                : codex_micro_connected()) &&
         !s_shutdown_active && !s_usb_standby_active &&
         !s_battery_splash_active &&
         !diagnostic_capture_model_owns_input(&s_diagnostic_capture) &&
@@ -3810,18 +4119,13 @@ static board_control_t function_center_control(void)
                : BOARD_CONTROL_KEY_7;
 }
 
-static uint8_t ble_slot_for_combo_control(board_control_t control)
+/*
+ * One key does all of Bluetooth (2026-11-12): K8 while K3 is held.
+ * The user never picks a host number; K9 and K10 are ordinary keys again.
+ */
+static bool ble_host_key_control(board_control_t control)
 {
-    switch (control) {
-    case BOARD_CONTROL_KEY_8:
-        return 1u;
-    case BOARD_CONTROL_KEY_9:
-        return 2u;
-    case BOARD_CONTROL_KEY_10:
-        return 3u;
-    default:
-        return 0u;
-    }
+    return control == BOARD_CONTROL_KEY_8;
 }
 
 static void reset_function_key_gesture(void)
@@ -3838,7 +4142,6 @@ static void reset_prompt_palette_key_gesture(void)
 {
     s_prompt_palette_key_gesture_active = false;
     s_prompt_palette_key_action_pressed = false;
-    s_prompt_palette_key_feedback_sent = false;
 }
 
 static board_round_ble_slot_state_t ble_slot_display_state(uint8_t slot)
@@ -3874,24 +4177,251 @@ static void show_ble_slot_progress(uint8_t slot, uint8_t progress_percent)
 #endif
 }
 
+/* The round text page leaves an empty bottom row blank and rejects NULL. */
+#define BLE_HOST_BLANK_ROW ""
+/* How the pages name the Bluetooth key. No page names a host number. Wording
+ * is interim (2026-11-12); the designer's replaces
+ * it in a later build. */
+#define BLE_HOST_KEY_NAME "K3+K8"
+
+/* Waiting-to-pair page; with a computer to go back to, the key that does it. */
+static void show_ble_pairing_window(bool can_go_back)
+{
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    s_mist_connection_visible = false;
+    start_round_feedback();
+    (void)board_display_show_local(
+        "PAIRING", "NEW PC", can_go_back ? BLE_HOST_KEY_NAME : "",
+        can_go_back ? "BACK" : BLE_HOST_BLANK_ROW, 0);
+#else
+    (void)can_go_back;
+#endif
+}
+
+/* Bluetooth went back to the computer it was on before the pairing window. */
+static void show_ble_back_page(void)
+{
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    s_mist_connection_visible = false;
+    start_round_feedback();
+    (void)board_display_show_local("BACK", "LAST PC", "RESTORED",
+                                   BLE_HOST_BLANK_ROW, 0);
+#endif
+}
+
+/* Three computers are remembered: one has to be forgotten in the app. */
+static void show_ble_hosts_full(void)
+{
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    s_mist_connection_visible = false;
+    start_round_feedback();
+    (void)board_display_show_local("NEW PC", "FULL", "FORGET 1", "IN APP", 0);
+#endif
+}
+
+/* After the key selected a slot: the computer's page, or waiting to pair. */
+static void show_ble_host_selected(uint8_t slot)
+{
+    uint8_t return_slot = 0u;
+    if (codex_micro_ble_pairing_window(NULL, &return_slot)) {
+        show_ble_pairing_window(return_slot != 0u);
+    } else if (!codex_micro_ble_slot_paired(slot)) {
+        /* No computer is remembered yet, so there is nowhere to go back to. */
+        show_ble_pairing_window(false);
+    } else {
+        show_ble_slot(slot);
+    }
+}
+
+typedef enum {
+    BLE_HOST_HINT_REDIRECT,
+    BLE_HOST_HINT_NEW_HOST,
+    BLE_HOST_HINT_REAUTH,
+    BLE_HOST_HINT_COUNT,
+} ble_host_hint_t;
+
+static struct {
+    bool shown;
+    uint8_t slot;
+    TickType_t shown_at;
+} s_ble_host_hints[BLE_HOST_HINT_COUNT];
+
+/*
+ * A refused computer retries about every two seconds.  Each hint (its kind
+ * and the host number it names) shows once per BLE_HOST_HINT_REPEAT_MS, and
+ * never while the pairing window is open, where it would cover the
+ * waiting-to-pair page.
+ */
+static bool ble_host_hint_due(ble_host_hint_t hint, uint8_t slot)
+{
+    if (codex_micro_ble_pairing_window(NULL, NULL)) {
+        return false;
+    }
+    const TickType_t now = xTaskGetTickCount();
+    if (s_ble_host_hints[hint].shown && s_ble_host_hints[hint].slot == slot &&
+        now - s_ble_host_hints[hint].shown_at <
+            pdMS_TO_TICKS(BLE_HOST_HINT_REPEAT_MS)) {
+        return false;
+    }
+    s_ble_host_hints[hint].shown = true;
+    s_ble_host_hints[hint].slot = slot;
+    s_ble_host_hints[hint].shown_at = now;
+    return true;
+}
+
 static void poll_ble_slot_redirect(void)
 {
     if (s_boot_animation_active || s_battery_splash_active) {
         return;
     }
     uint8_t slot = 0u;
-    if (!codex_micro_take_ble_slot_redirect(&slot)) {
+    if (!codex_micro_take_ble_slot_redirect(&slot) ||
+        !ble_host_hint_due(BLE_HOST_HINT_REDIRECT, slot)) {
         return;
     }
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
-    char target[14];
-    snprintf(target, sizeof(target), "USE HOST %u", (unsigned)slot);
     s_mist_connection_visible = false;
     start_round_feedback();
-    (void)board_display_show_local("BLUETOOTH", target, "", "PAIRED", 0);
-#else
-    (void)slot;
+    (void)board_display_show_local("SWITCH", "TAP " BLE_HOST_KEY_NAME, "",
+                                   "PAIRED", 0);
 #endif
+}
+
+/*
+ * A computer this device does not know was refused.  Point at the key hold
+ * that adds it, or at the desktop app when three are already remembered.
+ */
+static void poll_ble_peer_rejection(void)
+{
+    if (s_boot_animation_active || s_battery_splash_active) {
+        return;
+    }
+    uint8_t slot = 0u;
+    if (!codex_micro_take_ble_peer_rejection(&slot)) {
+        return;
+    }
+    const uint8_t free_slot = codex_micro_ble_free_slot();
+    if (!ble_host_hint_due(BLE_HOST_HINT_NEW_HOST, free_slot)) {
+        return;
+    }
+    if (free_slot == 0u) {
+        show_ble_hosts_full();
+        return;
+    }
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    s_mist_connection_visible = false;
+    start_round_feedback();
+    (void)board_display_show_local("NEW PC", "HOLD " BLE_HOST_KEY_NAME,
+                                   "TO ADD", BLE_HOST_BLANK_ROW, 0);
+#endif
+}
+
+/*
+ * The slot's own host failed to encrypt: its keys no longer match ours.  The
+ * way out is on the computer: remove this device there, then connect again.
+ */
+static void poll_ble_reauth_needed(void)
+{
+    if (s_boot_animation_active || s_battery_splash_active) {
+        return;
+    }
+    uint8_t slot = 0u;
+    if (!codex_micro_take_ble_reauth_needed(&slot) ||
+        !ble_host_hint_due(BLE_HOST_HINT_REAUTH, slot)) {
+        return;
+    }
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    s_mist_connection_visible = false;
+    start_round_feedback();
+    (void)board_display_show_local("RE-PAIR", "THIS PC", "FORGET ME", "ON PC",
+                                   0);
+#endif
+}
+
+/* The pairing window ran out and Bluetooth went back to the remembered host. */
+static void poll_ble_pairing_return(void)
+{
+    if (s_boot_animation_active || s_battery_splash_active) {
+        return;
+    }
+    uint8_t slot = 0u;
+    if (!codex_micro_take_ble_pairing_return(&slot)) {
+        return;
+    }
+    show_ble_back_page();
+}
+
+/* Where a new computer goes: the active slot while it is empty (a pairing
+ * window, or nothing remembered yet), else the lowest empty slot. 0 when
+ * three computers are remembered. */
+static uint8_t ble_host_slot_to_add(void)
+{
+    const uint8_t active = codex_micro_active_ble_slot();
+    return codex_micro_ble_slot_paired(active) ? codex_micro_ble_free_slot()
+                                               : active;
+}
+
+/*
+ * The Bluetooth key.  A short press moves to the next remembered computer;
+ * with no other computer it waits for a new one, and pressed again while
+ * waiting it goes back.  Held (add), it always waits for a new computer.
+ * Nothing here forgets a computer.
+ */
+static void apply_ble_host_key(board_control_t control, bool add)
+{
+    uint8_t return_slot = 0u;
+    const bool waiting = codex_micro_ble_pairing_window(NULL, &return_slot);
+    const bool back = !add && waiting && return_slot != 0u;
+    uint8_t slot = back ? return_slot : 0u;
+    if (!add && !back) {
+        slot = codex_micro_ble_next_host_slot();
+    }
+    if (slot == 0u) {
+        slot = ble_host_slot_to_add();
+    }
+    pulse_navigation_feedback(control);
+    if (slot == 0u) {
+        show_ble_hosts_full();
+        return;
+    }
+    if (codex_micro_select_ble_slot_from(
+            slot, CODEX_MICRO_BLE_SLOT_SOURCE_KEY) != ESP_OK) {
+        show_feedback(STATUS_FEEDBACK_ERROR, "BLE SLOT FAILED");
+        return;
+    }
+    if (back) {
+        show_ble_back_page();
+    } else {
+        show_ble_host_selected(slot);
+    }
+}
+
+/* The Bluetooth key held long enough: add a computer, once per press. */
+static void poll_ble_host_key(void)
+{
+    if (s_ble_host_key_control == BOARD_CONTROL_COUNT ||
+        s_ble_host_key_hold_done ||
+        xTaskGetTickCount() - s_ble_host_key_pressed_at <
+            pdMS_TO_TICKS(BLE_ADD_HOST_HOLD_MS)) {
+        return;
+    }
+    s_ble_host_key_hold_done = true;
+    apply_ble_host_key(s_ble_host_key_control, true);
+}
+
+static void poll_ble_slot_clear_result(void)
+{
+    uint8_t slot = 0u;
+    esp_err_t error = ESP_OK;
+    if (!codex_micro_take_ble_slot_clear_result(&slot, &error)) {
+        return;
+    }
+    if (error == ESP_OK) {
+        pulse_save_feedback();
+        show_ble_slot_progress(slot, 100u);
+    } else {
+        show_feedback(STATUS_FEEDBACK_ERROR, "BLE SLOT CLEAR FAILED");
+    }
 }
 
 static bool standard_control_active_before_function_key(void)
@@ -3923,8 +4453,6 @@ static bool handle_prompt_palette_key_gesture(const board_event_t *event)
             s_prompt_palette_key_gesture_active = true;
             s_prompt_palette_key_action_pressed = false;
             s_prompt_palette_key_pressed_at = xTaskGetTickCount();
-            pulse_control_press_feedback(event->control);
-            s_prompt_palette_key_feedback_sent = true;
             return true;
         }
         if (!s_prompt_palette_key_gesture_active) {
@@ -3980,20 +4508,17 @@ static void route_function_key(bool pressed)
 static void schedule_function_key_release(void)
 {
     s_function_key_release_pending = true;
-    s_function_key_release_at = xTaskGetTickCount() + pdMS_TO_TICKS(1);
+    s_function_key_release_at = xTaskGetTickCount() + synthetic_tap_hold_ticks();
 }
 
 static bool handle_function_key_gesture(const board_event_t *event)
 {
-    if (event->control == s_ble_slot_combo_control) {
+    if (event->control == s_ble_host_key_control) {
         if (!event->pressed) {
-            if (!s_ble_slot_clear_fired && s_ble_slot_combo_slot != 0u) {
-                show_ble_slot(s_ble_slot_combo_slot);
+            s_ble_host_key_control = BOARD_CONTROL_COUNT;
+            if (!s_ble_host_key_hold_done) {
+                apply_ble_host_key(event->control, false);
             }
-            s_ble_slot_combo_control = BOARD_CONTROL_COUNT;
-            s_ble_slot_combo_slot = 0u;
-            s_ble_slot_clear_fired = false;
-            s_ble_slot_progress_percent = 0u;
         }
         return true;
     }
@@ -4042,9 +4567,6 @@ static bool handle_function_key_gesture(const board_event_t *event)
         if (!s_function_key_gesture_active) {
             return false;
         }
-        s_ble_slot_combo_slot = 0u;
-        s_ble_slot_clear_fired = false;
-        s_ble_slot_progress_percent = 0u;
         if (s_function_key_local_navigation &&
             !s_function_key_center_opened) {
             if (xTaskGetTickCount() - s_function_key_pressed_at >=
@@ -4081,21 +4603,14 @@ static bool handle_function_key_gesture(const board_event_t *event)
          */
         return !local_ui_home_shortcut_active();
     }
-    const uint8_t ble_slot = ble_slot_for_combo_control(event->control);
-    if (ble_slot != 0u && event->pressed) {
+    if (ble_host_key_control(event->control) && event->pressed) {
         s_function_key_gesture_combo = true;
-        s_ble_slot_combo_control = event->control;
-        s_ble_slot_combo_slot = ble_slot;
-        s_ble_slot_combo_pressed_at = xTaskGetTickCount();
-        s_ble_slot_clear_fired = false;
-        s_ble_slot_progress_percent = 0u;
-        const esp_err_t result = codex_micro_select_ble_slot(ble_slot);
-        pulse_navigation_feedback(event->control);
-        if (result == ESP_OK) {
-            show_ble_slot_progress(ble_slot, 0u);
-        } else {
-            show_feedback(STATUS_FEEDBACK_ERROR, "BLE SLOT FAILED");
-        }
+        /* It acts on release (switch) or once held long enough (add, see
+         * poll_ble_host_key), so one press is one action however the press
+         * is reported. */
+        s_ble_host_key_control = event->control;
+        s_ble_host_key_pressed_at = xTaskGetTickCount();
+        s_ble_host_key_hold_done = false;
         return true;
     }
     if (event->pressed) {
@@ -4120,32 +4635,6 @@ static void poll_function_key_release(void)
 
 static void poll_function_key_gesture(void)
 {
-    if (s_ble_slot_combo_slot != 0u && !s_ble_slot_clear_fired) {
-        const TickType_t elapsed =
-            xTaskGetTickCount() - s_ble_slot_combo_pressed_at;
-        const uint32_t elapsed_ms = ticks_to_ms(elapsed);
-        const uint8_t raw_progress = elapsed_ms >= BLE_SLOT_CLEAR_HOLD_MS
-            ? 100u
-            : (uint8_t)((elapsed_ms * 100u) / BLE_SLOT_CLEAR_HOLD_MS);
-        const uint8_t progress = raw_progress >= 100u
-            ? 100u : (uint8_t)((raw_progress / 5u) * 5u);
-        if (progress != s_ble_slot_progress_percent) {
-            s_ble_slot_progress_percent = progress;
-            show_ble_slot_progress(s_ble_slot_combo_slot, progress);
-        }
-        if (progress >= 100u) {
-            s_ble_slot_clear_fired = true;
-            const esp_err_t result =
-                codex_micro_clear_ble_slot(s_ble_slot_combo_slot);
-            pulse_save_feedback();
-            if (result == ESP_OK) {
-                show_ble_slot_progress(s_ble_slot_combo_slot, 100u);
-            } else {
-                show_feedback(STATUS_FEEDBACK_ERROR,
-                              "BLE SLOT CLEAR FAILED");
-            }
-        }
-    }
     if (!s_function_key_gesture_active) {
         return;
     }
@@ -4168,14 +4657,12 @@ static void reset_mode_sensitive_input_state(void)
 {
     host_action_events_reset();
     memset(s_key_gestures, 0, sizeof(s_key_gestures));
+    finish_key_pulses();
     macro_cancel();
     usb_service_release_all();
     memset(s_active_action_valid, 0, sizeof(s_active_action_valid));
     s_function_key_release_pending = false;
-    s_ble_slot_combo_control = BOARD_CONTROL_COUNT;
-    s_ble_slot_combo_slot = 0u;
-    s_ble_slot_clear_fired = false;
-    s_ble_slot_progress_percent = 0u;
+    s_ble_host_key_control = BOARD_CONTROL_COUNT;
     memset(s_tap_release_pending, 0, sizeof(s_tap_release_pending));
     reset_function_key_gesture();
     reset_prompt_palette_key_gesture();
@@ -4184,13 +4671,49 @@ static void reset_mode_sensitive_input_state(void)
     encoder_haptic_model_init(&s_encoder_haptic);
     joystick_radial_haptic_model_init(&s_joystick_radial_haptic);
     prompt_joystick_model_init(&s_prompt_joystick);
-    joystick_single_action_model_reset(&s_single_action_joystick);
+    joystick_single_action_model_reset_latched(&s_single_action_joystick);
     s_encoder_direct_press = false;
     s_joystick_direct_press = false;
     s_joystick_direction_active = false;
     eda_canvas_pan_model_reset(&s_eda_canvas_pan);
     s_encoder_motion_count = 0;
     s_joystick_excursions = 0;
+}
+
+static void poll_joystick_suspect(void)
+{
+    const bool suspect = board_joystick_suspect();
+    if (suspect == s_joystick_suspect) {
+        return;
+    }
+    s_joystick_suspect = suspect;
+    if (suspect) {
+        for (board_control_t control = BOARD_CONTROL_JOYSTICK_UP;
+             control <= BOARD_CONTROL_JOYSTICK_RIGHT; ++control) {
+            const board_event_t release = {
+                .control = control,
+                .pressed = false,
+            };
+            route_main_event(&release);
+        }
+        prompt_joystick_model_init(&s_prompt_joystick);
+        joystick_single_action_model_reset_latched(&s_single_action_joystick);
+        joystick_radial_haptic_model_init(&s_joystick_radial_haptic);
+        eda_canvas_pan_model_reset(&s_eda_canvas_pan);
+        s_joystick_direction_active = false;
+        s_joystick_excursions = 0;
+    }
+    if (!s_shutdown_active && !s_usb_standby_active &&
+        !s_idle_standby.active && !s_battery_splash_active &&
+        !s_boot_animation_active && !s_system_select_active &&
+        !s_quick_config_active && s_local_page == LOCAL_PAGE_NONE &&
+        s_pomodoro.state != POMODORO_ALERT
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+        && !s_round_feedback_active && !s_mist_connection_visible
+#endif
+        ) {
+        show_status(suspect ? "CALIBRATE JOYSTICK" : NULL);
+    }
 }
 
 static void publish_diagnostic_capture_status(void)
@@ -4220,17 +4743,28 @@ static bool diagnostic_control_active(board_control_t control)
     return false;
 }
 
+/* USB standby, the charge splash and local pages are allowed, see
+ * diagnostic_capture_start_allowed() in config_protocol.c. */
+static bool s_diagnostic_borrowed_local_ui;
+
 static bool diagnostic_capture_can_start_now(void)
 {
     return (s_host_output_state == HOST_OUTPUT_ENABLED ||
             s_host_output_state == HOST_OUTPUT_DIAGNOSTIC_WAIT_NEUTRAL ||
-            s_host_output_state == HOST_OUTPUT_WAIT_NEUTRAL) &&
-           s_local_page == LOCAL_PAGE_NONE && !s_quick_config_active &&
-           !s_shutdown_active && !s_usb_standby_active &&
-           !s_battery_splash_active && !s_idle_standby.active &&
-           !firmware_update_is_active() &&
+            s_host_output_state == HOST_OUTPUT_WAIT_NEUTRAL ||
+            s_host_output_state == HOST_OUTPUT_LOCAL_UI) &&
+           !s_quick_config_active && !s_shutdown_active &&
+           !s_idle_standby.active && !firmware_update_is_active() &&
            !config_protocol_calibration_ownership_requested();
 }
+
+/*
+ * Calibration may borrow a local page's input (first-boot system selection)
+ * and run during USB standby or the charge splash (a factory unit that has
+ * never been switched on). Neither state changes: the page gets its input
+ * back and an OFF unit stays OFF.
+ */
+static bool s_calibration_borrowed_local_ui;
 
 static void poll_calibration_ownership(void)
 {
@@ -4239,13 +4773,14 @@ static void poll_calibration_ownership(void)
         if ((s_host_output_state != HOST_OUTPUT_ENABLED &&
              s_host_output_state != HOST_OUTPUT_DIAGNOSTIC &&
              s_host_output_state != HOST_OUTPUT_DIAGNOSTIC_WAIT_NEUTRAL &&
-             s_host_output_state != HOST_OUTPUT_WAIT_NEUTRAL) ||
-            s_local_page != LOCAL_PAGE_NONE || s_quick_config_active ||
-            s_shutdown_active || s_usb_standby_active ||
-            s_battery_splash_active || s_idle_standby.active ||
-            firmware_update_is_active()) {
+             s_host_output_state != HOST_OUTPUT_WAIT_NEUTRAL &&
+             s_host_output_state != HOST_OUTPUT_LOCAL_UI) ||
+            s_quick_config_active || s_shutdown_active ||
+            s_idle_standby.active || firmware_update_is_active()) {
             return;
         }
+        s_calibration_borrowed_local_ui =
+            s_host_output_state == HOST_OUTPUT_LOCAL_UI;
         reset_mode_sensitive_input_state();
         codex_micro_set_input_suppressed(true);
         if (diagnostic_capture_model_owns_input(&s_diagnostic_capture)) {
@@ -4255,6 +4790,23 @@ static void poll_calibration_ownership(void)
         }
         s_host_output_state = HOST_OUTPUT_CALIBRATION;
         config_protocol_set_calibration_ownership(true);
+    } else if (!requested && s_host_output_state == HOST_OUTPUT_CALIBRATION &&
+               s_calibration_borrowed_local_ui) {
+        /* Hand the input back to the page calibration interrupted. Host
+         * output stays suppressed there; leaving the page later goes through
+         * the normal wait-for-neutral path. */
+        s_calibration_borrowed_local_ui = false;
+        config_protocol_set_calibration_ownership(false);
+        if (config_protocol_calibration_output_interlock_active()) {
+            config_protocol_release_calibration_output_interlock();
+        }
+        s_host_output_state = HOST_OUTPUT_LOCAL_UI;
+        reset_mode_sensitive_input_state();
+        if (s_local_page != LOCAL_PAGE_NONE) {
+            render_local_page();
+        } else if (s_system_select_active) {
+            render_system_select(NULL);
+        }
     } else if (!requested &&
                config_protocol_calibration_output_interlock_active() &&
                s_host_output_state != HOST_OUTPUT_WAIT_NEUTRAL &&
@@ -4292,6 +4844,9 @@ static void process_diagnostic_capture_request(void)
             if (first_start ||
                 s_host_output_state == HOST_OUTPUT_DIAGNOSTIC_WAIT_NEUTRAL ||
                 s_host_output_state == HOST_OUTPUT_WAIT_NEUTRAL) {
+                if (s_host_output_state == HOST_OUTPUT_LOCAL_UI) {
+                    s_diagnostic_borrowed_local_ui = true;
+                }
                 reset_mode_sensitive_input_state();
                 codex_micro_set_input_suppressed(true);
                 s_host_output_state = HOST_OUTPUT_DIAGNOSTIC;
@@ -4345,14 +4900,33 @@ static void poll_diagnostic_capture(void)
     if (before != DIAGNOSTIC_CAPTURE_INACTIVE &&
         s_diagnostic_capture.state == DIAGNOSTIC_CAPTURE_INACTIVE &&
         s_host_output_state == HOST_OUTPUT_DIAGNOSTIC_WAIT_NEUTRAL) {
-        if (config_protocol_calibration_output_interlock_active()) {
-            s_host_output_state = HOST_OUTPUT_WAIT_NEUTRAL;
-        } else {
-            s_host_output_state = HOST_OUTPUT_ENABLED;
-            codex_micro_set_input_suppressed(false);
-        }
         s_diagnostic_encoder_press_active = false;
-        show_status(NULL);
+        if (s_diagnostic_borrowed_local_ui) {
+            /* Give the interrupted page its input and frame back. */
+            s_diagnostic_borrowed_local_ui = false;
+            if (config_protocol_calibration_output_interlock_active()) {
+                config_protocol_release_calibration_output_interlock();
+            }
+            s_host_output_state = HOST_OUTPUT_LOCAL_UI;
+            if (s_local_page != LOCAL_PAGE_NONE) {
+                render_local_page();
+            } else if (s_system_select_active) {
+                render_system_select(NULL);
+            }
+        } else {
+            if (config_protocol_calibration_output_interlock_active()) {
+                s_host_output_state = HOST_OUTPUT_WAIT_NEUTRAL;
+            } else {
+                s_host_output_state = HOST_OUTPUT_ENABLED;
+                codex_micro_set_input_suppressed(false);
+            }
+            /* A unit that is still OFF keeps its standby outputs. */
+            if (s_usb_standby_active) {
+                set_usb_standby_outputs();
+            } else if (!s_battery_splash_active) {
+                show_status(NULL);
+            }
+        }
     }
     if (before != s_diagnostic_capture.state) {
         publish_diagnostic_capture_status();
@@ -4363,30 +4937,17 @@ static void poll_platform_context(void)
 {
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
     const bool usb = usb_service_is_mounted();
+    const bool ble = codex_micro_ble_connected();
     const uint8_t context = usb ? 0u : codex_micro_active_ble_slot();
-    const config_platform_t preference = config_store_get_context_platform(context);
     if (context != s_platform_context) {
-        if (s_local_page == LOCAL_PAGE_SYSTEM && !s_system_save_pending) {
-            exit_local_ui_to_home();
-        }
         s_platform_context = context;
         config_store_set_platform_context(context);
-        s_platform_restore_needed = true;
-    } else if (preference == CONFIG_PLATFORM_UNSELECTED &&
-               (s_context_preference != CONFIG_PLATFORM_UNSELECTED ||
-                (!usb && codex_micro_ble_connected() && !s_ble_connected))) {
-        /* Replacing a peer must not inherit the previous computer's OS. */
-        s_platform_restore_needed = true;
     }
-    s_context_preference = preference;
-
-    if (s_platform_restore_applying || s_system_save_pending) {
+    if (s_system_save_pending) {
         config_store_status_t status;
         config_store_get_status(&status);
         if (status.activation_failed) {
-            s_platform_restore_applying = false;
             s_system_save_pending = false;
-            s_platform_restore_needed = false;
             if (s_local_page != LOCAL_PAGE_SYSTEM) {
                 leave_local_input_ownership();
             }
@@ -4394,7 +4955,18 @@ static void poll_platform_context(void)
         }
         return;
     }
-    if (!s_platform_restore_needed || s_shutdown_active ||
+    /* USB and BLE carry the same active mappings. A remembered OS for an old
+     * connection must not silently select a different Profile on handoff. */
+    if (config_store_get_platform() != CONFIG_PLATFORM_UNSELECTED ||
+        boot_guard_safe_mode()) {
+        s_platform_setup_needed = false;
+        return;
+    }
+    if ((usb && !s_usb_mounted) || (ble && !s_ble_connected)) {
+        s_platform_setup_needed = true;
+    }
+
+    if (!s_platform_setup_needed || s_shutdown_active ||
         s_usb_standby_active || s_battery_splash_active ||
         s_boot_animation_active || s_idle_standby.active ||
         diagnostic_capture_model_owns_input(&s_diagnostic_capture) ||
@@ -4403,28 +4975,8 @@ static void poll_platform_context(void)
         config_store_has_pending()) {
         return;
     }
-    if (preference == CONFIG_PLATFORM_UNSELECTED) {
-        if (usb || codex_micro_ble_connected()) {
-            enter_os_settings(false);
-        }
-        return;
-    }
-
-    /* Suppress and release old host output before staging the new Profile. */
-    enter_local_input_ownership();
-    clear_pending_gestures(false);
-    s_platform_restore_needed = false;
-    const esp_err_t error = config_store_select_platform(preference);
-    if (error != ESP_OK) {
-        leave_local_input_ownership();
-        show_feedback(STATUS_FEEDBACK_ERROR,
-                      error == ESP_ERR_NOT_FOUND ? "NO OS PROFILE" : "OS SAVE ERROR");
-        return;
-    }
-    s_platform_restore_applying = config_store_has_pending();
-    if (!s_platform_restore_applying) {
-        leave_local_input_ownership();
-        show_status(NULL);
+    if (usb || ble) {
+        enter_os_settings(false);
     }
 #endif
 }
@@ -4444,6 +4996,7 @@ static void sync_connection_and_mode_state(void)
         mounted != s_usb_mounted || ble_connected != s_ble_connected;
     if (connection_changed) {
         memset(s_key_gestures, 0, sizeof(s_key_gestures));
+        finish_key_pulses();
     }
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
     const bool usb_connected_now = mounted && !s_usb_mounted;
@@ -4476,11 +5029,206 @@ static void sync_connection_and_mode_state(void)
 #endif
         show_status(NULL);
     }
+}
+
+/* ---- Low-battery guard -------------------------------------------------
+ * Warning: red under-key breathing + periodic LOW notice (battery only).
+ * Critical: OFF notice, short haptic, latch power-off; ON intent kept and a
+ * boot lock set. Boot gate: a weak cell or a brownout reset never reaches the
+ * full ON boot (white self-test, BLE). Surviving the power-off pulse means
+ * external power, which parks in USB standby and resumes once recovered.
+ */
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
-    if (connection_changed && s_local_page == LOCAL_PAGE_STATUS_DETAIL) {
-        s_mist_connection_output = mounted ? 1u : ble_connected ? 2u : 0u;
-        render_mist_connection();
+static bool low_battery_breath_active(void)
+{
+    return s_battery_guard.level != BATTERY_GUARD_NORMAL &&
+           !s_shutdown_active && !s_usb_standby_active &&
+           !s_battery_splash_active && !s_idle_standby.active &&
+           !usb_service_is_mounted();
+}
+
+static const char *battery_guard_state_name(battery_guard_level_t level)
+{
+    return level == BATTERY_GUARD_CRITICAL ? "critical"
+         : level == BATTERY_GUARD_USB_LOW ? "locked_standby"
+         : level == BATTERY_GUARD_LOW ? "low" : "normal";
+}
+
+static bool low_battery_boot_gate(esp_reset_reason_t reset_reason)
+{
+    const bool brownout = reset_reason == ESP_RST_BROWNOUT;
+    if (brownout) {
+        const esp_err_t error = config_store_note_brownout_reset();
+        if (error != ESP_OK) {
+            ESP_LOGW(TAG, "cannot count brownout reset: %s",
+                     esp_err_to_name(error));
+        }
     }
+    config_store_power_guard_t guard;
+    config_store_get_power_guard(&guard);
+    battery_guard_sample_t sample;
+    guard_sample_from_gauge(&sample);
+    /* init has just taken the first sample; its age is a few ms at most. */
+    const battery_guard_boot_t decision = battery_guard_boot_decide(
+        brownout, guard.low_battery_lock, &sample);
+    if (decision.clear_lock) {
+        (void)config_store_set_low_battery_lock(false);
+    }
+    if (decision.block) {
+        ESP_LOGW(TAG, "boot blocked: %u mV valid=%d brownout=%d lock=%d",
+                 (unsigned)sample.voltage_mv, sample.valid, brownout,
+                 guard.low_battery_lock);
+    }
+    return decision.block;
+}
+
+static void start_low_battery_shutdown(bool at_boot)
+{
+    if (s_shutdown_active) {
+        return;
+    }
+    const esp_err_t error = config_store_note_low_battery_shutdown();
+    if (error != ESP_OK) {
+        ESP_LOGW(TAG, "cannot record low-battery shutdown: %s",
+                 esp_err_to_name(error));
+    }
+    s_low_battery_shutdown = true;
+    config_protocol_set_power_guard_state(at_boot ? "boot_blocked"
+                                                  : "critical");
+    const board_mist_view_t view = {
+        .page = BOARD_MIST_BATTERY, .a = 0, .c = BOARD_MIST_BATTERY_EMPTY,
+        .phase = 1,
+    };
+    /* At boot USB/BLE services are not initialised yet and hold nothing. */
+    begin_shutdown(&view, LOW_BATTERY_OFF_NOTICE_MS, !at_boot,
+                   USB_STANDBY_ENTRY_LOW_BATTERY);
+    if (!at_boot) {
+        (void)board_haptic_pulse(LOW_BATTERY_OFF_HAPTIC_STRENGTH,
+                                 LOW_BATTERY_OFF_HAPTIC_MS);
+    }
+}
+
+/*
+ * Low cell on USB: show the empty icon, drop every load and park in locked
+ * USB standby (poll_usb_standby picks up s_low_battery_shutdown) until the
+ * cell recovers. The ON intent is kept. No NVS lock or shutdown count:
+ * nothing powered off, and a later battery-only boot uses the normal gate.
+ */
+static void start_low_battery_usb_standby(void)
+{
+    if (s_shutdown_active) {
+        return;
+    }
+    s_low_battery_shutdown = true;
+    config_protocol_set_power_guard_state("locked_standby");
+    const board_mist_view_t view = {
+        .page = BOARD_MIST_BATTERY, .a = 0, .c = BOARD_MIST_BATTERY_EMPTY,
+        .phase = 1,
+    };
+    begin_shutdown(&view, LOW_BATTERY_OFF_NOTICE_MS, true,
+                   USB_STANDBY_ENTRY_USB_LOW_BATTERY);
+}
+
+static bool low_battery_notice_allowed(void)
+{
+    return s_host_output_state == HOST_OUTPUT_ENABLED &&
+           s_local_page == LOCAL_PAGE_NONE && !s_quick_config_active &&
+           !s_system_select_active && !s_boot_animation_active &&
+           !s_round_feedback_active && !s_mist_connection_visible &&
+           !s_idle_standby.active && s_pomodoro.state != POMODORO_ALERT &&
+           !s_under_key_self_test_active &&
+           !board_joystick_calibration_active() &&
+           !diagnostic_capture_model_owns_input(&s_diagnostic_capture);
+}
+
+static void poll_low_battery_outputs(TickType_t now)
+{
+    const bool breathing = low_battery_breath_active();
+    const bool lighting_owned = s_under_key_self_test_active ||
+        s_host_lighting_preview.active || s_lighting_preview.active ||
+        light_idle_outputs_blocked();
+    if (breathing && !lighting_owned &&
+        now - s_low_battery_breath_frame_at >=
+            pdMS_TO_TICKS(LOW_BATTERY_BREATH_FRAME_MS)) {
+        s_low_battery_breath_frame_at = now;
+        s_low_battery_breath_shown = true;
+        apply_lighting_output();
+    } else if (!breathing && s_low_battery_breath_shown) {
+        s_low_battery_breath_shown = false;
+        if (!lighting_owned) apply_lighting_output();
+    }
+    if (!breathing || !low_battery_notice_allowed()) {
+        return;
+    }
+    if (!s_low_battery_notice_due &&
+        (int32_t)(now - s_low_battery_notice_next_at) < 0) {
+        return;
+    }
+    s_low_battery_notice_due = false;
+    s_low_battery_notice_next_at =
+        now + pdMS_TO_TICKS(LOW_BATTERY_NOTICE_REPEAT_MS);
+    mist_cancel_motion();
+    s_round_feedback_active = true;
+    s_round_feedback_expires_at = now + pdMS_TO_TICKS(LOW_BATTERY_NOTICE_MS);
+    const int percent = current_battery_percent(NULL);
+    const board_mist_view_t view = {
+        .page = BOARD_MIST_BATTERY, .a = percent < 0 ? 0 : percent,
+        .c = BOARD_MIST_BATTERY_LOW, .phase = 1,
+    };
+    (void)board_display_show_mist(&view);
+    s_mist_last_frame_ms = ticks_to_ms(now);
+}
+#endif
+
+static void poll_battery_guard(void)
+{
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    if (s_shutdown_active || s_usb_standby_active || s_battery_splash_active) {
+        return;
+    }
+    if (s_low_battery_locked_standby) {
+        /* Woken from locked standby (button or recovery): start fresh. */
+        s_low_battery_locked_standby = false;
+        battery_guard_model_init(&s_battery_guard);
+        config_protocol_set_power_guard_state("normal");
+    }
+    const TickType_t now = xTaskGetTickCount();
+    if (now - s_battery_guard_polled_at >=
+        pdMS_TO_TICKS(LOW_BATTERY_GUARD_POLL_MS)) {
+        s_battery_guard_polled_at = now;
+        battery_guard_sample_t sample;
+        guard_sample_from_gauge(&sample);
+        const battery_guard_level_t before = s_battery_guard.level;
+        if (battery_guard_model_update(&s_battery_guard, ticks_to_ms(now),
+                                       &sample, usb_service_is_mounted())) {
+            config_protocol_set_power_guard_state(
+                battery_guard_state_name(s_battery_guard.level));
+            ESP_LOGW(TAG, "battery guard %s -> %s at %u mV / %u%%",
+                     battery_guard_state_name(before),
+                     battery_guard_state_name(s_battery_guard.level),
+                     (unsigned)sample.voltage_mv,
+                     (unsigned)sample.soc_percent);
+            if (s_battery_guard.level == BATTERY_GUARD_CRITICAL) {
+                if (s_idle_standby.active) {
+                    /* The OFF notice needs the outputs standby cleared. */
+                    wake_from_idle_standby();
+                }
+                start_low_battery_shutdown(false);
+                return;
+            }
+            if (s_battery_guard.level == BATTERY_GUARD_USB_LOW) {
+                if (s_idle_standby.active) {
+                    wake_from_idle_standby();
+                }
+                start_low_battery_usb_standby();
+                return;
+            }
+            if (before == BATTERY_GUARD_NORMAL) {
+                s_low_battery_notice_due = true;
+            }
+        }
+    }
+    poll_low_battery_outputs(now);
 #endif
 }
 
@@ -4495,6 +5243,28 @@ esp_err_t action_engine_init(void)
     s_battery_splash_active = false;
     s_usb_standby_active = false;
     s_usb_charge_session_at_boot = should_start_usb_charge_session();
+    battery_guard_model_init(&s_battery_guard);
+    s_battery_guard_polled_at = xTaskGetTickCount();
+    s_low_battery_shutdown = false;
+    s_low_battery_locked_standby = false;
+    s_low_battery_notice_due = false;
+    s_low_battery_notice_next_at = xTaskGetTickCount();
+    s_low_battery_breath_frame_at = xTaskGetTickCount();
+    s_low_battery_breath_shown = false;
+    config_protocol_set_power_guard_state("normal");
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    if (s_usb_charge_session_at_boot) {
+        /* Already the OFF state: only keep the brownout diagnostic. */
+        if (reset_reason == ESP_RST_BROWNOUT) {
+            (void)config_store_note_brownout_reset();
+        }
+        s_low_battery_boot_blocked = false;
+    } else {
+        s_low_battery_boot_blocked = low_battery_boot_gate(reset_reason);
+    }
+#else
+    s_low_battery_boot_blocked = false;
+#endif
     s_battery_splash_valid_at = 0;
     s_battery_splash_next_retry_at = 0;
     s_battery_splash_has_valid_sample = false;
@@ -4513,15 +5283,14 @@ esp_err_t action_engine_init(void)
     apply_feedback_config();
     s_usb_mounted = usb_service_is_mounted();
     s_ble_connected = codex_micro_ble_connected();
+    usb_link_model_init(&s_usb_link, ticks_to_ms(xTaskGetTickCount()));
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
     s_mist_connection_pending = s_usb_mounted ? 1u : s_ble_connected ? 2u : 0u;
 #endif
     s_codex_mode = codex_micro_mode();
     s_platform_context = s_usb_mounted ? 0u : codex_micro_active_ble_slot();
     config_store_set_platform_context(s_platform_context);
-    s_context_preference = config_store_get_context_platform(s_platform_context);
-    s_platform_restore_needed = true;
-    s_platform_restore_applying = false;
+    s_platform_setup_needed = true;
     s_system_save_pending = false;
     update_status_indicator(true);
     s_under_key_self_test_started_at = xTaskGetTickCount();
@@ -4538,13 +5307,13 @@ esp_err_t action_engine_init(void)
     s_normal_joystick_single_action = normal_joystick_single_action_mapping();
     pomodoro_model_init(&s_pomodoro,
                         config_store_get_pomodoro_minutes());
-    idle_standby_model_init(&s_idle_standby,
-                            config_store_get_standby_minutes(),
+    idle_standby_model_init(&s_idle_standby, IDLE_STANDBY_MINUTES,
                             ticks_to_ms(xTaskGetTickCount()));
     s_idle_standby_wake_wait = false;
     s_local_page = LOCAL_PAGE_NONE;
     s_alert_ack_armed = false;
     s_timer_done_hint = false;
+    s_joystick_suspect = board_joystick_suspect();
     codex_attention_haptic_model_init(&s_codex_attention_haptic);
     s_function_key_release_pending = false;
     memset(s_tap_release_pending, 0, sizeof(s_tap_release_pending));
@@ -4552,13 +5321,21 @@ esp_err_t action_engine_init(void)
     reset_function_key_gesture();
     reset_prompt_palette_key_gesture();
     usb_service_set_standard_enabled(true);
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    if (s_low_battery_boot_blocked) {
+        /* No white self-test, boot animation or BLE: icon, then power off. */
+        s_under_key_self_test_active = false;
+        start_low_battery_shutdown(true);
+        return ESP_OK;
+    }
+#endif
     enter_initial_page();
     return ESP_OK;
 }
 
 bool action_engine_ble_start_suspended(void)
 {
-    return s_usb_charge_session_at_boot;
+    return s_usb_charge_session_at_boot || s_low_battery_boot_blocked;
 }
 
 void action_engine_handle_event(const board_event_t *event)
@@ -4566,13 +5343,27 @@ void action_engine_handle_event(const board_event_t *event)
     if (event == NULL || event->control >= BOARD_CONTROL_COUNT) {
         return;
     }
-    light_idle_note_activity();
+    const bool isolated_joystick =
+        joystick_direction_control(event->control) &&
+        board_joystick_suspect();
+    if (!isolated_joystick) {
+        light_idle_note_activity();
+    }
     process_diagnostic_capture_request();
     poll_calibration_ownership();
     if (s_host_output_state == HOST_OUTPUT_CALIBRATION) {
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+        pulse_physical_button_feedback(event);
+#endif
         return;
     }
     if (diagnostic_capture_model_owns_input(&s_diagnostic_capture)) {
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+        pulse_physical_button_feedback(event);
+#endif
+        if (isolated_joystick) {
+            light_idle_note_activity();
+        }
         bool record_event = !event->feedback_only;
         if (event->control == BOARD_CONTROL_ENCODER_PRESS) {
             if (event->feedback_only && event->pressed &&
@@ -4595,6 +5386,9 @@ void action_engine_handle_event(const board_event_t *event)
         }
         return;
     }
+    if (isolated_joystick) {
+        return;
+    }
     if (s_shutdown_active || s_usb_standby_active) {
         return;
     }
@@ -4605,18 +5399,25 @@ void action_engine_handle_event(const board_event_t *event)
     }
     if (s_idle_standby.active) {
         wake_from_idle_standby();
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+        pulse_physical_button_feedback(event);
+#endif
         return;
     }
     if (s_idle_standby_wake_wait) {
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+        pulse_physical_button_feedback(event);
+#endif
         return;
     }
     idle_standby_model_note_activity(&s_idle_standby,
                                      ticks_to_ms(xTaskGetTickCount()));
+    /* A joystick direction can drift; only deliberate inputs boost pairing. */
+    if (event->pressed && !joystick_direction_control(event->control)) {
+        codex_micro_note_local_input();
+    }
     /* Transport callbacks can reset the mode before this queued event runs. */
     sync_connection_and_mode_state();
-    if (s_platform_restore_applying) {
-        return;
-    }
     if (!s_dispatching_single_action_joystick &&
         joystick_direction_control(event->control) &&
         single_action_joystick_context()) {
@@ -4653,12 +5454,20 @@ void action_engine_handle_event(const board_event_t *event)
             leave_local_input_ownership();
             show_status(NULL);
         }
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+        pulse_physical_button_feedback(event);
+#endif
         return;
     }
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+    pulse_physical_button_feedback(event);
+#endif
     if (event->feedback_only) {
         if (event->control == BOARD_CONTROL_ENCODER_PRESS && event->pressed) {
             (void)handle_prompt_palette_key_gesture(event);
+#if !CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
             pulse_press_feedback();
+#endif
         }
         return;
     }
@@ -4807,11 +5616,8 @@ void action_engine_handle_event(const board_event_t *event)
         return;
     }
 
-    const bool matrix12_joystick_mode_gesture =
-        codex_micro_active_key_layout() == CODEX_MICRO_KEY_LAYOUT_MATRIX12;
     if (event->control == BOARD_CONTROL_JOYSTICK_PRESS &&
-        (matrix12_joystick_mode_gesture ||
-         s_pomodoro.state == POMODORO_RUNNING ||
+        (s_pomodoro.state == POMODORO_RUNNING ||
          s_pomodoro.state == POMODORO_PAUSED)) {
         if (s_joystick_direct_press) {
             route_main_event(event);
@@ -4887,9 +5693,11 @@ void action_engine_request_shutdown(void)
     process_diagnostic_capture_request();
     poll_calibration_ownership();
     if (s_host_output_state == HOST_OUTPUT_CALIBRATION) {
+        board_power_button_note_ignored("calibration");
         return;
     }
     if (diagnostic_capture_model_owns_input(&s_diagnostic_capture)) {
+        board_power_button_note_ignored("diagnostic_capture");
         if (s_diagnostic_capture.state == DIAGNOSTIC_CAPTURE_ACTIVE &&
             !s_diagnostic_encoder_press_active) {
             s_diagnostic_encoder_press_active = true;
@@ -4901,10 +5709,18 @@ void action_engine_request_shutdown(void)
         return;
     }
     if (s_usb_standby_active || s_battery_splash_active) {
-        wake_from_usb_standby();
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+        if (low_battery_standby_holds()) {
+            /* Until the cell recovers the button only shows why. */
+            start_usb_battery_splash();
+            return;
+        }
+#endif
+        wake_from_usb_standby(USB_STANDBY_WAKE_POWER_BUTTON);
         return;
     }
     if (s_shutdown_active) {
+        board_power_button_note_ignored("shutdown_active");
 #if !CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
         if (s_shutdown_pulsed) {
             /* USB can keep the MCU powered after the hardware-off pulse. */
@@ -4916,33 +5732,52 @@ void action_engine_request_shutdown(void)
     }
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
     (void)config_store_set_user_powered_on(false);
+    const board_mist_view_t view = {
+        .page = BOARD_MIST_NOTICE, .a = BOARD_ROUND_PAGE_ICON_POWER, .phase = 0,
+    };
+    begin_shutdown(&view, 250, true, USB_STANDBY_ENTRY_POWER_BUTTON);
+#else
+    begin_shutdown(NULL, 250, true, USB_STANDBY_ENTRY_POWER_BUTTON);
 #endif
+}
+
+/* Common power-off sequence. The caller decides the user's ON intent. */
+static void begin_shutdown(const board_mist_view_t *view, uint32_t delay_ms,
+                           bool services_running,
+                           usb_standby_entry_reason_t standby_reason)
+{
     s_shutdown_active = true;
-    cancel_codex_attention_haptic();
-    config_protocol_set_lighting_preview_busy(true);
-    clear_host_lighting_preview();
-    s_shutdown_pulsed = false;
-    macro_cancel();
-    usb_service_release_all();
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
-    codex_micro_set_ble_suspended(true);
+    s_shutdown_standby_reason = standby_reason;
+#else
+    (void)standby_reason;
 #endif
-    memset(s_active_action_valid, 0, sizeof(s_active_action_valid));
-    reset_mode_sensitive_input_state();
+    config_protocol_set_lighting_preview_busy(true);
+    s_shutdown_pulsed = false;
+    if (services_running) {
+        cancel_codex_attention_haptic();
+        clear_host_lighting_preview();
+        macro_cancel();
+        usb_service_release_all();
+#if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
+        codex_micro_set_ble_suspended_for_source(
+            true, CODEX_MICRO_BLE_DISCONNECT_STANDBY);
+#endif
+        memset(s_active_action_valid, 0, sizeof(s_active_action_valid));
+        reset_mode_sensitive_input_state();
+    }
     s_under_key_self_test_active = false;
     (void)board_haptic_stop();
     const board_rgb_t status[STATUS_INDICATOR_LED_COUNT] = {0};
     const board_rgb_t under_key[BOARD_MAX_UNDER_KEY_RGB_COUNT] = {0};
     (void)board_apply_rgb(status, under_key);
-    s_shutdown_power_at = xTaskGetTickCount() + pdMS_TO_TICKS(250);
+    s_shutdown_power_at = xTaskGetTickCount() + pdMS_TO_TICKS(delay_ms);
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
     mist_cancel_motion();
     s_mist_last_frame_ms = ticks_to_ms(xTaskGetTickCount());
-    const board_mist_view_t view = {
-        .page = BOARD_MIST_NOTICE, .a = BOARD_ROUND_PAGE_ICON_POWER, .phase = 0,
-    };
-    (void)board_display_show_mist(&view);
+    (void)board_display_show_mist(view);
 #else
+    (void)view;
     (void)board_display_show_local("POWER", "SHUTTING", "DOWN", "PLEASE WAIT",
                                    0xF800);
 #endif
@@ -4954,6 +5789,7 @@ void action_engine_poll(void)
     poll_calibration_ownership();
     poll_diagnostic_capture();
     poll_codex_attention_notification();
+    poll_joystick_suspect();
     poll_light_idle();
     poll_joystick_excursion_haptic();
     if (s_shutdown_active) {
@@ -4974,7 +5810,7 @@ void action_engine_poll(void)
              */
             s_shutdown_active = false;
             s_shutdown_pulsed = false;
-            enter_usb_standby();
+            enter_usb_standby(s_shutdown_standby_reason);
             return;
 #endif
         }
@@ -4984,6 +5820,7 @@ void action_engine_poll(void)
         return;
     }
     if (s_usb_standby_active) {
+        poll_standby_input_ownership();
         poll_usb_standby();
         return;
     }
@@ -4991,6 +5828,10 @@ void action_engine_poll(void)
     poll_local_input_ownership();
     poll_host_lighting_preview();
     poll_idle_standby();
+    poll_battery_guard();
+    if (s_shutdown_active) {
+        return;
+    }
     if (s_idle_standby.active) {
         sync_connection_and_mode_state();
         return;
@@ -5009,6 +5850,7 @@ void action_engine_poll(void)
     } else if (!s_system_select_active) {
         poll_prompt_palette_key_gesture();
         poll_function_key_gesture();
+        poll_ble_host_key();
     }
     if (s_local_page == LOCAL_PAGE_NONE && !s_quick_config_active &&
         s_pomodoro.state != POMODORO_ALERT) {
@@ -5058,7 +5900,12 @@ void action_engine_poll(void)
     sync_connection_and_mode_state();
     poll_single_action_joystick();
     poll_key_gestures();
+    poll_key_pulses();
     poll_ble_slot_redirect();
+    poll_ble_peer_rejection();
+    poll_ble_reauth_needed();
+    poll_ble_pairing_return();
+    poll_ble_slot_clear_result();
 #if CONFIG_MACROPAD_BOARD_MATRIX12_POWER_V2
     poll_mist_display();
 #endif
@@ -5159,7 +6006,6 @@ void action_engine_get_diagnostics(action_engine_diagnostics_t *diagnostics)
         [LOCAL_PAGE_NONE] = "none",
         [LOCAL_PAGE_FUNCTION] = "function",
         [LOCAL_PAGE_SETTINGS] = "settings",
-        [LOCAL_PAGE_STANDBY] = "standby",
         [LOCAL_PAGE_RESTART_CONFIRM] = "restart_confirm",
         [LOCAL_PAGE_TIMER_SETUP] = "timer_setup",
         [LOCAL_PAGE_TIMER_DETAIL] = "timer_detail",
@@ -5194,6 +6040,7 @@ void action_engine_config_activated(void)
     const bool boot_logo_waiting =
         s_boot_animation_active && s_boot_animation_complete;
     memset(s_key_gestures, 0, sizeof(s_key_gestures));
+    finish_key_pulses();
     macro_cancel();
     s_prompt_joystick_direction_mask = joystick_prompt_direction_mask();
     s_normal_joystick_single_action = normal_joystick_single_action_mapping();
@@ -5220,20 +6067,18 @@ void action_engine_config_activated(void)
         return;
     }
     const bool local_save =
-        s_system_save_pending || s_platform_restore_applying ||
-        s_system_select_active ||
+        s_system_save_pending || s_system_select_active ||
         (s_quick_config_active && s_quick_config_pending_footer != NULL);
-    if (local_save && !s_system_save_pending && !s_platform_restore_applying) {
+    if (local_save && !s_system_save_pending) {
         pulse_save_feedback();
     }
     apply_feedback_config();
     if (s_usb_standby_active) {
         /* Activation can finish after the user powers off while holding a
          * control. Do not leave an already-committed OS save blocking wake. */
-        if (s_system_save_pending || s_platform_restore_applying) {
+        if (s_system_save_pending) {
             s_system_save_pending = false;
-            s_platform_restore_applying = false;
-            s_platform_restore_needed = true;
+            s_platform_setup_needed = true;
             s_local_page = LOCAL_PAGE_NONE;
             s_encoder_pressed = false;
             leave_local_input_ownership();
@@ -5248,12 +6093,6 @@ void action_engine_config_activated(void)
     update_status_indicator(true);
     if (s_system_save_pending) {
         finish_os_settings_save();
-        return;
-    }
-    if (s_platform_restore_applying) {
-        s_platform_restore_applying = false;
-        leave_local_input_ownership();
-        if (!boot_logo_waiting) show_status(NULL);
         return;
     }
     if (!local_save && s_pomodoro.state != POMODORO_ALERT &&

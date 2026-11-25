@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+
+import pytest
 from types import SimpleNamespace
 
 from controller_config.models import PortCandidate
@@ -54,6 +56,36 @@ class FakePortInfo:
     def serialNumber(self) -> str:
         return self._serial_number
 
+
+def test_fast_navigation_poll_is_ble_scoped_and_preserves_maintenance(qtbot, contract):
+    from PySide6.QtCore import QTimer
+    worker = SerialWorker(contract)
+    worker._status_timer = QTimer(worker)
+    selected = {"doubao_status": {"active": True, "selected": True}}
+    worker._port_name = "COM5"
+    worker._status_timer.setInterval(500)
+    worker._on_status_complete(selected)
+    assert worker._status_timer.interval() == 100
+    worker._port_name = "ble:44:1b:f6:ff:e0:82"
+    worker._on_status_complete(selected)
+    assert worker._status_timer.interval() == 10
+    worker._on_status_complete({"doubao_status": {"active": True, "selected": False}})
+    assert worker._status_timer.interval() == 500
+    worker._status_timer.setInterval(60000)
+    worker._on_status_complete(selected)
+    assert worker._status_timer.interval() == 60000
+
+
+def test_fast_poll_never_overlaps_an_inflight_request(qtbot, contract, monkeypatch):
+    worker = SerialWorker(contract)
+    worker._serial = SimpleNamespace(isOpen=lambda: True)
+    inflight = object()
+    worker._session = inflight
+    sent = []
+    monkeypatch.setattr(worker, "_send_command", lambda *args: sent.append(args))
+    for _ in range(20):
+        worker._poll_status()
+    assert worker._session is inflight and not sent
 
 def test_scan_filters_candidates_by_authoritative_usb_identity(qtbot, contract, monkeypatch) -> None:
     ports = [
@@ -334,6 +366,8 @@ def test_command_waits_for_inflight_status_poll_and_runs_once(
     worker._serial = SimpleNamespace(isOpen=lambda: True)
     timer_events = []
     worker._status_timer = SimpleNamespace(
+        interval=lambda: 500,
+        setInterval=lambda value: None,
         stop=lambda: timer_events.append("stop"),
         start=lambda: timer_events.append("start"),
         isActive=lambda: False,
@@ -483,3 +517,88 @@ def test_hello_header_version_mismatch_is_incompatible(qtbot, contract, monkeypa
         worker._on_ready_read()
 
     assert blocker.args[0] is BootstrapKind.INCOMPATIBLE
+
+
+def test_crc_failure_is_never_a_successful_read(qtbot, contract, monkeypatch):
+    """A-03: a corrupt response is discarded and logged, never accepted. The
+    in-flight request is left to its own timeout/retry rule instead of
+    closing the whole link on the first bad frame."""
+    worker = SerialWorker(contract)
+    frame = HEADER.pack(b"WMP1", 1, 0, 0x7E, 0x01, 5, 2, 0) + b"{}"
+    worker._serial = SimpleNamespace(readAll=lambda: frame)
+    worker._port_name = "cu.usbmodem-test"
+    accepted = []
+    worker._session = SimpleNamespace(
+        current_command=SimpleNamespace(name="CAPABILITIES"),
+        current_request_id=5,
+        accept=accepted.append,
+    )
+    closed, failures, warnings = [], [], []
+    monkeypatch.setattr(worker, "close", lambda: closed.append(True))
+    worker.failure.connect(lambda *args: failures.append(args))
+    worker.link_warning.connect(lambda *args: warnings.append(args))
+    worker._on_ready_read()
+    assert accepted == [] and failures == [] and closed == []
+    assert warnings and warnings[0][0] == "FRAME_DISCARDED"
+    assert "request_id=5" in warnings[0][1] and "CRC32" in warnings[0][1]
+
+
+def _maintenance_worker(contract, monkeypatch):
+    worker = SerialWorker(contract)
+    worker._serial = SimpleNamespace(isOpen=lambda: True)
+    timer = SimpleNamespace(active=False, interval=500)
+    worker._status_timer = SimpleNamespace(
+        stop=lambda: setattr(timer, "active", False),
+        start=lambda: setattr(timer, "active", True),
+        setInterval=lambda value: setattr(timer, "interval", value),
+        isActive=lambda: timer.active,
+    )
+    sent = []
+    monkeypatch.setattr(worker, "_send_command", lambda command, request_id: sent.append((command, request_id)))
+    worker._on_bootstrap_complete(SimpleNamespace(maintenance_only=True))
+    return worker, timer, sent
+
+
+@pytest.mark.parametrize("command", [
+    Command("GET_CONFIG", 0x10, {}), Command("SET_CONFIG", 0x12, {}),
+    Command("GET_STATUS", 0x13, {}), Command("CALIBRATE_JOYSTICK", 0x20, {}),
+    status_command(("working",) * 6),
+    set_lighting_preview_command({"enabled": True, "brightness": 20, "under_key": []}),
+    Command("FW_STATUS", 0x12, {}),
+])
+def test_maintenance_worker_rejects_non_firmware_commands(qtbot, contract, monkeypatch, command):
+    worker, timer, sent = _maintenance_worker(contract, monkeypatch)
+    with qtbot.waitSignal(worker.command_failed) as failure:
+        worker.execute_command(command)
+    assert failure.args[0] == command.name
+    assert "仅允许固件维护" in str(failure.args[1])
+    assert not sent and not worker._queued_commands and not timer.active
+
+
+@pytest.mark.parametrize("name, message_type", [
+    ("FW_STATUS", 0x42), ("FW_BEGIN", 0x40), ("FW_DATA", 0x41),
+    ("FW_END", 0x43), ("FW_ABORT", 0x44),
+])
+def test_maintenance_firmware_commands_never_restart_status_poll(
+    qtbot, contract, monkeypatch, name, message_type,
+):
+    worker, timer, sent = _maintenance_worker(contract, monkeypatch)
+    worker.set_status_poll_interval(200)
+    worker._poll_status()
+    assert not sent and not timer.active
+    worker.execute_command(Command(name, message_type, {}))
+    assert sent[-1][0].name == name
+    worker._session.accept(Frame(1, 0, 0x7E, RESPONSE_FLAG, sent[-1][1], json.dumps({
+        "command": name, "result": {}
+    }).encode()))
+    assert not timer.active
+    worker._on_command_failed(name, Exception("transport"))
+    assert not timer.active
+
+
+def test_close_resets_maintenance_state(contract, monkeypatch):
+    worker, timer, sent = _maintenance_worker(contract, monkeypatch)
+    worker._status_timer = None
+    monkeypatch.setattr(worker, "_dispose_serial", lambda: None)
+    worker.close()
+    assert not worker._maintenance_only

@@ -1,4 +1,9 @@
-"""A view-only transcript of real connection state; never drives the transport."""
+"""A view-only transcript of real connection state; never drives the transport.
+
+With the system's "reduce motion" on, new lines appear at full strength, the
+cursor stays lit instead of blinking, and the panel hides without fading
+(Console动效盘点 11-19, item 13).
+"""
 from __future__ import annotations
 
 from time import monotonic
@@ -7,8 +12,10 @@ from PySide6.QtCore import QEvent, QPropertyAnimation, QTimer, Qt
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QGraphicsOpacityEffect
 
+from controller_config.accessibility import system_reduces_motion
 from controller_config.i18n import SKIP_TRANSLATION_PROPERTY
 from controller_config.models import AppState, ScreenModel
+from controller_config.style import tokens
 from controller_config.views.digital_label import Boring5RLabel
 from controller_config.views.v4_widgets import V4Card
 
@@ -26,8 +33,9 @@ _COMMANDS = {
 
 
 class ConnectionTerminal(V4Card):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, reduce_motion: bool | None = None):
         super().__init__(parent, role='primary', dots=True)
+        self._reduce_motion = system_reduces_motion() if reduce_motion is None else reduce_motion
         self.setObjectName('connectionTerminal')
         self.setProperty(SKIP_TRANSLATION_PROPERTY, True)
         self.setFocusPolicy(Qt.NoFocus)
@@ -62,7 +70,7 @@ class ConnectionTerminal(V4Card):
         self._opacity.setEnabled(False)
         self.setGraphicsEffect(self._opacity)
         self._fade = QPropertyAnimation(self._opacity, b'opacity', self)
-        self._fade.setDuration(180)
+        self._fade.setDuration(tokens.MOTION_SHORT_MS)
         self._fade.finished.connect(self._settle)
 
     @property
@@ -155,11 +163,11 @@ class ConnectionTerminal(V4Card):
             old = self._rows.pop(0)
             self._lines.removeWidget(old)
             old.deleteLater()
-        if not self._compact and tone == 'normal':
+        if not self._compact and tone == 'normal' and not self._reduce_motion:
             effect = QGraphicsOpacityEffect(row)
             row.setGraphicsEffect(effect)
             animation = QPropertyAnimation(effect, b'opacity', row)
-            animation.setDuration(140)
+            animation.setDuration(tokens.MOTION_INSTANT_MS)
             animation.setStartValue(0.25)
             animation.setEndValue(1)
             animation.start()
@@ -178,6 +186,9 @@ class ConnectionTerminal(V4Card):
         self._opacity.setEnabled(False)
 
     def _fade_out(self):
+        if self._reduce_motion:
+            self._settle()
+            return
         # Qt does not reliably paint nested active graphics effects.
         for row in self._rows:
             if row.graphicsEffect() is not None:
@@ -208,7 +219,7 @@ class ConnectionTerminal(V4Card):
         return super().eventFilter(watched, event)
 
     def _sync_cursor(self):
-        if self._busy and self.isVisible() and not self._compact:
+        if self._busy and self.isVisible() and not self._compact and not self._reduce_motion:
             self._blink.start()
         else:
             self._blink.stop()

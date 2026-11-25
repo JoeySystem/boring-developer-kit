@@ -1,12 +1,13 @@
 from dataclasses import replace
 import pytest
 from PySide6.QtCore import QEvent, QObject
-from PySide6.QtWidgets import QLineEdit, QProgressBar, QPushButton
+from PySide6.QtWidgets import QLineEdit, QPushButton
 from controller_config.views.actions import ActionsPage
+from controller_config.views.ui import DotRow
 from controller_config.views.action_editor import ActionEditor
 from test_session_recovery import session
 
-PAGES = ['overview', 'prompts', 'lighting', 'actions', 'settings:system', 'settings:device', 'firmware', 'diagnostics', 'joystick', 'sequences']
+PAGES = ['overview', 'prompts', 'lighting', 'actions', 'settings:system', 'settings:device', 'firmware', 'joystick', 'sequences']
 
 def navigate(window, vm, page):
     if page.startswith('settings:'):
@@ -37,19 +38,21 @@ def test_all_pages_keep_content_across_navigation_and_unchanged_refresh(session,
 
 
 def test_status_poll_keeps_mapping_editor_and_current_text(session):
-    from controller_config.views.device_silhouette import DeviceModelCanvas
-    from PySide6.QtWidgets import QLabel
+    from controller_config.views.mode_page import ModeStage
     window, vm, gateway, snapshot, _ = session
     window._select_physical_control('key.9')
     editor = window._content.findChild(ActionEditor)
     name = window._content.findChild(QLineEdit, 'mappingShortNameEditor')
+    assert editor is not None and name is not None
     name.setText('还没应用')
-    canvas = window._content.findChild(DeviceModelCanvas)
+    stage = window._content.findChild(ModeStage)
+    device = stage.device
     gateway.status_updated.emit({**snapshot.status, 'battery': 73, 'battery_valid': True})
     assert window._content.findChild(ActionEditor) is editor
-    assert window._content.findChild(DeviceModelCanvas) is canvas
+    assert window._content.findChild(ModeStage) is stage and stage.device is device
     assert name.text() == '还没应用'
-    assert '73%' in window._content.findChild(QLabel, 'deviceBatterySummary').text()
+    # The battery now sits at the stage's top right (Mode页 定稿 v1).
+    assert stage.state().battery == 73
 
 
 def test_prompt_runtime_updates_without_replacing_fields(session):
@@ -63,17 +66,18 @@ def test_prompt_runtime_updates_without_replacing_fields(session):
     vm.changed.emit(vm.model)
     assert window._content.findChild(PromptLibraryEditor) is editor
     assert editor._body.toPlainText() == '正在编辑的内容'
-    assert editor.findChild(QLabel, 'promptHelperStatus').text() == '本次粘贴失败，请检查权限'
+    # The latest result now sits in the diagnostics dialog (定稿 v1).
+    assert editor.findChild(QLabel, 'promptDiagnosticsLatest').text() == '本次粘贴失败，请检查权限'
 
 
 def test_calibration_samples_update_bars_without_rebuilding(session):
     window, vm, _, _, _ = session
     vm.navigate('joystick')
-    bar = window._content.findChild(QProgressBar, 'calibrationRawX')
+    bar = window._content.findChild(DotRow, 'calibrationRawX')
     for value in (1000, 1800, 2600):
         vm._calibration = replace(vm.calibration, raw_x=value)
         vm.changed.emit(vm.model)
-        assert window._content.findChild(QProgressBar, 'calibrationRawX') is bar
+        assert window._content.findChild(DotRow, 'calibrationRawX') is bar
         assert bar.value() == value
 
 

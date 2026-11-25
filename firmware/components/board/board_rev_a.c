@@ -16,6 +16,7 @@
 #include "board_display_logic.h"
 #include "board_input_logic.h"
 #include "joystick_sample_recovery.h"
+#include "joystick_suspect_model.h"
 #include "board_rev_a.h"
 #include "driver/gpio.h"
 #include "driver/ledc.h"
@@ -107,6 +108,7 @@ static QueueHandle_t s_encoder_edges;
 static TickType_t s_last_joystick_sample;
 static uint32_t s_joystick_sample_count;
 static joystick_sample_recovery_t s_joystick_recovery;
+static joystick_suspect_model_t s_joystick_suspect;
 static int s_joystick_minimum_x = 200;
 static int s_joystick_center_x = 2048;
 static int s_joystick_maximum_x = 3895;
@@ -381,6 +383,7 @@ esp_err_t board_init(void)
     s_event_write = 0;
     s_joystick_sample_count = 0;
     joystick_sample_recovery_reset(&s_joystick_recovery);
+    joystick_suspect_model_reset(&s_joystick_suspect);
     ESP_RETURN_ON_ERROR(init_inputs(), "board", "initialize product inputs");
     ESP_RETURN_ON_ERROR(init_adc(), "board", "initialize joystick ADC");
     ESP_RETURN_ON_ERROR(init_motor(), "board", "initialize motor");
@@ -507,6 +510,9 @@ static void poll_joystick(TickType_t now)
     directions = board_joystick_limit_diagonal(
         directions, x, y, s_joystick_center_x, s_joystick_center_y,
         span_x, span_y, previous_directions);
+    (void)joystick_suspect_model_update(
+        &s_joystick_suspect, directions,
+        (uint32_t)now * portTICK_PERIOD_MS);
     update_direction((directions & BOARD_JOYSTICK_LEFT) != 0,
                      &s_joystick_left, BOARD_CONTROL_JOYSTICK_LEFT);
     update_direction((directions & BOARD_JOYSTICK_RIGHT) != 0,
@@ -570,14 +576,25 @@ bool board_is_product_target(void)
     return true;
 }
 
-bool board_inputs_neutral(void)
+bool board_keys_neutral(void)
 {
     for (size_t index = 0; index < sizeof(s_inputs) / sizeof(s_inputs[0]); ++index) {
         if (s_inputs[index].stable) {
             return false;
         }
     }
-    return !s_joystick_left && !s_joystick_right && !s_joystick_up && !s_joystick_down;
+    return true;
+}
+
+bool board_inputs_neutral(void)
+{
+    return board_keys_neutral() && !s_joystick_left && !s_joystick_right &&
+           !s_joystick_up && !s_joystick_down;
+}
+
+bool board_joystick_suspect(void)
+{
+    return s_joystick_suspect.suspect;
 }
 
 size_t board_get_active_controls(board_control_t *controls, size_t capacity)
@@ -611,6 +628,7 @@ size_t board_get_active_controls(board_control_t *controls, size_t capacity)
 bool board_get_joystick_radial(float *angle_turns)
 {
     if (s_joystick_calibration_active ||
+        s_joystick_suspect.suspect ||
         s_joystick_recovery.waiting_for_center) {
         s_joystick_radial_active = false;
         return false;

@@ -218,15 +218,17 @@ def test_helper_preserves_installed_path_and_does_not_kill_processes(tmp_path, m
     monkeypatch.setattr(updater.subprocess, "CREATE_NEW_PROCESS_GROUP", 512, raising=False)
     calls = []
     monkeypatch.setattr(updater.subprocess, "Popen", lambda args, **kwargs: calls.append((args, kwargs)))
-    updater._launch_installer(installer, Path("C:/Users/Tester's Account/BORING Console"))
+    directory = Path("C:/Users/Alex's Account/BORING Console")
+    updater._launch_installer(installer, directory)
     script = (tmp_path / "apply-update.ps1").read_text(encoding="utf-8-sig")
-    assert "Tester''s Account/BORING Console" in script
-    assert '/DIR="C:/Users/' in script
+    escaped_directory = str(Path("C:/Users/Alex''s Account/BORING Console"))
+    assert escaped_directory in script
+    assert f'/DIR="{escaped_directory}"' in script
     assert "Get-Process -Id $OriginalProcess" in script
     assert "Stop-Process" not in script
     assert "/NORESTART" in script and "/NOCLOSEAPPLICATIONS" in script
     assert calls[0][1]["cwd"] == str(tmp_path)
-    assert "-WorkingDirectory 'C:/Users/Tester''s Account/BORING Console'" in script
+    assert f"-WorkingDirectory '{escaped_directory}'" in script
     assert "Set-Location -LiteralPath $env:TEMP" in script
     # Failed installation exits before cleanup, retaining installer/logs for repair.
     assert script.index("exit 1") < script.index("Remove-Item -LiteralPath")

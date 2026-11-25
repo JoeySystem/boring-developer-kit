@@ -3,22 +3,20 @@ from __future__ import annotations
 
 from PySide6.QtCore import QSettings, Qt, QTimer
 from PySide6.QtWidgets import (
-    QDialog, QFrame, QHBoxLayout, QInputDialog, QLabel, QMenu,
-    QMessageBox, QPushButton, QVBoxLayout,
+    QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton, QVBoxLayout,
 )
 
 from controller_config.i18n import SKIP_TRANSLATION_PROPERTY, translate_ui_text as tr
 from controller_config.models import AppState
+from controller_config.style import tokens
+from controller_config.views.ui.dialog import MEDIUM, SMALL, Dialog, confirm
 
 
-class BleConnectionsDialog(QDialog):
+class BleConnectionsDialog(Dialog):
+    """Bluetooth computers in the shared shell: round close, "添加电脑" bottom-right."""
+
     def __init__(self, view_model, snapshot, state, parent=None, *, settings=None):
-        super().__init__(parent)
-        self.setObjectName("bleSlotsDialog")
-        self.setWindowTitle(tr("蓝牙连接"))
-        self.setWindowFlag(Qt.FramelessWindowHint, True)
-        self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setFixedWidth(520)
+        super().__init__(parent, "蓝牙连接", width=MEDIUM, object_name="bleSlotsDialog")
         self._vm = view_model
         self._snapshot = snapshot
         self._serial = str(snapshot.identity["serial"])
@@ -38,14 +36,8 @@ class BleConnectionsDialog(QDialog):
         self._timeout.setSingleShot(True)
         self._timeout.timeout.connect(self._timed_out)
 
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        card = QFrame(objectName="bleSlotsCard")
-        outer.addWidget(card)
-        box = QVBoxLayout(card)
-        box.setContentsMargins(24, 24, 24, 24)
+        box = self.body_layout()
         box.setSpacing(14)
-        box.addWidget(QLabel(tr("蓝牙连接"), objectName="inspectorTitle"))
         description = QLabel(tr("最多记住 3 台电脑，每次通过蓝牙连接 1 台。"), objectName="muted")
         description.setWordWrap(True)
         box.addWidget(description)
@@ -76,20 +68,13 @@ class BleConnectionsDialog(QDialog):
             layout.addWidget(more)
             box.addWidget(row)
             self._rows[slot] = (row, name, status, action, more)
-        self._add = QPushButton(tr("添加电脑"), objectName="primary")
-        self._add.clicked.connect(self._add_computer)
-        box.addWidget(self._add)
         self._message = QLabel(objectName="bleConnectionMessage")
         self._message.setWordWrap(True)
         box.addWidget(self._message)
-        self._help = QPushButton(tr("如何用设备切换"), objectName="bleConnectionHelp")
+        self._help = self.add_button("如何用设备切换", "text", object_name="bleConnectionHelp")
         self._help.clicked.connect(self._show_physical_help)
-        box.addWidget(self._help)
-        close = QPushButton(tr("关闭"))
-        close.clicked.connect(self.accept)
-        close.setDefault(True)
-        box.addWidget(close)
-        close.setFocus(Qt.OtherFocusReason)
+        self._add = self.add_button("添加电脑", "primary", object_name="bleAddComputer")
+        self._add.clicked.connect(self._add_computer)
         self._vm.changed.connect(self._update_model)
         self._vm.ble_slot_failed.connect(self._command_failed)
         self._vm.ble_name.changed.connect(self._name_updated)
@@ -246,8 +231,25 @@ class BleConnectionsDialog(QDialog):
         button = self._rows[slot][4]
         menu.exec(button.mapToGlobal(button.rect().bottomLeft()))
 
+    def _ask_alias(self, slot):
+        """The "备注名称" question in the shared shell; returns (text, accepted)."""
+        dialog = Dialog(self, "备注名称", width=SMALL, close="none", object_name="bleAliasDialog")
+        dialog.add_text("例如：办公室电脑。仅保存在本机。", secondary=True)
+        field = QLineEdit(self._name(slot), objectName="bleAliasField")
+        field.setProperty(SKIP_TRANSLATION_PROPERTY, True)
+        field.selectAll()
+        dialog.body_layout().addWidget(field)
+        dialog.add_button("取消", "secondary", role="reject")
+        save = dialog.add_button("保存", "primary", role="accept")
+        save.setDefault(True)
+        field.setFocus()
+        accepted = dialog.exec() == QDialog.DialogCode.Accepted
+        text = field.text()
+        dialog.deleteLater()
+        return text, accepted
+
     def _rename(self, slot):
-        name, accepted = QInputDialog.getText(self, tr("备注名称"), tr("例如：办公室电脑。仅保存在本机。"), text=self._name(slot))
+        name, accepted = self._ask_alias(slot)
         if accepted:
             name = name.strip()
             if name:
@@ -260,57 +262,41 @@ class BleConnectionsDialog(QDialog):
         text = tr("忘记“{name}”后，需要重新配对才能连接；设备会开始等待新的配对。").format(name=self._name(slot))
         if self._slots[slot - 1].get("connected"):
             text += "\n" + tr("当前蓝牙连接将断开。")
-        question = QMessageBox(QMessageBox.Warning, tr("忘记此电脑"), text, parent=self)
-        forget = question.addButton(tr("忘记此电脑"), QMessageBox.DestructiveRole)
-        cancel = question.addButton(tr("取消"), QMessageBox.RejectRole)
-        question.setDefaultButton(cancel)
-        question.exec()
-        if question.clickedButton() is forget:
+        if confirm(self, "忘记此电脑", text, "忘记此电脑", danger=True, object_name="bleForgetConfirm"):
             self._start(slot, "forget")
 
     def _show_physical_help(self):
-        from controller_config.views.device_silhouette import DeviceModelCanvas
-        dialog = QDialog(self)
-        dialog.setObjectName("bleSlotsDialog")
-        dialog.setWindowFlag(Qt.FramelessWindowHint, True)
-        dialog.setAttribute(Qt.WA_TranslucentBackground, True)
-        outer = QVBoxLayout(dialog)
-        outer.setContentsMargins(0, 0, 0, 0)
-        card = QFrame(objectName="bleSlotsCard")
-        outer.addWidget(card)
-        box = QVBoxLayout(card)
-        box.setContentsMargins(24, 20, 24, 20)
-        box.addWidget(QLabel(tr("如何用设备切换"), objectName="inspectorTitle"))
-        choices = QHBoxLayout()
-        box.addLayout(choices)
-        model = DeviceModelCanvas(None, {}, None, card)
-        box.addWidget(model, 0, Qt.AlignCenter)
-        tip = QLabel(tr("同时短按亮起的两颗键，切换到对应电脑。"))
-        tip.setWordWrap(True)
-        box.addWidget(tip)
-        warning = QLabel(tr("不要长按：按住约 3 秒会忘记该电脑并重新配对。"), objectName="muted")
-        warning.setWordWrap(True)
-        box.addWidget(warning)
-        buttons = []
-        def select(slot):
-            model.set_highlighted_controls(("key.3", f"key.{slot + 7}"))
-            model.set_control_labels({"key.3": tr("同时短按"), f"key.{slot + 7}": self._name(slot)})
-            tip.setText(tr("同时短按亮起的两颗键，切换到对应电脑。") if self._slots[slot - 1].get("paired") else tr("这里还没有保存电脑，请返回后选择“添加电脑”。"))
+        from controller_config.views.connection_progress import BLE_HELP_CLIP, dialog_clip
+        # Read-only: the round close (bottom-left) replaces the old "返回".
+        dialog = Dialog(self, "如何用设备切换", width=MEDIUM, object_name="bleHelpDialog")
+        box = dialog.body_layout()
+        # Smaller than the canvas's own 420 so the whole window fits on one screen
+        # (design ticket 答复第 2 件). The pre-rendered small version (new model,
+        # K3 + K8 marked) replaces the live 3D once the designer renders it; until then
+        # dialog_clip finds no file and the live model stays.
+        model = dialog_clip(BLE_HELP_CLIP, tokens.BLE_HELP_MODEL_SIZE, dialog)
+        if model is None:
+            from controller_config.views.device_silhouette import DeviceModelCanvas
+            model = DeviceModelCanvas(None, {}, None, dialog)
+            model.setFixedSize(tokens.BLE_HELP_MODEL_SIZE, tokens.BLE_HELP_MODEL_SIZE)
+            # Firmware 11-12 (main 70257d5): one Bluetooth key, K8 while K3 is held. Short
+            # press moves to the next remembered computer; held 2 s waits for a new one. No
+            # numbers, and nothing on the device forgets a computer. Words and demo only.
+            model.set_highlighted_controls(("key.3", "key.8"))
+            model.set_control_labels({"key.3": tr("按住"), "key.8": tr("蓝牙")})
             model.preview_key_press("key.3")
-            model.preview_key_press(f"key.{slot + 7}")
-            for index, button in enumerate(buttons, 1):
-                button.setChecked(index == slot)
-        for slot in range(1, 4):
-            button = QPushButton(self._name(slot), objectName="bleHelpTarget")
-            button.setProperty(SKIP_TRANSLATION_PROPERTY, True)
-            button.setCheckable(True)
-            button.clicked.connect(lambda _=False, value=slot: select(value))
-            choices.addWidget(button)
-            buttons.append(button)
-        close = QPushButton(tr("返回"))
-        close.clicked.connect(dialog.accept)
-        box.addWidget(close)
-        select(1)
+            model.preview_key_press("key.8")
+        box.addWidget(model, 0, Qt.AlignCenter)
+        for text, name in (
+            ("按住 3 号键，再短按 8 号键：换到下一台电脑。", "bleHelpNext"),
+            ("按住 3 号键，再按住 8 号键 2 秒：添加一台新电脑。", "bleHelpAdd"),
+        ):
+            line = QLabel(tr(text), objectName=name)
+            line.setWordWrap(True)
+            box.addWidget(line)
+        note = QLabel(tr("设备上不能忘记电脑；要忘记，请在这里点「忘记此电脑」。"), objectName="muted")
+        note.setWordWrap(True)
+        box.addWidget(note)
         dialog.exec()
         dialog.deleteLater()
 

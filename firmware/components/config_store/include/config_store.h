@@ -160,6 +160,14 @@ typedef struct {
     bool activation_failed;
     uint32_t pending_generation;
     char pending_digest[CONFIG_STORE_DIGEST_HEX_LENGTH + 1];
+    /* F-04: storage unusable at boot; running read-only until restart. */
+    bool storage_degraded;
+    esp_err_t storage_error;
+    bool storage_using_defaults;  /* degraded and no stored config was read */
+    bool safe_mode;               /* safe mode: stored config deliberately not read */
+    bool stored_config_unusable;  /* a stored slot exists but cannot be used; left untouched */
+    /* Stored slots existed but were unusable and were replaced by defaults. */
+    bool unreadable_config_replaced;
 } config_store_status_t;
 
 /**
@@ -167,8 +175,17 @@ typedef struct {
  *
  * The normal boot path never erases configuration implicitly. Recovery from a
  * damaged partition remains an explicit firmware-maintenance operation.
+ *
+ * If storage still cannot be used on a confirmed image, the store runs
+ * read-only (the config it read, or the built-in defaults) and reports it in
+ * config_store_get_status(); a fresh unconfirmed update fails so it rolls back.
  */
 esp_err_t config_store_init(void);
+/* Safe mode (stability item 6): built-in defaults read-only, slots unread. */
+esp_err_t config_store_init_safe_mode(void);
+/* Safe mode only: explicit factory reset; restart afterwards. */
+esp_err_t config_store_safe_mode_factory_reset(const char *confirmation,
+                                               char *reason, size_t reason_size);
 
 /** Return a heap-owned canonical JSON copy. Caller releases it with free(). */
 esp_err_t config_store_get_json(char **json, uint32_t *generation,
@@ -229,7 +246,26 @@ esp_err_t config_store_set_normal_agent_behavior(
  * A missing value defaults to off so USB-only first boot remains in standby.
  */
 bool config_store_get_user_powered_on(void);
+
+/* True when the active or pending config would change under the boot-time
+ * migrations, which run only at a real boot. A USB standby wake is not a
+ * boot, so it restarts when this holds. Dry run: nothing is written. */
+bool config_store_boot_migration_pending(void);
 esp_err_t config_store_set_user_powered_on(bool powered_on);
+
+/* Low-battery guard. Counters survive reboots; the lock means the last power
+ * loss was a protective one and raises the next boot threshold. */
+typedef struct {
+    uint32_t brownout_resets;
+    uint32_t low_battery_shutdowns;
+    bool low_battery_lock;
+} config_store_power_guard_t;
+
+void config_store_get_power_guard(config_store_power_guard_t *out);
+esp_err_t config_store_note_brownout_reset(void);
+/* Counts one protective shutdown and sets the lock. */
+esp_err_t config_store_note_low_battery_shutdown(void);
+esp_err_t config_store_set_low_battery_lock(bool locked);
 
 /** Stage the built-in default config after checking generation and confirmation. */
 esp_err_t config_store_factory_default(uint32_t base_generation, const char *confirmation,
@@ -243,6 +279,7 @@ esp_err_t config_store_stage_factory_default(uint32_t base_generation,
 esp_err_t config_store_force_factory_default(void);
 
 bool config_store_get_codex_voice_action(config_action_t *action);
+bool config_store_get_global_voice_action(config_action_t *action);
 
 bool config_store_get_action(const char *control_id, config_action_t *action);
 bool config_store_get_macro_step(uint8_t macro_id, size_t index, config_macro_step_t *step,

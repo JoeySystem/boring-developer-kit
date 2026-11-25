@@ -53,6 +53,26 @@ esp_err_t usb_service_init(const char *serial);
 /** True only after the host has accepted and configured the USB device. */
 bool usb_service_is_mounted(void);
 
+typedef enum {
+    /** No host has reset the bus since the last detach. */
+    USB_SERVICE_LINK_NONE = 0,
+    /** A host reset the bus but has not configured the device yet. */
+    USB_SERVICE_LINK_ENUMERATING,
+    /** Configured and not suspended: HID and CDC traffic can flow. */
+    USB_SERVICE_LINK_READY,
+    /**
+     * Configured, then the bus went idle. The board has no VBUS sense, so a
+     * sleeping host and an unplugged cable look the same here.
+     */
+    USB_SERVICE_LINK_SUSPENDED,
+} usb_service_link_state_t;
+
+/** Coarse USB link state for deciding when BLE may take over. */
+usb_service_link_state_t usb_service_link_state(void);
+
+/** Number of remote wakeup signals sent to a suspended host since boot. */
+uint32_t usb_service_remote_wakeups(void);
+
 /** True after the configurator completed a compatible HELLO handshake. */
 bool usb_service_config_session_active(void);
 

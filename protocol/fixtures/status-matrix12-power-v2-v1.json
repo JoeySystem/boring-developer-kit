@@ -10,6 +10,7 @@
     },
     "pending": null,
     "inputs_neutral": true,
+    "joystick_suspect": false,
     "platform": "macos",
     "operating_mode": "normal",
     "codex_agent_press": {"sequence": 0, "agent": null, "transport": null},
@@ -36,8 +37,10 @@
       "timeout_ms": 3000,
       "event_sequence": 0,
       "last_control": null,
-      "last_pressed": null
+      "last_pressed": null,
+      "events": []
     },
+    "input_event_losses": {"board": 0, "encoder_isr": 0, "diagnostic_protocol": 0},
     "joystick_diagnostics": {
       "raw_x": 2048,
       "raw_y": 2048,
@@ -53,8 +56,17 @@
       "deadzone_y": 180,
       "directions": 0,
       "radial_active": false,
-      "radial_valid": true,
-      "radial_angle_turns": 0.0
+      "radial_valid": false,
+      "radial_angle_turns": 0.0,
+      "sample_count": 1200,
+      "sample_timestamp_ms": 120000,
+      "recent_sample_age_ms": 5,
+      "adc_failure_count": 0,
+      "window": {"start_ms": 119760, "end_ms": 120000, "sample_count": 25,
+                 "raw_x_min": 2047, "raw_x_max": 2049, "raw_x_mean": 2048,
+                 "raw_y_min": 2047, "raw_y_max": 2049, "raw_y_mean": 2048,
+                 "filtered_x_min": 2048, "filtered_x_max": 2048, "filtered_x_mean": 2048,
+                 "filtered_y_min": 2048, "filtered_y_max": 2048, "filtered_y_mean": 2048}
     },
     "codex_micro": {
       "connected": true,
@@ -66,7 +78,48 @@
         {"slot": 1, "paired": true, "connected": false},
         {"slot": 2, "paired": false, "connected": false},
         {"slot": 3, "paired": false, "connected": false}
-      ]
+      ],
+      "ble_slots": [
+        {"slot": 1, "paired": true, "address_kind": "rpa", "identity_known": true},
+        {"slot": 2, "paired": false, "address_kind": "none", "identity_known": false},
+        {"slot": 3, "paired": false, "address_kind": "none", "identity_known": false}
+      ],
+      "ble_rejects": {"count": 0, "last_reason": "none", "last_slot": 0},
+      "ble_last_disconnect": {"reason": 0, "source": "none"},
+      "ble_last_slot_op": {"op": "none", "slot": 0, "error": 0, "timeout": false, "timeout_count": 0},
+      "advertising_configured": true,
+      "scan_response_configured": true,
+      "advertising_active": false,
+      "advertising_recovery_count": 0,
+      "last_advertising_error": 0
+    },
+    "liveness": {
+      "supervising": true,
+      "task_watchdog": true,
+      "previous_stall": "none",
+      "previous_stall_uptime_ms": 0,
+      "channels": {
+        "main_loop": {"armed": true, "resets": true, "beats": 1200, "max_gap_ms": 310, "overdue": 0},
+        "usb_config_rx": {"armed": true, "resets": true, "beats": 900, "max_gap_ms": 60, "overdue": 0},
+        "usb_stack": {"armed": true, "resets": false, "beats": 30, "max_gap_ms": 2010, "overdue": 0},
+        "ble_host": {"armed": true, "resets": false, "beats": 15, "max_gap_ms": 2020, "overdue": 0}
+      }
+    },
+    "safe_mode": {
+      "active": false,
+      "reason": "none",
+      "abnormal_resets": 0,
+      "limit": 3,
+      "reset_reason": "power_on",
+      "nvs_mirror": true,
+      "stable_cleared": true
+    },
+    "firmware_health": {
+      "healthy": true,
+      "ble_ready": true,
+      "approved": false,
+      "dwell_ms": 10000,
+      "ready_in_ms": 0
     }
   }
 }

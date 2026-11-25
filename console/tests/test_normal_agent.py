@@ -197,7 +197,7 @@ def test_device_maintenance_blocks_preference_write(connected):
     vm, gateway, _ = connected
     readback(gateway)
     vm.normal_agent.edit('open_conversation')
-    vm._firmware_update = FirmwareUpdateTransaction(state=FirmwareUpdateState.TRANSFERRING)
+    vm._firmware.replace_silently(FirmwareUpdateTransaction(state=FirmwareUpdateState.TRANSFERRING))
     with pytest.raises(ValueError, match='维护'):
         vm.normal_agent.save()
     assert [c.name for c in gateway.commands] == [GET]

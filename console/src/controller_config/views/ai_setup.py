@@ -4,45 +4,76 @@ from __future__ import annotations
 import copy
 import sys
 
-from PySide6.QtCore import QProcess, QTimer, QUrl, Qt, Signal
+from PySide6.QtCore import Qt, QTimer, QUrl, QProcess
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QFrame, QGridLayout, QHBoxLayout,
+    QCheckBox, QComboBox, QDialog, QFrame, QGridLayout,
     QLabel, QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from controller_config.ai_setup import (
     AI_APPLICATIONS, AI_BY_KEY, AI_SELECTION_KEY, AI_SETUP_COMPLETED_KEY,
+    AI_SETUP_DEFERRED_KEY,
     installed_desktop_app, linked_profile, load_choices, load_device_choices,
     save_device_choices,
 )
 from controller_config.i18n import set_translatable_text, translate_ui_text as tr
 from controller_config.models import AppState
 from controller_config.onboarding.player import asset_root
+from controller_config.style import tokens
 from controller_config.transactions import ConfigTransactionState, configs_match_readback
 from controller_config.views.device_silhouette import DeviceModelCanvas
+from controller_config.views.connection_progress import AI_SETUP_CLIP, dialog_clip
+from controller_config.views.ui.dialog import LARGE, TALL_MAX_HEIGHT, Dialog
 from controller_config.views.voice_guide import VoiceSetupDialog
 from controller_config.views.voice_practice import VoicePractice
-from controller_config.voice_setup import save_voice_trial
+from controller_config.views.voice_recovery import VoiceRecoveryPanel
+from controller_config.voice_setup import (
+    remove_voice_trial, save_confirmed_voice_choice, save_voice_trial,
+    voice_provider_key,
+)
 
 
-class AISetupDialog(QDialog):
-    restore_profile_requested = Signal(int)
+# Choice cards: a selected card gets a cream ring, not orange (B v0.4: orange
+# only on the primary button and the round close).
+CHOICE_STYLE = tokens.stylesheet('''
+    QCheckBox#aiChoice { padding: 16px; border: 1px solid ${BORDER_STRONG}; border-radius: ${RADIUS_LIST_ROW}px; }
+    QCheckBox#aiChoice:checked { border-color: ${TEXT_PRIMARY}; background: ${SURFACE_3}; }
+    QCheckBox#aiChoice::indicator { width: 20px; height: 20px; border: 1px solid ${BORDER_STRONG}; border-radius: 5px; background: ${SURFACE_2}; image: none; }
+    QCheckBox#aiChoice::indicator:checked { background: ${TEXT_PRIMARY}; border-color: ${TEXT_PRIMARY}; image: url(CHECK_ICON); }
+''')
+
+PRACTICE_CONTEXT_CHANGED = (
+    "这颗键的设备设置已变化。重新确认后，再完成一次练习。"
+)
+
+
+def _actions_match(first, second):
+    def effective(action):
+        if not isinstance(action, dict):
+            return None
+        return {
+            key: value
+            for key, value in action.items()
+            if key == "type" or value not in (None, [], "")
+        }
+
+    return effective(first) == effective(second)
+
+
+class AISetupDialog(Dialog):
+    """Five steps in the shared dialog shell; "稍后继续" bottom-left defers."""
+
+    max_height = TALL_MAX_HEIGHT   # design decision fixed 640; step 3 does not fit 560 yet (design decision)
 
     def __init__(self, view_model, settings, parent=None, *, open_guide=None):
-        super().__init__(parent)
-        self.setObjectName("aiSetupDialog")
+        super().__init__(parent, "选择常用 AI", step="设置常用 AI · 1 / 5", width=LARGE,
+                         close="later", later_text="稍后继续", full_height=True,
+                         object_name="aiSetupDialog")
         self.setWindowTitle(tr("设置常用 AI"))
-        self.setModal(True)
-        self.resize(630, 660)
-        self.setStyleSheet('''
-            QDialog#aiSetupDialog { background: #211F1A; }
-            QCheckBox#aiChoice { padding: 16px; border: 1px solid #504b43; border-radius: 12px; }
-            QCheckBox#aiChoice:checked { border-color: #FF6A00; background: #382b21; }
-            QCheckBox#aiChoice::indicator { width: 20px; height: 20px; border: 1px solid #71695e; border-radius: 5px; background: #292723; image: none; }
-            QCheckBox#aiChoice::indicator:checked { background: #FF6A00; border-color: #FF6A00; image: url(CHECK_ICON); }
-            QLabel#aiSetupTitle { font-size: 24px; font-weight: 700; }
-        '''.replace("CHECK_ICON", (asset_root() / "icons/check.svg").as_posix()))
+        # Appended: without a parent window the shell carries the app sheet itself.
+        self.setStyleSheet(self.styleSheet() + CHOICE_STYLE.replace(
+            "CHECK_ICON", (asset_root() / "icons/check.svg").as_posix()))
         self.vm, self.settings = view_model, settings
         self._serial = None
         self._candidate = None
@@ -56,23 +87,20 @@ class AISetupDialog(QDialog):
         self._error_text = ""
         self._preference_serial = None
         self._voice_edited = False
-        self._original_profile_id = None
-        self._original_profile_name = ""
-        self._applied_profile_name = ""
-        self._restore_after_finish = False
-        root = QVBoxLayout(self)
-        root.setContentsMargins(24, 24, 24, 24)
-        root.setSpacing(14)
-        self._progress = QLabel(objectName="muted")
-        self._title = QLabel(objectName="aiSetupTitle")
-        self._title.setWordWrap(True)
-        root.addWidget(self._progress)
-        root.addWidget(self._title)
+        self._voice_provider = None
+        self._voice_use_mode = "global"
+        self._voice_recovery_reason = None
+        self._target_result_confirmed = False
+        root = self.body_layout()
+        self._title = self.title_label
         self._connection = QLabel(objectName="muted")
         self._connection.setWordWrap(True)
         root.addWidget(self._connection)
         self._pages = QStackedWidget()
         root.addWidget(self._pages, 1)
+        # Steps 3-5 are filled in when they are reached (keys, practice,
+        # recovery), so the tallest one cannot be measured on opening: the
+        # dialog keeps its max_height (full_height) and never jumps.
         self._choices = {}
         chosen = load_choices(settings)
         page, layout = self._page()
@@ -132,35 +160,32 @@ class AISetupDialog(QDialog):
         self._target_check = QCheckBox("我已在这个 AI 中输入并发送一次", objectName="aiTargetConfirmed")
         self._target_check.toggled.connect(self._refresh)
         layout.addWidget(self._target_check)
-        self._switch_summary = self._label("")
-        layout.addWidget(self._switch_summary)
-        self._restore = QPushButton(objectName="aiSetupRestoreProfile")
-        self._restore.clicked.connect(self._complete_and_restore)
-        self._restore.hide()
-        layout.addWidget(self._restore)
+        recovery = VoiceRecoveryPanel(
+            toggle_name="aiTargetRecoveryToggle",
+            options_name="aiTargetRecovery",
+            button_prefix="aiTargetRepair_",
+        )
+        recovery.outcome_selected.connect(self._target_repair)
+        layout.addWidget(recovery)
+        self._target_recovery_toggle = recovery.toggle
+        self._target_recovery = recovery.options
         layout.addStretch()
         layout.addWidget(self._label("下次从首页的“常用 AI”切换，无需重新设置。"))
         self._error = self._label("")
         self._error.setObjectName("aiSetupError")
         root.addWidget(self._error)
-        row = QHBoxLayout()
-        self._back = QPushButton("返回", objectName="aiSetupBack")
-        self._back.clicked.connect(self._go_back)
-        row.addWidget(self._back)
-        later = QPushButton("稍后继续", objectName="aiSetupLater")
-        later.clicked.connect(self.reject)
-        row.addWidget(later)
+        # "稍后继续" remembers the deferral, so it does more than close.
+        later = self.close_button
+        later.setObjectName("aiSetupLater")
+        later.clicked.disconnect()
+        later.clicked.connect(self._defer)
         if open_guide:
-            guide = QPushButton("设备操作说明")
-            guide.setProperty("buttonRole", "ghost")
+            guide = self.add_button("设备操作说明", "text")
             guide.clicked.connect(open_guide)
-            row.addWidget(guide)
-        row.addStretch()
-        self._next = QPushButton(objectName="aiSetupNext")
-        self._next.setProperty("buttonRole", "primary")
+        self._back = self.add_button("返回", "secondary", object_name="aiSetupBack")
+        self._back.clicked.connect(self._go_back)
+        self._next = self.add_button("", "primary", object_name="aiSetupNext")
         self._next.clicked.connect(self._advance)
-        row.addWidget(self._next)
-        root.addLayout(row)
         for button in self.findChildren(QPushButton):
             button.setAutoDefault(False)
         self.vm.changed.connect(self._refresh)
@@ -254,14 +279,51 @@ class AISetupDialog(QDialog):
                 "在 AI 中开启语音，确认文字后用设备发送键发送。" if voice == "native" else "输入一句测试文字，再按设备发送键。")
             self._target_note.setText(f'{tr("到常用 AI 中完成一次")} · {app.name}\n\n{tr(instruction)}')
             set_translatable_text(self._open_app, "打开桌面应用" if self._installed_app() else "打开官网")
-            if self._original_profile_id is not None and self._original_profile_name != self._applied_profile_name:
-                self._switch_summary.setText(tr("当前已切换到「{current}」。原配置「{previous}」仍保留。").format(
-                    current=self._applied_profile_name,
-                    previous=self._original_profile_name,
-                ))
-            else:
-                self._switch_summary.clear()
+            self._target_result_confirmed = False
+            self._target_check.setChecked(False)
         self._refresh()
+
+    def _uses_doubao_macos(self):
+        return (sys.platform == "darwin" and self._voice.currentData() == "external"
+                and self._voice_provider == "doubao")
+
+    def _target_repair(self, reason):
+        messages = {
+            "no_voice": "重新打开语音设置，先确认豆包的使用方式。",
+            "no_text": "确认麦克风可用后，重新完成按键练习。",
+            "cant_stop": "重新打开语音设置，确认豆包使用免按启停。",
+            "conflict": "暂时退出同时响应的其他语音软件，然后重试。",
+            "send": "重新打开语音设置，只检查双击发送键。",
+        }
+        key = self._current.currentData()
+        entry = self._entries.get(key, {})
+        profile_id = entry.get("profile_id")
+        profile = next(
+            (item for item in (self._candidate or {}).get("profiles", [])
+             if item.get("id") == profile_id),
+            None,
+        )
+        mapping = next(
+            (item for item in (profile or {}).get("mappings", [])
+             if item.get("control_id") == "key.8"),
+            None,
+        )
+        if profile_id is not None and mapping is not None:
+            remove_voice_trial(
+                self.settings, self._serial, profile_id, "key.8",
+                mapping.get("action", {}), self._voice_provider,
+            )
+        if key in self._entries:
+            self._entries[key]["tried"] = False
+            save_device_choices(self.settings, self._serial, self._entries)
+        self._voice_recovery_reason = reason
+        if reason != "conflict" and self._practice is not None:
+            self._practice.completed = False
+        self._target_result_confirmed = False
+        self._target_recovery_toggle.setChecked(False)
+        set_translatable_text(self._trial_note, messages[reason])
+        set_translatable_text(self._bind, "重新打开语音设置")
+        self._step(3)
 
     def _installed_app(self):
         return installed_desktop_app(AI_BY_KEY[self._current.currentData()].name)
@@ -282,12 +344,6 @@ class AISetupDialog(QDialog):
         draft = self.vm.draft
         if draft is None:
             return
-        if self._original_profile_id is None:
-            self._original_profile_id = draft.config.get("active_profile")
-            if isinstance(self._original_profile_id, int) and not isinstance(self._original_profile_id, bool):
-                self._original_profile_name = str(
-                    draft.profile(self._original_profile_id).get("name", "")
-                )
         saved = load_device_choices(self.settings, draft.serial)
         try:
             config, entries = self.vm.preview_common_ai(
@@ -304,23 +360,19 @@ class AISetupDialog(QDialog):
             self._review_model.removeWidget(self._model_canvas)
             self._model_canvas.deleteLater()
         profile = next(p for p in config["profiles"] if p["id"] == config["active_profile"])
-        self._applied_profile_name = str(profile.get("name", ""))
         mappings = {m["control_id"]: m for m in profile["mappings"]}
-        self._model_canvas = DeviceModelCanvas(self.vm.model.snapshot, mappings, "key.8")
-        self._model_canvas.setFixedSize(280, 280)
-        self._model_canvas.set_control_labels({m["control_id"]: m["short_name"] for m in profile["mappings"]})
+        # The pre-rendered small version (new model, key 8 marked) replaces the live 3D once
+        # the designer renders it; it cannot carry the per-key short names, so those then show
+        # only in the text below. Until the file exists the live model stays.
+        self._model_canvas = dialog_clip(AI_SETUP_CLIP, 280, self)
+        if self._model_canvas is None:
+            self._model_canvas = DeviceModelCanvas(self.vm.model.snapshot, mappings, "key.8")
+            self._model_canvas.setFixedSize(280, 280)
+            self._model_canvas.set_control_labels({m["control_id"]: m["short_name"] for m in profile["mappings"]})
         self._review_model.addWidget(self._model_canvas, 0, Qt.AlignHCenter)
         external = self._voice.currentData() == "external"
         change = "高亮键：单击说话／结束 · 双击发送" if external else "高亮键：发送"
-        profile_change = ""
-        if self._original_profile_id != profile["id"]:
-            profile_change = "\n" + tr("将从「{previous}」切换到「{current}」。原配置会保留，可随时切回。").format(
-                previous=self._original_profile_name,
-                current=self._applied_profile_name,
-            )
-        self._changes.setText(
-            tr(change) + profile_change + "\n" + tr("先配置基础输入，应用后到目标 AI 试一次。")
-        )
+        self._changes.setText(tr(change) + "\n" + tr("先配置基础输入，应用后到目标 AI 试一次。"))
         self._candidate = copy.deepcopy(config)
         self._entries = entries
         transaction = self.vm.write_transaction
@@ -339,6 +391,31 @@ class AISetupDialog(QDialog):
         snapshot = self.vm.model.snapshot
         return snapshot is not None and snapshot.status.get("operating_mode", "normal") == "normal"
 
+    def _practice_context_matches(self):
+        snapshot = self.vm.model.snapshot
+        candidate = self._candidate
+        if snapshot is None or not isinstance(candidate, dict):
+            return False
+        profile_id = candidate.get("active_profile")
+        if snapshot.active_profile_id != profile_id:
+            return False
+        profile = next(
+            (item for item in candidate.get("profiles", [])
+             if isinstance(item, dict) and item.get("id") == profile_id),
+            None,
+        )
+        mapping = next(
+            (item for item in (profile or {}).get("mappings", [])
+             if isinstance(item, dict) and item.get("control_id") == "key.8"),
+            None,
+        )
+        actual = snapshot.mappings.get("key.8")
+        return (
+            mapping is not None
+            and actual is not None
+            and _actions_match(mapping.get("action"), actual.get("action"))
+        )
+
     def _refresh(self, *_):
         if not hasattr(self, "_next"):
             return
@@ -354,18 +431,19 @@ class AISetupDialog(QDialog):
         transaction = self.vm.write_transaction
         busy = transaction.blocks_editing or self.vm.firmware_update.blocks_editing or self.vm.calibration.blocks_editing
         if self._ready():
-            connection = "设备已连接" if self._normal() else "双击旋钮切换，直到设备显示 NORMAL，再继续。"
+            connection = ("设备已连接" if self._normal() else
+                          "可以先保存普通模式的 AI 方案；实体试用前请双击旋钮切到普通模式。")
         else:
             connection = "连接设备后继续；已选的 AI 会保留。"
         set_translatable_text(self._connection, connection)
-        self._progress.setText(f'{index + 1} / 5')
+        self.set_step(f'{tr("设置常用 AI")} · {index + 1} / 5')
         set_translatable_text(self._title, ("选择常用 AI", "按你的习惯输入", "准备好这颗键", "亲手试一次", "用到工作中")[index])
         self._back.setVisible(index > 0 and not self._applied)
         self._back.setEnabled(not busy and not self._applying)
         enabled = bool(self.selected())
         label = "继续"
         if index == 2:
-            enabled = self._candidate is not None and self._ready() and self._normal() and not busy
+            enabled = self._candidate is not None and self._ready() and not busy
             label = "应用并试用"
             if self._retrying and transaction.state is ConfigTransactionState.FAILED:
                 label = "重新应用"
@@ -383,7 +461,7 @@ class AISetupDialog(QDialog):
                     self._applying = False
                     self._error_text = transaction.message
                     label = "重新应用"
-                    enabled = self._ready() and self._normal()
+                    enabled = self._ready()
                 elif transaction.state is ConfigTransactionState.UNKNOWN:
                     label = "等待重连确认"
             elif self.vm.draft is not None and self.vm.draft.is_dirty and not self._retrying:
@@ -393,29 +471,32 @@ class AISetupDialog(QDialog):
             label = "到 AI 中试用"
             enabled = self._ready() and self._normal() and self._applied and self._practice is not None and self._practice.completed
         elif index == 4:
-            label = "完成设置"
-            enabled = self._target_check.isChecked() and self._ready() and self._normal()
-        if index >= 3 and self._ready() and not configs_match_readback(self._candidate, self.vm.model.snapshot.config):
-            enabled = False
-            self._error_text = "设备配置已变化，请重新设置这次练习。"
+            if self._uses_doubao_macos():
+                label = "可以正常使用"
+                enabled = self._ready() and self._normal()
+            else:
+                label = "完成设置"
+                enabled = self._target_check.isChecked() and self._ready() and self._normal()
+        practice_context_matches = self._practice_context_matches()
+        if index >= 3 and self._ready() and not practice_context_matches:
+            label = "重新确认设置"
+            enabled = self._normal() and not busy
+            self._error_text = PRACTICE_CONTEXT_CHANGED
+        elif self._error_text == PRACTICE_CONTEXT_CHANGED:
+            self._error_text = ""
         self._next.setEnabled(enabled and not busy)
         set_translatable_text(self._next, label)
-        can_restore = (
-            index == 4
-            and self._original_profile_id is not None
-            and self._original_profile_name != self._applied_profile_name
-        )
-        self._restore.setVisible(can_restore)
-        self._restore.setEnabled(can_restore and enabled and not busy)
-        if can_restore:
-            self._restore.setText(
-                tr("完成并返回「{profile}」").format(profile=self._original_profile_name)
-            )
+        doubao_target = index == 4 and self._uses_doubao_macos()
+        self._target_check.setVisible(index == 4 and not doubao_target)
+        self._target_recovery_toggle.setVisible(doubao_target)
+        self._target_recovery.setVisible(doubao_target and self._target_recovery_toggle.isChecked())
         self._error.setText(tr(self._error_text))
         self._error.setVisible(bool(self._error_text))
         practice_ready = (self._ready() and self._normal() and not busy
                           and self._candidate is not None
-                          and configs_match_readback(self._candidate, self.vm.model.snapshot.config))
+                          and practice_context_matches)
+        if self._practice is not None:
+            self._practice.setEnabled(practice_ready)
         self._bind.setEnabled(practice_ready)
         if self._voice_dialog is not None:
             self._voice_dialog.set_context_ready(practice_ready)
@@ -423,6 +504,9 @@ class AISetupDialog(QDialog):
     def _advance(self):
         index = self._pages.currentIndex()
         if not self._next.isEnabled():
+            return
+        if index >= 3 and not self._practice_context_matches():
+            self._restart_after_practice_context_change()
             return
         if index == 0:
             if self.settings is not None:
@@ -432,9 +516,23 @@ class AISetupDialog(QDialog):
         elif index == 2:
             self._apply()
         elif index == 4:
+            if self._uses_doubao_macos():
+                self._target_result_confirmed = True
             self.accept()
         else:
             self._step(index + 1)
+
+    def _restart_after_practice_context_change(self):
+        if self._practice is not None:
+            self._trial_layout.removeWidget(self._practice)
+            self._practice.deleteLater()
+            self._practice = None
+        self._candidate = None
+        self._applied = False
+        self._retrying = False
+        self._target_result_confirmed = False
+        self._target_check.setChecked(False)
+        self._step(2)
 
     def _apply(self):
         try:
@@ -499,14 +597,22 @@ class AISetupDialog(QDialog):
         action = self.vm.model.snapshot.mappings["key.8"]["action"]
         self._practice.completed = False
         self._target_check.setChecked(False)
+        self._target_result_confirmed = False
         dialog = VoiceSetupDialog(self, action=action, settings=self.settings, include_target=False,
-                                  view_model=self.vm, control_id="key.8")
+                                  view_model=self.vm, control_id="key.8",
+                                  initial_use_mode=self._voice_use_mode,
+                                  recovery_reason=self._voice_recovery_reason)
         self._voice_dialog = dialog
         def adapted(_action):
             entry = self._entries[self._current.currentData()]
             entry["voice_action"] = copy.deepcopy(_action)
             entry["tried"] = False
             save_device_choices(self.settings, self._serial, self._entries)
+            save_confirmed_voice_choice(
+                self.settings, self._serial,
+                self.vm.model.snapshot.active_profile_id,
+                _action, dialog.provider.currentData(), mode="normal",
+            )
             self._candidate = copy.deepcopy(self.vm.model.snapshot.config)
             self._error_text = ""
             self._target_check.setChecked(False)
@@ -518,6 +624,8 @@ class AISetupDialog(QDialog):
             if result == QDialog.Accepted:
                 self._practice.completed = True
                 self._voice_provider = dialog.provider.currentData()
+                self._voice_use_mode = dialog.doubao_use_mode
+                self._voice_recovery_reason = None
                 set_translatable_text(self._trial_note, "已完成语音和发送练习，现在到常用 AI 中试一次。")
                 set_translatable_text(self._bind, "重新练习")
             self._refresh()
@@ -533,29 +641,36 @@ class AISetupDialog(QDialog):
         self._retrying = False
         self._step(max(0, self._pages.currentIndex() - 1))
 
+    def _defer(self):
+        if self.settings is not None:
+            self.settings.setValue(AI_SETUP_DEFERRED_KEY, True)
+            self.settings.sync()
+        self.reject()
+
     def accept(self):
-        if self._pages.currentIndex() != 4 or not self._next.isEnabled():
+        if (self._pages.currentIndex() != 4 or not self._next.isEnabled()
+                or not self._practice_context_matches()):
+            return
+        if self._uses_doubao_macos() and not self._target_result_confirmed:
             return
         key = self._current.currentData()
         self._entries[key]["tried"] = True  # User confirmation in the target app, not automatic verification.
         save_device_choices(self.settings, self._serial, self._entries)
         if self._voice.currentData() == "external":
             snapshot = self.vm.model.snapshot
+            if self.settings is not None and self._voice_provider:
+                self.settings.setValue(
+                    voice_provider_key(self._serial, snapshot.active_profile_id),
+                    self._voice_provider,
+                )
+                self.settings.sync()
             save_voice_trial(self.settings, self._serial, snapshot.active_profile_id, "key.8",
                              snapshot.mappings["key.8"]["action"], self._voice_provider, key)
         if self.settings is not None:
             self.settings.setValue(AI_SETUP_COMPLETED_KEY, True)
+            self.settings.setValue(AI_SETUP_DEFERRED_KEY, False)
             self.settings.sync()
-        restore_profile = self._original_profile_id if self._restore_after_finish else None
         super().accept()
-        if isinstance(restore_profile, int) and not isinstance(restore_profile, bool):
-            self.restore_profile_requested.emit(restore_profile)
-
-    def _complete_and_restore(self):
-        if self._pages.currentIndex() != 4 or not self._next.isEnabled():
-            return
-        self._restore_after_finish = True
-        self.accept()
 
     def _finished(self, *_):
         if self._applying:

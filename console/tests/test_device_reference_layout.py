@@ -2,11 +2,11 @@ import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QPushButton, QFrame
 
+from controller_config.style.sheets import application_stylesheet
 from controller_config.views.device_silhouette import (
     DeviceModelCanvas,
     create_device_silhouette,
 )
-from controller_config.views.main_window import APP_STYLE, V4_STYLE
 from test_session_recovery import session
 
 
@@ -19,7 +19,7 @@ def test_reference_geometry_and_control_clicks(session, qtbot, tmp_path):
         on_control=selected.append,
         selected_control_id=None,
     )
-    shell.setStyleSheet(APP_STYLE + V4_STYLE)
+    shell.setStyleSheet(application_stylesheet())
     qtbot.addWidget(shell)
     shell.show()
     qtbot.wait(50)

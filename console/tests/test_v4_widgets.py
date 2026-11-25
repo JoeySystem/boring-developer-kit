@@ -4,24 +4,9 @@ import pytest
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QPushButton
 
+from controller_config.style.sheets import application_stylesheet
 from controller_config.appearance import MACOS_GLASS_MENU_STYLE, V4_STYLE, V4_TOKENS
-from controller_config.views.v4_widgets import STATUS_MARKS, StatusMark, UsageRings, V4Card
-
-
-def test_usage_rings_keep_unknown_separate_from_empty(qapp):
-    rings = UsageRings()
-    assert rings.seven_day is None and rings.five_hour is None
-    assert "—" in rings.accessibleName()
-    rings.set_usage(seven_day=0, five_hour=72)
-    assert "7D 0%" in rings.accessibleName()
-    assert "5H 72%" in rings.accessibleName()
-    assert not rings.grab().isNull()
-
-
-@pytest.mark.parametrize("value", [-1, 101, float("nan"), float("inf")])
-def test_usage_rings_reject_not_a_percentage(qapp, value):
-    with pytest.raises(ValueError):
-        UsageRings().set_usage(seven_day=value, five_hour=None)
+from controller_config.views.v4_widgets import STATUS_MARKS, StatusMark, V4Card
 
 
 @pytest.mark.parametrize("role", ["primary", "secondary", "widget", "focus"])
@@ -48,10 +33,9 @@ def test_status_marks_have_non_colour_identity(qapp):
 
 
 def test_focus_card_has_no_orange_outline_or_glow(qapp):
-    from controller_config.views.main_window import APP_STYLE
 
     card = V4Card(role="focus", dots=True)
-    card.setStyleSheet(APP_STYLE + V4_STYLE)
+    card.setStyleSheet(application_stylesheet())
     card.resize(300, 180)
     image = card.grab().toImage()
     # The old six-pixel halo and orange border were painted at both sides.
@@ -64,12 +48,11 @@ def test_focus_card_has_no_orange_outline_or_glow(qapp):
 @pytest.mark.parametrize("name", ["promptDirectionCard", "encoderControl", "joystickControl", "controlKey"])
 def test_selected_controls_do_not_restore_legacy_red_borders(qapp, name):
     from controller_config.views.device_silhouette import KeycapButton
-    from controller_config.views.main_window import APP_STYLE
 
     button_type = KeycapButton if name == "controlKey" else QPushButton
     button = button_type(objectName=name)
     button.setProperty("selected", True)
-    button.setStyleSheet(APP_STYLE + V4_STYLE)
+    button.setStyleSheet(application_stylesheet())
     button.resize(200, 100)
     image = button.grab().toImage()
     ratio = image.devicePixelRatio()

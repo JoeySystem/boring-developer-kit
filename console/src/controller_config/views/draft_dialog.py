@@ -1,19 +1,13 @@
 from PySide6.QtWidgets import QMessageBox, QWidget
 
-from controller_config.i18n import translate_ui_text
+from controller_config.views.ui import notice
 
 
 def confirm_local_draft(parent: QWidget, title: str, text: str) -> QMessageBox.StandardButton:
     """Name the local-only choices without implying a device write."""
-    dialog = QMessageBox(QMessageBox.Warning, translate_ui_text(title),
-                         translate_ui_text(text),
-                         QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
-                         parent)
-    dialog.setObjectName("localDraftChoice")
-    for button, label in ((QMessageBox.Save, "保留草稿"),
-                          (QMessageBox.Discard, "放弃修改"),
-                          (QMessageBox.Cancel, "继续编辑")):
-        dialog.button(button).setText(translate_ui_text(label))
-    dialog.setDefaultButton(QMessageBox.Cancel)
-    dialog.setEscapeButton(QMessageBox.Cancel)
-    return QMessageBox.StandardButton(dialog.exec())
+    picked = notice.choose(
+        parent, title, text,
+        [("cancel", "继续编辑"), ("discard", "放弃修改"), ("keep", "保留草稿")],
+        default="cancel", escape="cancel", object_name="localDraftChoice",
+    )
+    return {"keep": QMessageBox.Save, "discard": QMessageBox.Discard}.get(picked, QMessageBox.Cancel)

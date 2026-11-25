@@ -26,7 +26,7 @@ def test_schema_and_draft_use_codepoint_lengths(contract, unit):
 
 def test_short_name_input_accepts_twelve_emoji_without_utf16_truncation(session):
     window, vm, gateway, snapshot, _ = session
-    window._select_physical_control('key.8')
+    window._select_physical_control('key.9')
     editor = window._content.findChild(QLineEdit, 'mappingShortNameEditor')
     try:
         editor.clear()

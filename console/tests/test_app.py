@@ -38,6 +38,7 @@ def test_background_mode_is_an_explicit_startup_option() -> None:
     assert args.background is True
 
 
+@pytest.mark.skip(reason="社区版固件在线源留空")
 def test_packaged_firmware_source_and_explicit_sample_channel() -> None:
     from controller_config.firmware_release import default_firmware_source
     source = default_firmware_source()
@@ -214,7 +215,7 @@ def test_application_quit_always_shuts_down_device_gateway(
     monkeypatch.setattr(
         app_module,
         "DeviceGateway",
-        lambda _contract, value: device_authenticators.append(value) or object(),
+        lambda _contract, value, **_kwargs: device_authenticators.append(value) or object(),
     )
     monkeypatch.setattr(app_module, "LanguageManager", lambda *_args, **_kwargs: object())
     monkeypatch.setattr(app_module, "MainViewModel", FakeViewModel)
@@ -259,8 +260,15 @@ def test_application_quit_always_shuts_down_device_gateway(
         ),
     )
 
+    # The start-up clean-up of Doubao store copies must never sweep the real temp folder here.
+    import controller_config.viewmodels.desktop_agents as desktop_agents_module
+    cleanups = []
+    monkeypatch.setattr(desktop_agents_module, "cleanup_stale_store_copies",
+                        lambda *_args: cleanups.append(True) or 0)
+
     arguments = [] if live_device else ["--demo", "ready"]
     assert app_module.main(arguments) == 0
+    assert cleanups == ([True] if live_device else [])
 
     if live_device:
         assert shutdowns.count('desktop-updater') == 1

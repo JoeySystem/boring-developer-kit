@@ -113,6 +113,9 @@ def test_release_archives_have_importable_roots_and_licenses(tmp_path):
         assert not any(name.endswith(("provision_device.py", "prepare_online_firmware.py", ".pem", ".bin", ".elf")) for name in names)
         assert any(name.endswith("console/LICENSE") for name in names)
         assert not any("font-pack.json" in name or "boring-console-icon" in name for name in names)
+        assert any(name.endswith("recovery-tool/authority_update_app.py") for name in names)
+        assert not any("factory-tools" in name or "/provisioning/" in name for name in names)
+        assert not any("assembly-alignment" in name or "current-device.json" in name for name in names)
         assert not any(".venv/" in name or "device-backups/" in name for name in names)
         assert any(name.endswith("examples/packages/claim_prompt.zip") for name in names)
         assert not any("test_private_keys" in archive.read(name).decode() for name in names if name.endswith(".json"))
@@ -160,8 +163,20 @@ def test_public_build_does_not_subscribe_to_official_updates():
         assert settings['feed_url'] == settings['public_key'] == ''
     assert json.loads((assets / 'firmware-source.json').read_text())['manifest_url'] == ''
     assert json.loads((assets / 'official-firmware-releases.json').read_text()) == []
-    assert not (assets / 'onboarding').exists()
+    # Only the third-party (MIT) guide icons ship; no guide clips or screen atlas.
+    onboarding = assets / 'onboarding'
+    assert {p.parent.name for p in onboarding.rglob('*') if p.is_file()} <= {'icons'}
+    assert (onboarding / 'icons' / 'LICENSE').read_text().startswith('MIT License')
     assert not (assets / 'boring_mist_3d').exists()
+    assert not (assets / 'connect_3d').exists()
+    assert not (assets / 'official-recovery.zip').exists()
+    assert not (assets / 'boring-orbital-master.svg').exists()
+    source = ROOT / 'console/src/controller_config'
+    # Only the community stub and the device wire codec of the Doubao link stay.
+    assert {p.name for p in source.glob('doubao_*.py')} == {'doubao_adapter.py', 'doubao_status.py'}
+    assert not list(source.glob('chromium_*.py'))
+    assert 'DoubaoWork' not in (source / 'doubao_adapter.py').read_text().split('"""')[2]
+    assert not (ROOT / 'console/delivery').exists()
     assert not any(assets.glob('boring-console-icon.*'))
     assert not (assets / 'boring-mist-wireframe.png').exists()
     assert not (assets / 'mist-screen-source-preview.gif').exists()

@@ -3,10 +3,10 @@ from types import SimpleNamespace
 
 import pytest
 from PySide6.QtCore import QObject, Signal, Qt
-from PySide6.QtWidgets import QLabel, QPushButton, QPlainTextEdit, QWidget
+from PySide6.QtWidgets import QDialog, QLabel, QPushButton, QPlainTextEdit, QWidget
 
 from controller_config.firmware_release import RemoteFirmwareRelease, RemoteFirmwareState
-from controller_config.views.claude_status_settings import ClaudeStatusSettings
+from controller_config.views.claude_status_settings import ClaudeStatusSettings, claude_diagnostics
 from test_session_recovery import session
 from test_ble_name_ui import editor
 
@@ -25,11 +25,8 @@ def test_release_summary_keeps_builds_distinct_and_details_optional(session, qtb
         state=RemoteFirmwareState.AVAILABLE, release=release))
     vm.navigate('firmware')
     window.show()
-    qtbot.waitUntil(lambda: window._nav_buttons['settings'].accessibleName() == {
-        'zh_CN': '固件与系统',
-        'en_US': 'Firmware & System',
-        'ja_JP': 'ファームウェアとシステム',
-    }[language])
+    # 顶部页签三种语言下都叫 Settings，不跟着语言变。
+    qtbot.waitUntil(lambda: window._nav_buttons['settings'].accessibleName() == 'Settings')
     current = window.findChild(QLabel, 'firmwareCurrentVersion')
     target = window.findChild(QLabel, 'remoteFirmwareReleaseSummary')
     focus = window.findChild(QWidget, 'firmwareUpdateFocusCard')
@@ -60,41 +57,32 @@ def test_release_summary_keeps_builds_distinct_and_details_optional(session, qtb
     window._language_manager.set_language('zh_CN')
 
 
-def test_diagnostics_and_prompt_logs_expand_without_hiding_primary_actions(session, qtbot):
+def test_prompt_logs_expand_without_hiding_primary_actions(session, qtbot):
     window, vm, _, _, _ = session
     window.show()
-    vm.navigate('diagnostics')
-    log = window.findChild(QPlainTextEdit, 'diagnosticEventLog')
-    assert not log.isVisible()
-    start = window.findChild(QPushButton, 'startDiagnosticCapture')
-    qtbot.waitUntil(start.isVisible)
-    window.findChild(QPushButton, 'diagnosticDetailsToggle').click()
-    assert log.isVisible() and start.isVisible()
     vm.navigate('prompts')
     assert not any(
         item.isVisible()
-        for item in window.findChildren(QPlainTextEdit, 'promptEventLog')
+        for item in window.findChildren(QPlainTextEdit, 'promptDiagnosticsLog')
     )
-    qtbot.waitUntil(lambda: any(
-        item.isVisible()
-        for item in window.findChildren(QPushButton, 'promptEventDetailsToggle')
-    ))
-    toggle = next(
-        item
-        for item in window.findChildren(QPushButton, 'promptEventDetailsToggle')
-        if item.isVisible()
-    )
-    toggle.click()
-    qtbot.waitUntil(lambda: any(
-        item.isVisible()
-        for item in window.findChildren(QPlainTextEdit, 'promptEventLog')
-    ))
+    # 操作记录 is in 诊断信息 (定稿 v1), opened from the top line.
+    qtbot.waitUntil(lambda: window.findChild(QPushButton, 'promptStatusDiagnostics').isVisible())
+    window.findChild(QPushButton, 'promptStatusDiagnostics').click()
+    qtbot.waitUntil(lambda: window.findChild(QPlainTextEdit, 'promptDiagnosticsLog').isVisible())
+    window.findChild(QDialog, 'promptDiagnosticsDialog').reject()
 
 
 def test_name_help_and_error_details_do_not_change_draft_or_save_state(editor):
     widget, vm = editor
     assert widget.counter.isHidden()
-    assert widget.findChild(QPushButton, 'bleNameHelpToggle') is None
+    help_toggle = widget.findChild(QPushButton, 'bleNameHelpToggle')
+    help_copy = widget.findChild(QLabel, 'bleNameHelp')
+    assert help_toggle is not None and help_copy is not None and help_copy.isHidden()
+    help_toggle.click()
+    assert help_copy.isVisible()
+    assert widget.name_input.text() == 'Boring Mist'
+    assert not widget.save_button.isEnabled()
+    assert not vm.ble_name.calls
     vm.ble_name.technical = 'GET_BLE_NAME timeout'
     vm.ble_name.message = '名称保存失败，输入已保留'
     vm.ble_name.changed.emit()
@@ -125,8 +113,11 @@ def test_claude_problem_remains_visible_while_paths_are_collapsed(qtbot, qapp):
     assert widget.status.isVisible()
     assert '无法读取' in widget.status.text()
     assert '/example/private' not in widget.status.text()
-    assert not widget.detail.isVisible()
-    widget.findChild(QPushButton, 'claudeStatusDetailsToggle').click()
-    assert widget.detail.isVisible()
-    assert '/example/private/claude' in widget.detail.text()
+    # 路径和版本这些调试信息不摆在弹窗里，收进"复制诊断信息"（design decision）。
+    shown = '\n'.join(label.text() for label in widget.findChildren(QLabel) if label.isVisible())
+    assert '/example/private' not in shown and 'Hook technical note' not in shown
+    assert widget.findChild(QPushButton, 'copyClaudeDiagnostics').isVisible()
+    copied = claude_diagnostics(widget.bridge)
+    assert 'executable: /example/private/claude' in copied and 'version: 2.1.63' in copied
+    assert 'note: Hook technical note' in copied
     qapp.setProperty('boringUiLanguage', previous)

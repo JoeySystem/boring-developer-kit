@@ -16,14 +16,11 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
-    QMessageBox,
-    QProgressBar,
     QPushButton,
     QSizePolicy,
-    QScrollArea,
 )
 
+from controller_config.views.ui import notice
 from controller_config.build_identity import BuildIdentity
 from controller_config.desktop_update import UpdateStatus, default_desktop_update_source
 from controller_config import __version__
@@ -35,8 +32,8 @@ from controller_config.transactions import ConfigTransactionState
 from controller_config.views.actions import ActionsPage
 from controller_config.views.workflows import WorkflowPage
 from controller_config.views.automation import AutomationEditingState, AutomationPage
-from controller_config.views.macro_editor import MacroEditor
 from controller_config.views.preferences_editor import PreferencesEditor
+from controller_config.views.ui.progress_ring import ProgressRing
 
 
 def _official_download_source(platform: str | None = None) -> dict:
@@ -81,6 +78,13 @@ def _resolve_official_download_url(source: dict, payload: bytes) -> str:
     return package_url
 
 
+def _download_percent(status) -> int | None:
+    """0..100 while the size is known; None ("还不知道多久") otherwise and while verifying."""
+    if status.state == 'downloading' and status.total > 0:
+        return min(100, max(0, int(status.received * 100 / status.total)))
+    return None
+
+
 class DesktopUpdateUi(QObject):
     def __init__(
         self,
@@ -122,6 +126,10 @@ class DesktopUpdateUi(QObject):
         self._manual_pending = False
         self._manual_result = None
         self._user_operation = False
+        self._footer_system_only = False
+        self._footer_replaced_on_system = False
+        self._inline_message_text = ''
+        self._inline_message_visible = False
         self.row = window._desktop_update_footer
         layout = QHBoxLayout(self.row)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -133,10 +141,9 @@ class DesktopUpdateUi(QObject):
         self.message.setProperty(SKIP_TRANSLATION_PROPERTY, True)
         self.action = QPushButton(objectName='desktopUpdateAction')
         self.action.clicked.connect(self.activate)
-        self.progress = QProgressBar(objectName='desktopUpdateProgress')
-        self.progress.setFixedWidth(70)
-        self.progress.setMaximumHeight(12)
-        self.progress.setTextVisible(False)
+        # 进度条点阵样式 定稿 v1: the small ring (36) in narrow places.
+        self.progress = ProgressRing(36)
+        self.progress.setObjectName('desktopUpdateProgress')
         self.cancel_button = QPushButton('取消下载', objectName='cancelDesktopUpdate')
         self.cancel_button.clicked.connect(lambda: self.updater.cancel())
         self.restore_recovery = QPushButton('恢复草稿', objectName='restoreUpdateWorkspace')
@@ -193,7 +200,7 @@ class DesktopUpdateUi(QObject):
             self._manual_result = None
             self._user_operation = False
         elif self._manual_pending and not force and status.state in {
-            'current', 'failed', 'available', 'unconfigured', 'custom', 'unavailable'
+            'current', 'failed', 'available', 'unconfigured', 'custom', 'dev', 'unavailable'
         }:
             # Sparkle starts asynchronously; repainting the old status after
             # check() returns is not the response to this manual request.
@@ -209,9 +216,10 @@ class DesktopUpdateUi(QObject):
         texts = {
             'unconfigured': '此安装包尚未配置在线更新。',
             'custom': '自定义版本不使用官方软件自动更新。',
+            'dev': '开发版不检查、不下载软件更新。',
             'unavailable': '构建信息不可用，已停用软件更新。',
             'idle': '检查应用更新', 'checking': '正在检查应用更新…',
-            'current': '当前已是最新版本', 'available': '控制台有更新 {version}',
+            'current': '软件：当前已是最新版本', 'available': '控制台有更新 {version}',
             'downloading': '正在下载 {version}，可继续使用',
             'verifying': '正在验证并准备更新…', 'ready': '更新已准备好，重启后生效',
             'installing': '正在重启并更新…', 'failed': '更新未完成，可稍后重试',
@@ -241,11 +249,7 @@ class DesktopUpdateUi(QObject):
         self.action.setText(self.window._language_manager.translate(action_text))
         self.action.setVisible(status.state in {'available', 'ready', 'failed'})
         self.progress.setVisible(status.state in {'downloading', 'verifying'})
-        if status.total > 0:
-            self.progress.setRange(0, 100)
-            self.progress.setValue(min(100, max(0, int(status.received * 100 / status.total))))
-        else:
-            self.progress.setRange(0, 0)
+        self.progress.set_value(_download_percent(status))
         self.cancel_button.setText(self.window._language_manager.translate('取消下载'))
         self.cancel_button.setVisible(status.state == 'downloading')
         self.restore_recovery.setText(self.window._language_manager.translate('恢复草稿'))
@@ -288,7 +292,16 @@ class DesktopUpdateUi(QObject):
         # and the settings detail view keep their existing controls.
         self._footer_settings_only = status.state in {'available', 'ready'} and not (
             force or manual or self._recovery_message or self._recovery_error)
+        self._footer_system_only = manual and status.state in {
+            'current', 'failed', 'unconfigured', 'custom', 'dev', 'unavailable', 'idle'
+        }
+        self._inline_message_text = text
+        self._inline_message_visible = visible
+        self._footer_replaced_on_system = visible and status.state in {
+            'checking', 'current', 'unconfigured', 'custom', 'dev', 'unavailable', 'idle'
+        }
         self._footer_visible = visible
+        self._refresh_inline_status()
         self._refresh_footer_location()
         if status.state == 'available' and paused and not manual and not force and self.updater is not None:
             # Release Sparkle's active offer so its scheduler can find later
@@ -298,7 +311,7 @@ class DesktopUpdateUi(QObject):
     def switch_to_official(self) -> bool:
         """Open the official installer page without changing this DIY session."""
 
-        if self.build_identity.allows_official_updates:
+        if self.build_identity.allows_official_updates or self.build_identity.is_dev_build:
             return False
         message = self.window._language_manager.translate(
             '官方版不包含你的自定义修改。DIY 程序、源码和数据会保留；需要的配置或扩展可另行导入。'
@@ -376,32 +389,44 @@ class DesktopUpdateUi(QObject):
             reply.deleteLater()
 
     def _confirm_official_switch_dialog(self, message: str) -> bool:
-        dialog = QMessageBox(self.window)
-        dialog.setWindowTitle(
-            self.window._language_manager.translate('切换到官方版本')
-        )
-        dialog.setText(message)
-        open_button = dialog.addButton(
-            self.window._language_manager.translate('下载官方版本'),
-            QMessageBox.ButtonRole.AcceptRole,
-        )
-        dialog.addButton(
-            self.window._language_manager.translate('取消'),
-            QMessageBox.ButtonRole.RejectRole,
-        )
-        dialog.exec()
-        return dialog.clickedButton() is open_button
+        return notice.choose(
+            self.window, '切换到官方版本', message,
+            [('cancel', '取消'), ('open', '下载官方版本')],
+            default='open', escape='cancel',
+        ) == 'open'
 
     def _show_official_download_failure(self, message: str) -> None:
-        QMessageBox.warning(
+        notice.notify(
             self.window,
             self.window._language_manager.translate('切换到官方版本'),
             message,
         )
 
     def _refresh_footer_location(self, *_):
-        self.row.setVisible(self._footer_visible and (
-            not self._footer_settings_only or self.vm.page == 'settings'))
+        on_settings = self.vm.page == 'settings'
+        on_system = on_settings and getattr(self.window, '_settings_section', '') in {'system', 'updates'}
+        self.row.setVisible(
+            self._footer_visible
+            and (not self._footer_settings_only or on_settings)
+            and (not self._footer_system_only or on_system)
+            and not (on_system and self._footer_replaced_on_system)
+        )
+
+    def populate_inline_status(self, label: QLabel) -> None:
+        label.setText(self._inline_message_text)
+        label.setToolTip(self.status.message or self._inline_message_text)
+        label.setVisible(self._inline_message_visible)
+
+    def populate_inline_progress(self, ring: ProgressRing) -> None:
+        """The small ring beside the inline message in the Settings "电脑软件" tile."""
+        ring.set_value(_download_percent(self.status))
+        ring.setVisible(self._inline_message_visible and self.status.state in {'downloading', 'verifying'})
+
+    def _refresh_inline_status(self) -> None:
+        for label in self.window.findChildren(QLabel, 'desktopUpdateInlineMessage'):
+            self.populate_inline_status(label)
+        for ring in self.window.findChildren(ProgressRing, 'desktopUpdateInlineProgress'):
+            self.populate_inline_progress(ring)
 
     def snooze_update(self):
         if self.status.state != 'available':
@@ -433,7 +458,7 @@ class DesktopUpdateUi(QObject):
         self.show_status(self.status)
 
     def activate_navigation(self):
-        self.window._select_settings_section('system')
+        self.window._select_settings_section('updates')
         if self.vm.page == 'settings':
             self.show_status(self.status, force=True)
 
@@ -451,6 +476,31 @@ class DesktopUpdateUi(QObject):
             self.updater.install()
         else:
             self.check()
+
+    def _confirm_ready_update_quit(self) -> str:
+        return notice.choose(
+            self.window, "更新已下载",
+            "软件更新已准备好。退出前可以直接安装，无需下次重新下载。",
+            [("cancel", "取消"), ("discard", "放弃本次更新并退出"), ("install", "退出并安装更新")],
+            default="install", escape="cancel",
+        )
+
+    def handle_close_request(self) -> bool:
+        """Resolve a staged update before a real application quit.
+
+        Returning False keeps the current close event from racing Sparkle's
+        installer-triggered quit or from discarding the staged package.
+        """
+        if self.status.state != "ready" or self.updater is None:
+            return True
+        choice = self._confirm_ready_update_quit()
+        if choice == "install":
+            self.updater.install()
+            return False
+        if choice == "discard":
+            self.updater.cancel()
+            return True
+        return False
 
     def blocked_reason(self):
         vm = self.vm
@@ -484,7 +534,7 @@ class DesktopUpdateUi(QObject):
     def capture_workspace(self):
         w = self.window
         state = {'page': self.vm.page, 'control': w._selected_control_id,
-                 'macro_id': w._selected_macro_id, 'settings_section': w._settings_section,
+                 'macro_id': w._sequences_page.selected_macro_id, 'settings_section': w._settings_section,
                  'update_target_version': self.status.version}
         card = w._current_mapping_card()
         mapping = w._current_mapping_editing_state()
@@ -502,15 +552,9 @@ class DesktopUpdateUi(QObject):
                  and not preferences_page.property('discardEdits') else None)
         if prefs is not None:
             state['preferences'] = prefs.values()
-        macro_page = w.findChild(QScrollArea, 'deviceKeySequencesPage')
-        if macro_page is not None and (self.vm.draft is None
-                or macro_page.property('draftIdentity') != id(self.vm.draft)
-                or macro_page.property('macroId') != w._selected_macro_id):
-            macro_page = None
-        macro = macro_page.findChild(MacroEditor) if macro_page is not None else None
-        name = macro_page.findChild(QLineEdit, 'macroNameEditor') if macro_page is not None else None
-        if macro is not None and name is not None:
-            state['macro'] = [name.text(), macro.steps()]
+        macro = w._sequences_page.editing_state()
+        if macro is not None:
+            state['macro'] = list(macro)
         prompt = w._prompt_editor
         if prompt is not None and prompt.editing_state() is not None:
             state['prompt'] = asdict(prompt.editing_state())
@@ -580,16 +624,10 @@ class DesktopUpdateUi(QObject):
             draft.config['lighting'], draft.config['haptic'], draft.config['display']
         ):
             return True
-        macro_page = w.findChild(QScrollArea, 'deviceKeySequencesPage')
-        if macro_page is not None and (self.vm.draft is None
-                or macro_page.property('draftIdentity') != id(self.vm.draft)
-                or macro_page.property('macroId') != w._selected_macro_id):
-            macro_page = None
-        macro = macro_page.findChild(MacroEditor) if macro_page is not None else None
-        name = macro_page.findChild(QLineEdit, 'macroNameEditor') if macro_page is not None else None
-        if macro is not None and name is not None and draft is not None:
-            saved = draft.macro(w._selected_macro_id)
-            if name.text() != saved.get('name', '') or macro.steps() != saved.get('steps', []):
+        macro = w._sequences_page.editing_state()
+        if macro is not None and draft is not None:
+            saved = draft.macro(w._sequences_page.selected_macro_id)
+            if macro[0] != saved.get('name', '') or macro[1] != saved.get('steps', []):
                 return True
         return any(d.is_dirty for d in (*w._screen_icon_drafts.values(), *w._screen_glyph_drafts.values()))
 
@@ -616,7 +654,7 @@ class DesktopUpdateUi(QObject):
             state = self._pending.get('workspace', {})
             w = self.window
             w._selected_control_id = state.get('control')
-            w._selected_macro_id = state.get('macro_id')
+            w._sequences_page.selected_macro_id = state.get('macro_id')
             w._settings_section = state.get('settings_section', 'general')
             target_page = state.get('page', 'overview')
             # Cached editors can contain edits even while the user is on Settings.

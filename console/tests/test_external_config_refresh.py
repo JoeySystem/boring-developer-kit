@@ -65,10 +65,10 @@ def test_busy_transaction_defers_refresh_until_idle_even_if_status_unchanged(qtb
     from controller_config.firmware_update import FirmwareUpdateTransaction, FirmwareUpdateState
     vm, gateway, snapshot = setup_refresh(contract)
     result, status = changed_config(snapshot)
-    vm._firmware_update = FirmwareUpdateTransaction(state=FirmwareUpdateState.TRANSFERRING)
+    vm._firmware.replace_silently(FirmwareUpdateTransaction(state=FirmwareUpdateState.TRANSFERRING))
     gateway.status_updated.emit(status)
     assert not gateway.commands
-    vm._firmware_update = FirmwareUpdateTransaction()
+    vm._firmware.replace_silently(FirmwareUpdateTransaction())
     gateway.status_updated.emit(status)
     assert gateway.commands[-1].name == 'GET_CONFIG'
     gateway.command_completed.emit('GET_CONFIG', _ack('GET_CONFIG', result))

@@ -1,0 +1,2 @@
+# TEST ONLY: scripted boot crashes (tools/build.sh --crash-fault-injection).
+CONFIG_WMP_CRASH_FAULT_INJECTION=y

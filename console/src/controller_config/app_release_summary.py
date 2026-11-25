@@ -15,7 +15,6 @@ _LANGUAGES = ("zh_CN", "en_US", "ja_JP")
 @dataclass(frozen=True)
 class AppReleaseSummary:
     version: str
-    from_version: str
     highlights: tuple[str, ...]
 
 
@@ -40,9 +39,6 @@ def load_app_release_summary(
         raise ValueError(
             f"app release summary version {version!r} does not match {expected_version!r}"
         )
-    from_version = payload.get("from_version")
-    if not isinstance(from_version, str) or not from_version.strip():
-        raise ValueError("app release summary from_version must be a non-empty string")
 
     localized = payload.get("highlights")
     if not isinstance(localized, dict):
@@ -62,8 +58,4 @@ def load_app_release_summary(
             raise ValueError(f"{key} release highlights must be concise single lines")
 
     selected = language if language in _LANGUAGES else "en_US"
-    return AppReleaseSummary(
-        version=version,
-        from_version=from_version,
-        highlights=tuple(localized[selected]),
-    )
+    return AppReleaseSummary(version=version, highlights=tuple(localized[selected]))

@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QBoxLayout, QPushButton, QSlider
+from PySide6.QtWidgets import QBoxLayout, QPushButton, QSlider, QWidget
 
 from controller_config.appearance import V4_STYLE
 from controller_config.prompt_device import PromptListenerStatus
@@ -26,30 +26,31 @@ def prompt_editor(qtbot):
 
 def test_prompt_cards_keep_utf8_counts_and_local_only_save(qtbot):
     editor, saved = prompt_editor(qtbot)
-    focus = editor.findChild(V4Card, "promptFocusCard")
-    assert focus.property("v4Role") == "focus"
-    assert editor._name_bytes.text() == "已用 6/48"
-    assert editor._body_bytes.text() == "已用 6/4096"
+    assert editor.findChild(QWidget, "promptFocusCard").span == (2, 2)  # 定稿 v1: the editor tile
+    # Characters, not bytes: "审查" is 2 characters of a 16-character name.
+    assert editor._name_count.text() == "2 / 16 字"
+    assert editor._body_count.text() == ""
     editor._name.setText("英文 A")
     editor._body.setPlainText("一\n二")
     editor.findChild(QPushButton, "savePromptDraft").click()
     assert saved == [(1, "英文 A", "一\n二")]
-    assert editor._body_bytes.text() == "已用 7/4096"
-    assert len(editor._direction_buttons) == 4
-    assert editor.findChild(V4Card, "promptPasteCard") is not None
-    assert editor.findChild(V4Card, "promptEventsCard") is not None
+    assert editor._name_count.text() == "4 / 17 字"
+    assert editor._body_count.text() == ""
+    assert editor.findChild(QWidget, "promptDirectionCross") is not None
+    assert editor.findChild(QWidget, "promptDiagnostics") is not None  # helper, log and paste help
 
 
-def test_prompt_columns_stack_without_losing_current_input(qtbot):
+def test_prompt_wall_shrinks_without_losing_current_input(qtbot):
     editor, _ = prompt_editor(qtbot)
     editor.resize(1180, 700)
     editor.show()
-    qtbot.waitUntil(lambda: editor._workspace_layout.direction() == QBoxLayout.Direction.LeftToRight)
+    qtbot.waitUntil(lambda: editor._wall.width() > 0)
+    wide = editor._wall.width()
     editor._body.setPlainText("保留尚未保存的输入")
     editor.resize(760, 700)
-    qtbot.waitUntil(lambda: editor._workspace_layout.direction() == QBoxLayout.Direction.TopToBottom)
+    qtbot.waitUntil(lambda: editor._wall.width() < wide)
     assert editor._body.toPlainText() == "保留尚未保存的输入"
-    assert editor.widget().width() <= editor.viewport().width()
+    qtbot.waitUntil(lambda: editor.widget().width() <= editor.viewport().width())
 
 
 def test_preferences_cards_keep_schema_values_and_stack(qtbot, contract):
@@ -65,21 +66,22 @@ def test_preferences_cards_keep_schema_values_and_stack(qtbot, contract):
     qtbot.addWidget(editor)
     editor.setStyleSheet(V4_STYLE)
     assert editor.values() == (lighting, haptic, display)
-    assert editor._light_card.property("v4Role") == "primary"
-    assert editor._screen_card.property("v4Role") == "widget"
-    assert editor._haptic_card.property("v4Role") == "secondary"
+    # 灯光与反馈 is one wall (the designer, 灯光页 v0.4): fixed cells, nothing re-stacks.
+    assert editor._light_card.span == (2, 2)
+    assert editor._screen_card.span == (1, 1) and editor._haptic_card.span == (1, 1)
+    assert editor._icon_card.span == (1, 2)
     assert editor._lighting_brightness.maximum() == 4
     slider = editor.findChild(QSlider, "hapticStrengthSlider")
     slider.setValue(33)
     assert editor.values()[1]["strength"] == 33
     editor._haptic_strength.setValue(27)
     assert slider.value() == 27
-    editor.resize(1180, 700)
     editor.show()
-    qtbot.waitUntil(lambda: not editor._compact_cards)
     before = editor.values()
-    editor.resize(760, 900)
-    qtbot.waitUntil(lambda: editor._compact_cards)
+    editor.open_tile(editor._haptic_card)
+    editor.open_tile(None)
     assert editor.values() == before
-    assert not editor._light_card.geometry().intersects(editor._screen_card.geometry())
-    assert not editor._screen_card.geometry().intersects(editor._haptic_card.geometry())
+    for first, second in ((editor._light_card, editor._screen_card),
+                          (editor._screen_card, editor._haptic_card),
+                          (editor._screen_card, editor._icon_card)):
+        assert not first.geometry().intersects(second.geometry())

@@ -2,6 +2,7 @@
 
 enum {
     HID_KEY_C = 6,
+    HID_KEY_D = 7,
     HID_KEY_G = 10,
     HID_KEY_L = 15,
     HID_KEY_O = 18,
@@ -12,7 +13,6 @@ enum {
     HID_KEY_ENTER = 40,
     HID_KEY_ESCAPE = 41,
     HID_KEY_TAB = 43,
-    HID_KEY_SPACE = 44,
     HID_KEY_ARROW_RIGHT = 79,
     HID_KEY_ARROW_LEFT = 80,
     HID_KEY_ARROW_DOWN = 81,
@@ -33,6 +33,8 @@ enum {
  * key deliberately uses the host's normal text-paste chord, which is the one
  * platform-specific action in this fixed layer.
  */
+#define VOICE_KEY_INDEX 7u
+
 static const claude_code_shortcut_t COMMON_KEY_SHORTCUTS[] = {
     SHORTCUT(HID_KEY_ENTER, "SUBMIT"),
     SHORTCUT(HID_KEY_ESCAPE, "INTERRUPT"),
@@ -41,7 +43,8 @@ static const claude_code_shortcut_t COMMON_KEY_SHORTCUTS[] = {
     MODIFIED_SHORTCUT(HID_KEY_O, HID_MODIFIER_LEFT_CONTROL, "TRANSCRIPT"),
     MODIFIED_SHORTCUT(HID_KEY_R, HID_MODIFIER_LEFT_CONTROL, "HISTORY"),
     MODIFIED_SHORTCUT(HID_KEY_L, HID_MODIFIER_LEFT_CONTROL, "REDRAW"),
-    SHORTCUT(HID_KEY_SPACE, "VOICE"),
+    /* Key 8 (index 7) is platform-specific: see VOICE_KEY_INDEX. */
+    SHORTCUT(HID_KEY_D, "VOICE"),
     MODIFIED_SHORTCUT(HID_KEY_T, HID_MODIFIER_LEFT_CONTROL, "TASKS"),
     MODIFIED_SHORTCUT(HID_KEY_G, HID_MODIFIER_LEFT_CONTROL, "EDITOR"),
     MODIFIED_SHORTCUT(HID_KEY_P, HID_MODIFIER_LEFT_ALT, "MODEL"),
@@ -59,6 +62,15 @@ bool claude_code_shortcut_for_key(bool macos, size_t key_index,
 {
     if (shortcut == NULL || key_index >= 12) {
         return false;
+    }
+    /* Claude Code dictation: Command+D on macOS, Ctrl+D on Windows. Held for
+     * as long as the key, so hold-to-talk works. */
+    if (key_index == VOICE_KEY_INDEX) {
+        *shortcut = (claude_code_shortcut_t)MODIFIED_SHORTCUT(
+            HID_KEY_D,
+            macos ? HID_MODIFIER_LEFT_GUI : HID_MODIFIER_LEFT_CONTROL,
+            "VOICE");
+        return true;
     }
     if (key_index < sizeof(COMMON_KEY_SHORTCUTS) /
                         sizeof(COMMON_KEY_SHORTCUTS[0])) {

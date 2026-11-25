@@ -89,17 +89,17 @@ def test_ble_ready_probes_usb_and_keeps_draft_on_handoff(handoff):
     vm, gateway, snapshot = handoff
     vm.rename_profile(snapshot.active_profile_id, 'Unsaved draft')
     draft = vm.draft
-    vm._usb_probe_timer.timeout.emit()
+    vm._connection.usb_probe_timer.timeout.emit()
     assert gateway.probes == [snapshot.identity['serial']]
     gateway.usb_candidate_found.emit(PortCandidate('cu.same', serial_number=snapshot.identity['serial']))
     assert gateway.connections == ['cu.same']
     assert vm.model.state is AppState.CONNECTING
-    assert not vm._usb_probe_timer.isActive()
+    assert not vm._connection.usb_probe_timer.isActive()
     gateway.snapshot_ready.emit(replace(snapshot, port_name='cu.same'))
     assert vm.model.state is AppState.READY
     assert vm.model.snapshot.connection_kind == 'usb'
     assert vm.draft is draft and vm.draft.is_dirty
-    assert not vm._usb_probe_timer.isActive()
+    assert not vm._connection.usb_probe_timer.isActive()
     assert not any(c.name == 'SET_CONFIG' for c in gateway.commands)
 
 
@@ -109,16 +109,16 @@ def test_usb_arrival_waits_for_active_transaction(handoff, busy):
     if busy == 'write':
         vm._write_transaction = ConfigTransaction(state=ConfigTransactionState.WRITING)
     elif busy == 'firmware':
-        vm._firmware_update = FirmwareUpdateTransaction(state=FirmwareUpdateState.TRANSFERRING)
+        vm._firmware.replace_silently(FirmwareUpdateTransaction(state=FirmwareUpdateState.TRANSFERRING))
     else:
         vm._remote_firmware = RemoteFirmwareCheck(state=RemoteFirmwareState.DOWNLOADING)
-    vm._usb_probe_timer.timeout.emit()
+    vm._connection.usb_probe_timer.timeout.emit()
     gateway.usb_candidate_found.emit(PortCandidate('cu.same', serial_number=snapshot.identity['serial']))
     assert not gateway.probes and not gateway.connections
     vm._write_transaction = ConfigTransaction()
-    vm._firmware_update = FirmwareUpdateTransaction()
+    vm._firmware.replace_silently(FirmwareUpdateTransaction())
     vm._remote_firmware = RemoteFirmwareCheck()
-    vm._usb_probe_timer.timeout.emit()
+    vm._connection.usb_probe_timer.timeout.emit()
     assert gateway.probes == [snapshot.identity['serial']]
 
 

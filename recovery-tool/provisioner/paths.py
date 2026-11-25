@@ -35,10 +35,10 @@ def data_root() -> Path:
     if override:
         return Path(override).expanduser().resolve()
     if sys_platform() == "darwin":
-        return Path.home() / "Library" / "Application Support" / "BORING MIST Recovery"
+        return Path.home() / "Library" / "Application Support" / "Codex Micro Firmware Provisioner"
     if os.name == "nt":
         base = Path(os.environ.get("LOCALAPPDATA", Path.home()))
-        return base / "BORING MIST Recovery"
+        return base / "Codex Micro Firmware Provisioner"
     return Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")) / (
         "codex-micro-firmware-provisioner"
     )
@@ -129,6 +129,21 @@ def _bundled_authority_path() -> Path | None:
     return None
 
 
+def bundled_acceptance_test() -> bool:
+    """True only for an App built to test firmware that is not verified yet.
+
+    Such a build may flash a 'built' package; it is labelled on every page
+    and its devices must not be delivered.
+    """
+    try:
+        pointer = json.loads(
+            (resource_root() / BUNDLED_AUTHORITY_FILENAME).read_text(encoding="utf-8")
+        )
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(pointer, dict) and pointer.get("acceptance_test") is True
+
+
 def discover_source_authority_path() -> Path | None:
     """Resolve the source checkout's single current-device package."""
     root = project_root()
@@ -171,7 +186,13 @@ def discover_current_device_paths() -> set[Path]:
 
 
 def discover_production_authority_path() -> Path | None:
-    """Return the source current-device package, or its bundled App copy."""
+    """Return the source current-device package, or its bundled App copy.
+
+    A packaged App must only ever flash the firmware it was built with, so it
+    never looks for a source checkout next to wherever it was unpacked.
+    """
+    if getattr(sys, "frozen", False):
+        return _bundled_authority_path()
     source = discover_source_authority_path()
     return source if source is not None else _bundled_authority_path()
 

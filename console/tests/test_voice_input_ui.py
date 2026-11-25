@@ -7,12 +7,13 @@ import pytest
 from PySide6.QtCore import QEvent, QSettings, Qt
 from PySide6.QtGui import QInputMethodEvent, QKeyEvent
 from PySide6.QtWidgets import QApplication
-from PySide6.QtWidgets import QComboBox, QLabel, QLineEdit, QPushButton, QScrollArea, QWidget
+from PySide6.QtWidgets import QCheckBox, QComboBox, QLabel, QLineEdit, QPushButton, QScrollArea, QWidget
 
 from controller_config.actions import action_definitions, describe_action
 from controller_config.protocol.bootstrap import BootstrapKind
 from controller_config.transactions import ConfigTransactionState
 from controller_config.views.action_editor import ActionEditor
+from controller_config.views.mode_page import ModeStage
 from controller_config.views.voice_guide import VoiceDemo, VoiceSetupDialog
 from controller_config.views.voice_practice import VoicePractice
 from test_session_recovery import session
@@ -46,20 +47,20 @@ def test_voice_help_is_optional_and_preserves_shortcuts(qtbot, contract):
     )
     assert not editor.findChild(QWidget, "voiceSetupInstructions").isVisible()
     assert not editor.findChild(VoiceDemo).isVisible()
-    assert editor.findChild(QWidget, "voiceShortcutDetails") is None
+    assert not editor.findChild(QWidget, "voiceShortcutDetails").isVisible()
     assert all("F13" not in label.text() for label in editor.findChildren(QLabel) if label.isVisible())
-    button = editor.findChild(QPushButton, "voiceSetupToggle")
-    button.click()
-    assert editor.action() == PRESET
-    assert "统一配置" in editor.findChild(QWidget, "voiceSetupInstructions").findChild(QLabel).text()
-    button.click()
-    assert editor.action() == PRESET
+    for name in ("voiceSetupToggle", "voiceShortcutDetailsToggle"):
+        button = editor.findChild(QPushButton, name)
+        button.click()
+        assert editor.action() == PRESET
+        button.click()
+        assert editor.action() == PRESET
     assert describe_action(PRESET, platform="macos") == "语音启停 · 双击发送"
     assert describe_action({"type": "key", "usage": 104}, platform="macos") == "F13"
     assert "F13" in describe_action({**PRESET, "double_usage": 4}, platform="macos")
 
 
-def test_voice_preset_preserves_normal_shortcut_and_routes_setup_to_guide(qtbot, contract):
+def test_voice_preset_preserves_normal_shortcut_and_custom_send(qtbot, contract):
     original = {"type": "key", "usage": 25, "modifiers": [227]}
     editor = ActionEditor(
         action_definitions(contract, ("key", "none", "key_gesture")), original,
@@ -72,11 +73,11 @@ def test_voice_preset_preserves_normal_shortcut_and_routes_setup_to_guide(qtbot,
     assert editor.action() == PRESET
     assert editor.findChild(QWidget, "voiceInputSetup").isVisible()
     assert not editor._shortcut_recorder.isVisible()
-    assert editor.findChild(QWidget, "voiceShortcutDetails") is None
-    requested = []
-    editor.voice_setup_requested.connect(lambda: requested.append(True))
-    editor.findChild(QPushButton, "voiceConnectApp").click()
-    assert requested == [True]
+    assert not editor.findChild(QWidget, "voiceShortcutDetails").isVisible()
+    editor._send_recorder.shortcut_recorded.emit({"type": "key", "usage": 40, "modifiers": [227]})
+    assert editor.action() == {**PRESET, "double_modifiers": [227]}
+    editor._voice_recorder.shortcut_recorded.emit({"type": "key", "usage": 231})
+    assert editor.action() == {**PRESET, "usage": 231, "double_modifiers": [227]}
     purpose.setCurrentIndex(0)
     assert editor.action() == original
     assert editor._shortcut_recorder.isVisible()
@@ -99,10 +100,10 @@ def _enable_voice(session, monkeypatch):
     monkeypatch.setattr("controller_config.views.main_window.sys.platform", "darwin")
     snapshot = replace(
         snapshot,
-        capabilities={**snapshot.capabilities, "actions": [*snapshot.capabilities["actions"], "key_gesture"]},
         status={**snapshot.status, "operating_mode": "normal"},
     )
     gateway.snapshot_ready.emit(snapshot)
+    window._select_configuration_mode("normal")
     window._select_physical_control("key.8")
     return window, vm, gateway, snapshot
 
@@ -139,14 +140,13 @@ def test_voice_selection_one_apply_runs_existing_write_readback(session, qtbot, 
     expected = {**PRESET, "modifiers": []}
     if send_modifiers:
         expected = {**PRESET, "modifiers": [], "double_modifiers": send_modifiers}
+        window.findChild(ActionEditor)._send_recorder.shortcut_recorded.emit(
+            {"type": "key", "usage": 40, "modifiers": send_modifiers})
     assert vm.draft.config == original  # Selecting a purpose does not write or save.
     assert window.findChild(QLineEdit, "mappingShortNameEditor").text() == "语音输入"
     window.findChild(QPushButton, "voiceConnectApp").click()
     guide = window._voice_setup_dialog
     guide.provider.setCurrentIndex(guide.provider.findData("typeless"))
-    if send_modifiers:
-        guide._shortcut_editors[1][1]._shortcut_recorder.shortcut_recorded.emit(
-            {"type": "key", "usage": 40, "modifiers": send_modifiers})
     confirm_shortcut(guide)
     assert guide._context_ready, (guide.action, snapshot.mappings.get("key.8"), vm.model.state)
     assert guide._adapt_button.isEnabled(), (guide._device_available(), guide._adaptation_needed())
@@ -179,8 +179,15 @@ def test_voice_selection_one_apply_runs_existing_write_readback(session, qtbot, 
     assert vm.model.snapshot.mappings["key.8"]["action"] == expected
     actual = window.findChild(QLabel, "actualActionValue")
     assert actual.text() == describe_action(expected, platform="macos")
-    assert actual.isHidden() == (not send_modifiers)
-    assert window.findChild(QPushButton, "applyMappingToDevice").text() == "设备配置已应用"
+    # The readback row is hidden when the gesture rows already explain the preset.
+    assert actual.isVisibleTo(window._current_mapping_card()) == bool(send_modifiers)
+    bar = window.findChild(ModeStage).bar
+    if recover_unknown:
+        # Confirmed by the re-read after reconnecting, not by this write's readback.
+        assert bar.state().right == "synced"
+    else:
+        assert bar.state().right == "saved"
+        assert bar.status_text.text() == "已保存，去目标软件里试试"
     for profile in original["profiles"]:
         if profile["id"] != original["active_profile"]:
             assert profile in candidate["profiles"]
@@ -192,24 +199,41 @@ def test_voice_selection_one_apply_runs_existing_write_readback(session, qtbot, 
     guide.practice.input.setPlainText("这是一条练习消息")
     qtbot.keyClick(guide.practice.input, Qt.Key_Return, Qt.ControlModifier if send_modifiers else Qt.NoModifier)
     assert guide.practice.completed
-    assert guide._next.isEnabled()
+    guide.findChild(QCheckBox, "voicePhysicalConfirmed").setChecked(True)
     guide.findChild(QPushButton, "voiceSetupNext").click()
+    assert guide._pages.currentIndex() == 2
+    assert not guide._next.isEnabled()
+    guide.findChild(QCheckBox, "voiceTargetConfirmed").setChecked(True)
+    guide._next.click()
     assert window._voice_setup_dialog is None
     from controller_config.voice_setup import voice_trial
     assert voice_trial(window._onboarding_settings, vm.draft.serial, vm.model.snapshot.active_profile_id, "key.8", expected)
-    assert window.findChild(QPushButton, "voiceConnectApp").text() == "更换语音输入软件"
-    assert window.findChild(QLabel, "voiceSetupStatus").text() == "设置已完成 · 当前输入软件：Typeless"
+    assert window.findChild(QPushButton, "voiceConnectApp").text() == "语音输入设置"
     assert [c.name for c in gateway.commands].count("SET_CONFIG") == 1
 
+    # Editing the next candidate must not rewrite the meaning of the action
+    # that is still active on the device, nor make its completed trial stale.
+    window.findChild(ActionEditor)._send_recorder.shortcut_recorded.emit(
+        {"type": "key", "usage": 41, "modifiers": []})
+    assert window.findChild(QLabel, "voiceSetupStatus").text() == (
+        "当前修改尚未应用；上次验证仍对应设备中的设置。"
+    )
+    assert voice_trial(
+        window._onboarding_settings, vm.draft.serial,
+        vm.model.snapshot.active_profile_id, "key.8", expected,
+    )
 
-def test_unapplied_voice_selection_survives_refresh_and_reconnect(session, monkeypatch):
+
+def test_unapplied_voice_edit_survives_refresh_and_reconnect(session, monkeypatch):
     window, vm, gateway, snapshot = _enable_voice(session, monkeypatch)
     window.findChild(QComboBox, "mappingPurpose").setCurrentIndex(1)
+    editor = window.findChild(ActionEditor)
+    editor._send_recorder.shortcut_recorded.emit({"type": "key", "usage": 40, "modifiers": [227]})
     window.findChild(QLineEdit, "mappingShortNameEditor").setText("我的语音")
     gateway.status_updated.emit({**snapshot.status, "battery": {"percent": 75}})
     gateway.disconnected.emit("test disconnect")
     gateway.snapshot_ready.emit(snapshot)
-    assert window.findChild(ActionEditor).action() == PRESET
+    assert window.findChild(ActionEditor).action() == {**PRESET, "double_modifiers": [227]}
     assert window.findChild(QLineEdit, "mappingShortNameEditor").text() == "我的语音"
     assert not any(c.name == "SET_CONFIG" for c in gateway.commands)
 
@@ -232,16 +256,25 @@ def test_voice_edit_survives_firmware_downgrade_without_allowing_write(session, 
 def test_voice_preset_excludes_official_and_system_controls(session, monkeypatch, control):
     window, *_ = _enable_voice(session, monkeypatch)
     window._select_control(control)
-    assert window.findChild(QComboBox, "mappingPurpose") is None
+    card = window._current_mapping_card()
+    assert card is not None
+    purpose = card.findChild(QComboBox, "mappingPurpose")
+    assert purpose is None or purpose.findData("voice") == -1
 
 
 @pytest.mark.parametrize("mode", ["claude_code"])
-def test_voice_edit_remains_normal_only_in_official_modes(session, monkeypatch, mode):
+def test_runtime_mode_does_not_change_normal_voice_configuration_target(session, monkeypatch, mode):
     window, vm, gateway, snapshot = _enable_voice(session, monkeypatch)
     gateway.status_updated.emit({**snapshot.status, "operating_mode": mode})
     window._select_physical_control("key.8")
-    notice = window.findChild(QLabel, "mappingExecutionNotice")
-    assert notice is not None and "普通模式" in notice.text()
+    assert window._configuration_mode == 'normal'
+    assert window._current_mapping_card().property('editingMode') == 'normal'
+    assert window._current_mapping_card().findChild(ActionEditor) is not None
+    # design decision: Console no longer offers the Claude Code mode for editing.
+    window._select_configuration_mode('claude_code')
+    window._select_physical_control('key.8')
+    assert window._configuration_mode == 'normal'
+    assert window._current_mapping_card().findChild(ActionEditor) is not None
 
 
 @pytest.mark.parametrize("language", ["zh_CN", "en_US"])
@@ -252,8 +285,9 @@ def test_voice_editor_layout_keeps_apply_visible(session, qtbot, monkeypatch, tm
     window.show()
     for width, height in ((1100, 700), (1600, 900)):
         window.resize(width, height)
-        qtbot.wait(70)
+        qtbot.wait(150)
         body = window.findChild(QScrollArea, "mappingEditorBody")
+        qtbot.waitUntil(lambda: body.widget().width() <= body.viewport().width(), timeout=500)
         assert body.widget().width() <= body.viewport().width()
         entry = window.findChild(QPushButton, "voiceConnectApp")
         assert entry.isVisible() and entry.isEnabled()
@@ -311,12 +345,6 @@ def test_practice_requires_real_text_then_send_and_can_retry(qtbot):
     guide._next.click()
     practice = guide.practice
     assert not guide.demo.isVisible()
-    repair_panel = guide.findChild(QWidget, "voiceRepairPanel_practice")
-    repair_toggle = guide.findChild(QPushButton, "voiceRepairToggle_practice")
-    assert repair_toggle.isVisible() and not repair_panel.isVisible()
-    repair_toggle.click()
-    assert repair_panel.isVisible()
-    repair_toggle.click()
     qtbot.keyClick(practice.input, Qt.Key_Return)
     guide.accept()
     assert guide.isVisible() and not practice.completed
@@ -329,8 +357,9 @@ def test_practice_requires_real_text_then_send_and_can_retry(qtbot):
     assert practice._received.text() == "✓" and practice._sent.text() == "2"
     assert not guide._next.isEnabled()
     qtbot.keyClick(practice.input, Qt.Key_Return)
-    assert practice.completed and guide._next.isEnabled()
-    assert practice._hint.text() == "练习完成，内容未发送到 AI。"
+    assert practice.completed and not guide._next.isEnabled()
+    guide.findChild(QCheckBox, "voicePhysicalConfirmed").setChecked(True)
+    assert guide._next.isEnabled()
     assert practice._message.toPlainText() == "<b>实际文字</b>\n第二行"
     assert practice._sent.text() == "✓" and not practice.input.isVisible()
     practice._retry.click()
@@ -451,3 +480,48 @@ def test_practice_language_and_long_message_keep_user_text(session, qtbot):
     window._language_manager.set_language("zh_CN")
     assert guide.practice._message.toPlainText() == text.strip()
     guide.reject()
+
+
+# --- B-04: Enter stays scoped to the practice input ------------------------
+
+
+def _practice_dialog(qtbot):
+    from PySide6.QtWidgets import QDialog, QVBoxLayout
+    dialog = QDialog()
+    layout = QVBoxLayout(dialog)
+    practice = VoicePractice(PRESET)
+    button = QPushButton("应用到设备")
+    button.setAutoDefault(True)
+    layout.addWidget(practice)
+    layout.addWidget(button)
+    qtbot.addWidget(dialog)
+    dialog.show()
+    dialog.activateWindow()
+    qtbot.waitUntil(dialog.isActiveWindow)
+    practice.input.setPlainText("语音功能测试")
+    return dialog, practice, button
+
+
+def test_b04_enter_on_a_button_triggers_the_button_not_practice(qtbot):
+    _dialog, practice, button = _practice_dialog(qtbot)
+    clicked = []
+    button.clicked.connect(lambda: clicked.append(True))
+    button.setFocus()
+    qtbot.keyClick(button, Qt.Key_Return)
+    assert clicked == [True]
+    assert not practice.completed
+
+
+def test_b04_enter_in_practice_input_sends_once(qtbot):
+    _dialog, practice, _button = _practice_dialog(qtbot)
+    practice.input.setFocus()
+    qtbot.keyClick(practice.input, Qt.Key_Return)
+    assert practice.completed
+    assert practice._message.toPlainText() == "语音功能测试"
+
+
+def test_b04_practice_registers_no_window_or_application_hooks() -> None:
+    from pathlib import Path
+    import controller_config.views.voice_practice as module
+    text = Path(module.__file__).read_text(encoding="utf-8")
+    assert "QShortcut" not in text and "focusChanged" not in text

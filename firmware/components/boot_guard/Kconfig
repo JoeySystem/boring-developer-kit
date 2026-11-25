@@ -1,0 +1,14 @@
+menu "BORING boot guard"
+
+    config WMP_CRASH_FAULT_INJECTION
+        bool "TEST ONLY: scripted boot crashes"
+        default n
+        help
+            Never enable for a release. Each boot after a warm reset runs one
+            scripted fault 3 s into the main loop: a main-loop stall (task
+            watchdog via liveness), then two aborts; the fourth boot is the
+            safe-mode boot and later boots run normally. A power-on reset
+            restarts the script. Built only with tools/build.sh
+            --crash-fault-injection.
+
+endmenu

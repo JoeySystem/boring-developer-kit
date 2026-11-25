@@ -160,6 +160,20 @@ def make_ota_release(root: Path) -> Path:
     return release
 
 
+def mark_release_unverified(release: Path) -> None:
+    """Turn a test package into a fresh 'built' (not sample-verified) one."""
+    ota_path = release / "firmware-manifest.json"
+    ota = json.loads(ota_path.read_text(encoding="utf-8"))
+    ota["validation_state"] = "built"
+    data = json.dumps(ota, ensure_ascii=False, indent=2).encode("utf-8")
+    ota_path.write_bytes(data)
+    manifest_path = release / "release-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["validation_state"] = "built"
+    manifest["files"]["firmware-manifest.json"]["sha256"] = sha256(data)
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def make_native_ota_release(root: Path) -> Path:
     release = make_ota_release(root)
     manifest_path = release / "firmware-manifest.json"

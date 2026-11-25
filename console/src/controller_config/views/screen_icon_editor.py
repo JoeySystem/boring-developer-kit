@@ -8,9 +8,11 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QImage, QMouseEvent, QPixmap
 from PySide6.QtWidgets import (
     QFileDialog, QFormLayout, QHBoxLayout, QLabel, QMessageBox,
-    QPushButton, QProgressBar, QSlider, QVBoxLayout, QWidget,
+    QPushButton, QVBoxLayout, QWidget,
 )
 
+from controller_config.views.ui import notice
+from controller_config.views.ui import DotMatrixSlider, ProgressRingRow
 from controller_config.i18n import set_translatable_accessible_name, set_translatable_text, translate_ui_text
 from controller_config.screen_icon import icon_preview, load_icon_image, render_icon
 from controller_config.views.icon_material_review import IconMaterialReview
@@ -169,8 +171,8 @@ class ScreenIconEditor(QWidget):
         self.transfer_status = label("控制台图标协议接入尚未完成，暂不能写入或恢复默认。" if device_supported else
               "当前固件尚未支持自定义图标，可先导入并预览。")
         self.transfer_status.hide()
-        self.transfer_progress = QProgressBar(objectName="screenIconProgress")
-        self.transfer_progress.setRange(0, 100)
+        # 进度条点阵样式 定稿 v1: a medium ring with the status words beside it.
+        self.transfer_progress = ProgressRingRow(48, object_name="screenIconProgress")
         self.transfer_progress.hide()
         layout.addWidget(self.transfer_progress)
         row = QHBoxLayout()
@@ -187,7 +189,7 @@ class ScreenIconEditor(QWidget):
         self.cancel_button.setEnabled(False)
         self.cancel_button.clicked.connect(self.cancel_requested)
         self.cancel_button.hide()
-        row.addWidget(self.cancel_button)
+        self.transfer_progress.addWidget(self.cancel_button)  # 取消上传 at the right of the ring row
         layout.addLayout(row)
         self.local_retention = label(
             "尚未应用到设备，退出软件后不会保留。",
@@ -219,7 +221,8 @@ class ScreenIconEditor(QWidget):
                 "当前固件尚未支持自定义图标，可先导入并预览。",
             )
         self.transfer_progress.setVisible(transfer.busy)
-        self.transfer_progress.setValue(transfer.progress)
+        self.transfer_progress.ring.set_value(transfer.progress)
+        self.transfer_progress.set_text(self.transfer_status.text())
         metadata = transfer.metadata
         set_translatable_text(self.device_label, (
             "当前：默认图片" if metadata and metadata["source"] == "default"
@@ -250,12 +253,12 @@ class ScreenIconEditor(QWidget):
         )
         self.cancel_button.setEnabled(transfer.can_cancel)
         self.cancel_button.setVisible(transfer.can_cancel)
-        self.transfer_status.setVisible(
+        # While busy the words sit beside the ring instead.
+        self.transfer_status.setVisible(not transfer.busy and (
             not transfer.supported
-            or transfer.busy
             or transfer.state in {"error", "unknown"}
             or transfer.verified_upload is not None
-        )
+        ))
         self.import_button.setEnabled(not transfer.busy)
         self.discard.setEnabled(self.draft.is_dirty and not transfer.busy)
         for control in (self.zoom, self.horizontal, self.vertical, self.preview):
@@ -266,29 +269,31 @@ class ScreenIconEditor(QWidget):
             return
         pixels = self.payload
         epoch = self._transfer.connection_epoch if self._transfer is not None else None
-        if QMessageBox.question(self, translate_ui_text("应用到设备"), translate_ui_text(
+        if notice.ask(self, translate_ui_text("应用到设备"), translate_ui_text(
             "将把这张图片保存到设备首页，其他设置不变。是否继续？"
-        ), QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel) == QMessageBox.Yes:
+        ), QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel,
+            labels={QMessageBox.Yes: "应用到设备"}) == QMessageBox.Yes:
             if self._confirm_same_connection(epoch):
                 self.upload_requested.emit(pixels)
 
     def _confirm_reset(self) -> None:
         epoch = self._transfer.connection_epoch if self._transfer is not None else None
-        if QMessageBox.question(self, translate_ui_text("恢复默认首页"), translate_ui_text(
+        if notice.ask(self, translate_ui_text("恢复默认首页"), translate_ui_text(
             "将恢复设备默认首页图片，其他设置不变。是否继续？"
-        ), QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel) == QMessageBox.Yes:
+        ), QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel,
+            labels={QMessageBox.Yes: "恢复默认首页"}) == QMessageBox.Yes:
             if self._confirm_same_connection(epoch):
                 self.reset_requested.emit()
 
     def _confirm_same_connection(self, epoch: int | None) -> bool:
         if self._transfer is None or epoch != self._transfer.connection_epoch:
-            QMessageBox.warning(self, translate_ui_text("设备连接已变化"), translate_ui_text(
+            notice.alert(self, translate_ui_text("设备连接已变化"), translate_ui_text(
                 "设备已断连或重新连接，请重新确认目标设备后操作。"))
             return False
         return True
 
-    def _slider(self, form: QFormLayout, source: str, name: str, low: int, high: int) -> QSlider:
-        slider = QSlider(Qt.Horizontal, objectName=name)
+    def _slider(self, form: QFormLayout, source: str, name: str, low: int, high: int) -> DotMatrixSlider:
+        slider = DotMatrixSlider(Qt.Horizontal, objectName=name)
         slider.setRange(low, high)
         set_translatable_accessible_name(slider, source)
         caption = QLabel()

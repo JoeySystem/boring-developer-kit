@@ -5,11 +5,19 @@ from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import QLabel, QPushButton, QPlainTextEdit
 
 from controller_config.models import AppState, ScreenModel
+from controller_config.style import tokens
 from controller_config.protocol.device_auth import DeviceTrust, DeviceTrustState
 from controller_config.transport.demo import DemoGateway, _power_v2_snapshot
 from controller_config.viewmodels.main import MainViewModel
 from controller_config.views.connection_terminal import ConnectionTerminal
 from controller_config.views.main_window import MainWindow
+from controller_config.views.mode_page import ModeStage
+
+
+def _device(window):
+    """The device drawn on the visible Mode page, once it is on screen."""
+    stage = next((stage for stage in window.findChildren(ModeStage) if stage.isVisible()), None)
+    return stage.device if stage is not None and stage.device.isVisible() else None
 
 
 @pytest.fixture
@@ -102,9 +110,11 @@ def test_main_window_reuses_terminal_and_keeps_retry_and_editor_available(qtbot,
         vm.start()
         qtbot.waitUntil(lambda: vm.model.state is AppState.READY)
         assert window._connection_terminal is terminal
+        # A first connection lets the found clip's ending play (about 1.6 s) first.
+        qtbot.waitUntil(lambda: window._connection_transition_model is None, timeout=3500)
         # READY is a model event; Qt can show newly inserted children on the
         # next event-loop turn. Still require controls before the 1100 ms hold.
-        qtbot.waitUntil(lambda: window.findChild(QPushButton, 'controlKey').isVisible(), timeout=500)
+        qtbot.waitUntil(lambda: _device(window) is not None, timeout=500)
         assert terminal.focusPolicy() == Qt.NoFocus
         qtbot.waitUntil(lambda: not terminal.present, timeout=2000)
     finally:
@@ -118,17 +128,55 @@ def test_success_animation_does_not_push_device_controls_out_of_view(qtbot, cont
     window.show()
     try:
         vm._on_snapshot(ready_model(contract).snapshot)
-        qtbot.waitUntil(lambda: window._connection_fade_target is None, timeout=1200)
+        # The found clip's ending plays first (about 1.6 s), then the fade.
+        qtbot.waitUntil(lambda: window._connection_transition_model is None
+                        and window._connection_fade_target is None, timeout=3500)
         assert window._connection_terminal.present
-        key = window.findChild(QPushButton, 'controlKey')
         qtbot.waitUntil(
-            lambda: key.isVisible()
-            and window.rect().contains(key.mapTo(window, key.rect().center())),
+            lambda: (device := _device(window)) is not None
+            and window.rect().contains(device.mapTo(window, device.key_rect('key.1').center().toPoint())),
             timeout=500,
         )
+        qtbot.wait(200)  # Let initial responsive sizing finish during the success hold.
         assert window._connection_terminal.present
-        position = key.mapTo(window, QPoint(0, 0))
+        device = _device(window)
+        position = device.mapTo(window, QPoint(0, 0)), device.size()
         qtbot.waitUntil(lambda: not window._connection_terminal.present, timeout=2000)
-        assert key.mapTo(window, QPoint(0, 0)) == position
+        assert _device(window) is device
+        assert (device.mapTo(window, QPoint(0, 0)), device.size()) == position
     finally:
         vm.shutdown()
+
+
+def _panel(qtbot, reduce_motion):
+    panel = ConnectionTerminal(reduce_motion=reduce_motion)
+    qtbot.addWidget(panel)
+    panel.resize(280, 360)
+    panel.show()
+    return panel
+
+
+def test_reduce_motion_lines_appear_at_once_cursor_holds_and_no_fade(qtbot, contract):
+    """Console动效盘点 11-19 item 13."""
+    still = _panel(qtbot, True)
+    still.observe(ScreenModel(AppState.SCANNING))
+    still.observe(ScreenModel(AppState.CONNECTING, '正在读取：HELLO'))
+    assert all(row.graphicsEffect() is None for row in still._rows)
+    assert not still._blink.isActive() and still._cursor.text() == '> _'
+    still.observe(ready_model(contract))
+    still._fade_out()  # the hold has run out
+    assert not still._fade.state() == still._fade.State.Running
+    assert not still.present and still.isHidden()
+
+
+def test_without_reduce_motion_lines_fade_in_cursor_blinks_and_panel_fades(qtbot, contract):
+    moving = _panel(qtbot, False)
+    moving.observe(ScreenModel(AppState.SCANNING))
+    moving.observe(ScreenModel(AppState.CONNECTING, '正在读取：HELLO'))
+    assert all(row.graphicsEffect() is not None for row in moving._rows)
+    assert moving._rows[-1]._line_animation.duration() == tokens.MOTION_INSTANT_MS
+    assert moving._blink.isActive() and moving._blink.interval() == 550
+    moving.observe(ready_model(contract))
+    moving._fade_out()
+    assert moving._fade.state() == moving._fade.State.Running and moving._fade.duration() == tokens.MOTION_SHORT_MS
+    qtbot.waitUntil(lambda: not moving.present, timeout=2000)

@@ -24,6 +24,23 @@ def picture(path, color="orange"):
     return str(path)
 
 
+@pytest.fixture(scope="module", autouse=True)
+def warm_worker(tmp_path_factory):
+    """Pay the worker's first launch once, outside the timed checks.
+
+    conftest calls prepare_qt_platform_plugins(), which (for this non-ASCII source
+    path) copies Qt's image plugins into a new temporary folder per test process and
+    points QT_PLUGIN_PATH there. The first worker that loads those freshly written
+    plugin files waits while macOS scans them, 10-15 s on this Mac, so the first
+    timed case ran out of its 10 s and later cases passed. Measured 2026-11-20:
+    a worker spawned right after the bootstrap took 13.8 s, the next ones 0.2 s.
+    """
+    import subprocess
+    path = tmp_path_factory.mktemp("warm-worker") / "warm.png"
+    path.write_bytes(b"<svg/>")
+    subprocess.run(module.worker_arguments(str(path)), capture_output=True, timeout=120, check=False)
+
+
 @pytest.fixture
 def check(qapp):
     checker = IconMaterialCheck()
@@ -161,7 +178,9 @@ def test_ui_rejection_is_inline_keeps_old_draft_and_next_import_succeeds(editor,
     bad = tmp_path / "wrong.svg"
     bad.write_text("<svg/>")
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *args: (str(bad), ""))
-    monkeypatch.setattr(QMessageBox, "warning", lambda *args: pytest.fail("Material rejection must not open a modal"))
+    from controller_config.views.ui import notice
+    for name in ("alert", "ask", "choose"):
+        monkeypatch.setattr(notice, name, lambda *_a, **_k: pytest.fail("Material rejection must not open a modal"))
     with qtbot.waitSignal(editor.material_review.check.rejected, timeout=10000):
         editor._choose_image()
     assert editor.payload == before

@@ -1,0 +1,1 @@
+{"command": "CLEAR_AGENT_STATUS", "result": {"source": "desktop", "active": false, "lease_ms": 5000}}

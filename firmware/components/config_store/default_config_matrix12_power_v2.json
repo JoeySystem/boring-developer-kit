@@ -169,11 +169,13 @@
         },
         {
           "control_id": "key.8",
-          "short_name": "Space",
+          "short_name": "Voice/Send",
           "action": {
-            "type": "key",
+            "type": "key_gesture",
             "usage": 44,
-            "modifiers": []
+            "modifiers": [230],
+            "double_usage": 40,
+            "double_modifiers": []
           }
         },
         {
@@ -380,11 +382,13 @@
         },
         {
           "control_id": "key.8",
-          "short_name": "Space",
+          "short_name": "Voice/Send",
           "action": {
-            "type": "key",
+            "type": "key_gesture",
             "usage": 44,
-            "modifiers": []
+            "modifiers": [230],
+            "double_usage": 40,
+            "double_modifiers": []
           }
         },
         {

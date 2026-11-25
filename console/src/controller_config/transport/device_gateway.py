@@ -17,12 +17,14 @@ class DeviceGateway(QObject):
     candidates_found = Signal(object)
     usb_candidate_found = Signal(object)
     progress = Signal(str)
+    connect_step = Signal(str, str)
     snapshot_ready = Signal(object)
     status_updated = Signal(object)
     command_completed = Signal(str, object)
     command_failed = Signal(str, object)
     failure = Signal(object, str, str)
     disconnected = Signal(str)
+    link_warning = Signal(str, str)
 
     def __init__(
         self,
@@ -32,10 +34,16 @@ class DeviceGateway(QObject):
         *,
         usb_gateway: QObject | None = None,
         ble_gateway: QObject | None = None,
+        config_cache: object | None = None,
     ) -> None:
         super().__init__(parent)
-        self._usb = usb_gateway or SerialGateway(contract, authenticator, self)
-        self._ble = ble_gateway or BleGateway(contract, authenticator, self)
+        # SH-005: the last confirmed configuration per authenticated device.
+        # Workers read it during the handshake; MainViewModel writes it.
+        self.config_cache = config_cache
+        self._usb = usb_gateway or SerialGateway(
+            contract, authenticator, self, config_cache=config_cache)
+        self._ble = ble_gateway or BleGateway(
+            contract, authenticator, self, config_cache=config_cache)
         self._active = ""
         self._scan_waiting_for_ble = False
         self._scan_waiting_for_usb = False
@@ -43,11 +51,16 @@ class DeviceGateway(QObject):
         self._pending_ble_candidates: tuple[object, ...] | None = None
         self._reconnect_preferred_port = ""
         self._usb_probe_serial = ""
+        self._pending_usb_port = ""
 
         self._usb.candidates_found.connect(self._on_usb_candidates)
         self._ble.candidates_found.connect(self._on_ble_candidates)
         self._usb.progress.connect(lambda text: self._forward_progress("usb", text))
         self._ble.progress.connect(lambda text: self._forward_progress("ble", text))
+        for source_name, source in (("usb", self._usb), ("ble", self._ble)):
+            step = getattr(source, "connect_step", None)   # test doubles may not have it
+            if step is not None:
+                step.connect(lambda name, detail, origin=source_name: self._forward_step(origin, name, detail))
         for source_name, source in (("usb", self._usb), ("ble", self._ble)):
             source.snapshot_ready.connect(
                 lambda value, name=source_name: self._forward("snapshot_ready", name, value)
@@ -85,6 +98,13 @@ class DeviceGateway(QObject):
                     "disconnected", name, detail
                 )
             )
+            link_warning = getattr(source, "link_warning", None)
+            if link_warning is not None:
+                link_warning.connect(
+                    lambda category, detail, name=source_name: self._forward(
+                        "link_warning", name, category, detail
+                    )
+                )
 
     def scan(self, *, usb_only: bool = False) -> None:
         if self._usb_probe_serial:
@@ -143,14 +163,29 @@ class DeviceGateway(QObject):
 
     def connect_port(self, port_name: str) -> None:
         self._active = "ble" if port_name.startswith("ble:") else "usb"
-        if self._active == "usb":
-            # stop_scan only cancels discovery; it does not close a live BLE link.
-            self._ble.shutdown()
+        self._pending_usb_port = ""
         inactive = self._usb if self._active == "ble" else self._ble
+        if self._active == "usb":
+            # stop_scan only cancels discovery; it does not close a live BLE
+            # link. The firmware must release BLE ownership (CCCD unsubscribe)
+            # before USB HELLO, so connect USB once the BLE worker has closed.
+            close_link = getattr(self._ble, "close_link", None)
+            if callable(close_link):
+                self._pending_usb_port = port_name
+                close_link(then=lambda port=port_name: self._connect_usb_after_ble(port))
+                return
+            self._ble.shutdown()
         if hasattr(inactive, "stop_scan"):
             inactive.stop_scan()
         gateway = self._ble if self._active == "ble" else self._usb
         gateway.connect_port(port_name)
+
+    def _connect_usb_after_ble(self, port_name: str) -> None:
+        # A newer connect request (or a refresh) supersedes this handoff.
+        if self._active != "usb" or self._pending_usb_port != port_name:
+            return
+        self._pending_usb_port = ""
+        self._usb.connect_port(port_name)
 
     def execute_command(self, command: Command) -> None:
         self._active_gateway().execute_command(command)
@@ -223,6 +258,10 @@ class DeviceGateway(QObject):
         if (self._active == source or (not self._active and source == "usb")
                 or (source == "ble" and self._scan_waiting_for_ble)):
             self.progress.emit(message)
+
+    def _forward_step(self, source: str, step: str, detail: str) -> None:
+        if source == self._active:   # connect_port() picks the source before it starts
+            self.connect_step.emit(step, detail)
 
     def _forward(self, signal_name: str, source: str, *args: object) -> None:
         if signal_name == "failure" and source == "ble" and self._scan_waiting_for_ble:

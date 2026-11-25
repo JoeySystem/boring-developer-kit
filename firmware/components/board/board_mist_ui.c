@@ -48,6 +48,7 @@ static bool normal_idle_home(void)
     return s_mist_display.initialized && !s_mist_suspended &&
         !s_mist_explicit_phase && s_mist_display.page == MIST_PAGE_HOME &&
         s_mist_display.context.mode == MIST_MODE_NORMAL &&
+        s_mist_display.context.state != MIST_STATE_ERROR &&
         !s_mist_display.motion.active;
 }
 
@@ -230,12 +231,19 @@ static bool map_request(mist_request_t *request, const board_mist_view_t *view)
     if (read_details(request, view)) return true;
     switch (view->page) {
     case BOARD_MIST_HOME:
-        request->page = MIST_PAGE_HOME; context->mode = home_mode(view->a); break;
+        request->page = MIST_PAGE_HOME;
+        context->mode = home_mode(view->a);
+        context->state = view->b ? MIST_STATE_ERROR : MIST_STATE_IDLE;
+        break;
     case BOARD_MIST_BOOT:
         request->page = MIST_PAGE_BOOT; context->mode = home_mode(view->a); break;
     case BOARD_MIST_BATTERY:
         request->page = MIST_PAGE_BATTERY;
-        context->battery_percent = view->a; context->charging = view->b != 0; break;
+        context->battery_percent = view->a; context->charging = view->b != 0;
+        /* c: 0 percent page, 1 low-battery warning, 2 empty before power-off. */
+        context->state = view->c == 2 ? MIST_STATE_ERROR
+            : view->c == 1 ? MIST_STATE_APPLYING : MIST_STATE_IDLE;
+        break;
     case BOARD_MIST_CONNECTION:
         request->page = MIST_PAGE_STATUS_TEXT;
         context->link = view->a == 1 ? MIST_LINK_USB : view->a == 2 ? MIST_LINK_BLE : MIST_LINK_NONE;
@@ -243,7 +251,10 @@ static bool map_request(mist_request_t *request, const board_mist_view_t *view)
     case BOARD_MIST_CAROUSEL:
         context->selected = view->selected_index;
         context->item_count = view->item_count;
-        if (view->item_count == 5) request->page = MIST_PAGE_SETTINGS;
+        /* Recognised by what it lists, not by how many entries it has: when
+         * the count was the test, removing one entry turned the settings
+         * menu into the icon overview below. */
+        if (view->items[0] == BOARD_MIST_ICON_SYSTEM) request->page = MIST_PAGE_SETTINGS;
         else if (view->item_count == 2 && view->items[0] == BOARD_MIST_ICON_MACOS &&
                  view->items[1] == BOARD_MIST_ICON_WINDOWS) request->page = MIST_PAGE_SYSTEM;
         else if ((view->item_count == 2 || view->item_count == 3) &&

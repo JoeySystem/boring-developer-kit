@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from controller_config.views.ui import notice
 from controller_config.extensions.development_prompt import (
     build_extension_development_prompt,
 )
@@ -486,12 +487,12 @@ class ExtensionsPage(QScrollArea):
 
     def _import_path(self, path: Path) -> None:
         if self._platform is None:
-            QMessageBox.warning(self, "无法导入扩展", "扩展平台尚未启动")
+            notice.notify(self, "无法导入扩展", "扩展平台尚未启动")
             return
         try:
             extension = self._platform.import_package(path)
         except (ExtensionManagerError, OSError, ValueError) as exc:
-            QMessageBox.warning(self, "无法导入扩展", str(exc))
+            notice.notify(self, "无法导入扩展", str(exc))
             return
         self.refresh()
         self._select_item(self._extensions, extension.manifest.extension_id)
@@ -550,14 +551,14 @@ class ExtensionsPage(QScrollArea):
             else:
                 self._platform.enable(extension_id)
         except (ExtensionManagerError, OSError, ValueError) as exc:
-            QMessageBox.warning(self, "无法修改扩展状态", str(exc))
+            notice.notify(self, "无法修改扩展状态", str(exc))
 
     def _restart_selected(self) -> None:
         extension_id = self._selected_extension_id()
         if extension_id is None or self._platform is None:
             return
         if not self._platform.restart(extension_id):
-            QMessageBox.warning(
+            notice.notify(
                 self, "扩展未启动", "请检查扩展入口和私有 Runner。"
             )
 
@@ -565,12 +566,14 @@ class ExtensionsPage(QScrollArea):
         extension_id = self._selected_extension_id()
         if extension_id is None or self._platform is None:
             return
-        answer = QMessageBox.question(
+        answer = notice.ask(
             self,
             "移除扩展",
             "移除后将删除控制台的受管扩展副本和实体 action 绑定。继续？",
             QMessageBox.Yes | QMessageBox.Cancel,
             QMessageBox.Cancel,
+            danger=True,
+            labels={QMessageBox.Yes: "移除"},
         )
         if answer == QMessageBox.Yes:
             self._platform.remove(extension_id)
@@ -585,7 +588,7 @@ class ExtensionsPage(QScrollArea):
             or not isinstance(action_id, str)
             or serial is None
         ):
-            QMessageBox.warning(
+            notice.notify(
                 self, "无法绑定", "请连接设备并选择一个扩展 action。"
             )
             return
@@ -597,7 +600,7 @@ class ExtensionsPage(QScrollArea):
                 action_id=action_id,
             )
         except ValueError as exc:
-            QMessageBox.warning(self, "无法绑定", str(exc))
+            notice.notify(self, "无法绑定", str(exc))
 
     def _unbind_action(self) -> None:
         serial = self._device_serial()
@@ -741,7 +744,7 @@ class ExtensionsPage(QScrollArea):
         try:
             self._platform.approve_proposal(proposal_id)
         except ValueError as exc:
-            QMessageBox.warning(self, "无法批准提案", str(exc))
+            notice.notify(self, "无法批准提案", str(exc))
 
     def _reject_proposal(self) -> None:
         proposal_id = self._selected_proposal_id()

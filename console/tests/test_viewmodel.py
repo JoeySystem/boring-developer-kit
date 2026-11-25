@@ -13,9 +13,10 @@ from controller_config.lighting_preview import (
     SET_LIGHTING_PREVIEW,
 )
 from controller_config.prompt_library import PromptLibraryStore
-from controller_config.protocol.bootstrap import BootstrapError, BootstrapKind
+from controller_config.protocol.bootstrap import BootstrapError, BootstrapKind, Command
 from controller_config.transport.demo import _power_v2_snapshot
 from controller_config.viewmodels.main import MainViewModel
+from notice_helpers import answer_information, answer_questions, answer_warnings
 
 
 class FakeGateway(QObject):
@@ -94,8 +95,8 @@ def test_no_device_keeps_scanning_until_bluetooth_returns(qtbot) -> None:
     gateway.candidates_found.emit(tuple())
 
     assert view_model.model.state is AppState.NO_DEVICE
-    assert view_model._reconnect_timer.isActive()
-    view_model._reconnect_timer.timeout.emit()
+    assert view_model._connection.reconnect_timer.isActive()
+    view_model._connection.reconnect_timer.timeout.emit()
     assert gateway.scan_calls == 1
 
     gateway.candidates_found.emit((
@@ -103,7 +104,7 @@ def test_no_device_keeps_scanning_until_bluetooth_returns(qtbot) -> None:
     ))
 
     assert gateway.connected_ports == ["ble:returned-device"]
-    assert not view_model._reconnect_timer.isActive()
+    assert not view_model._connection.reconnect_timer.isActive()
 
 
 def test_glyph_editor_uses_viewmodel_gateway_and_independent_storage(qtbot, contract, monkeypatch):
@@ -114,9 +115,9 @@ def test_glyph_editor_uses_viewmodel_gateway_and_independent_storage(qtbot, cont
     from controller_config.views.screen_glyph_editor import GlyphDraft, ScreenGlyphEditor
     from controller_config.views.main_window import MainWindow
 
-    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **kw: QMessageBox.Ok)
-    monkeypatch.setattr(QMessageBox, "information", lambda *a, **kw: QMessageBox.Ok)
-    monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.Yes)
+    answer_warnings(monkeypatch, lambda *a, **kw: QMessageBox.Ok)
+    answer_information(monkeypatch, lambda *a, **kw: QMessageBox.Ok)
+    answer_questions(monkeypatch, lambda *a, **kw: QMessageBox.Yes)
     monkeypatch.setattr(MainWindow, "closeEvent", lambda self, event: event.accept())
     gateway = FakeGateway()
     vm = MainViewModel(gateway, contract)
@@ -304,21 +305,21 @@ def test_disconnected_device_is_polled_and_reconnected_when_it_returns(qtbot, co
     gateway.snapshot_ready.emit(snapshot)
     gateway.disconnected.emit("port gone")
 
-    assert view_model._reconnect_timer.isActive()
+    assert view_model._connection.reconnect_timer.isActive()
     assert gateway.scan_calls == 1
-    view_model._reconnect_timer.timeout.emit()
+    view_model._connection.reconnect_timer.timeout.emit()
     assert gateway.scan_calls == 2
     assert view_model.model.state is AppState.DISCONNECTED
     assert view_model.model.snapshot is snapshot
 
     gateway.candidates_found.emit(tuple())
     assert view_model.model.state is AppState.DISCONNECTED
-    assert view_model._reconnect_timer.isActive()
+    assert view_model._connection.reconnect_timer.isActive()
 
     gateway.candidates_found.emit((PortCandidate("returned"),))
     assert view_model.model.state is AppState.CONNECTING
     assert gateway.connected_ports == ["returned"]
-    assert not view_model._reconnect_timer.isActive()
+    assert not view_model._connection.reconnect_timer.isActive()
 
 
 def test_disconnect_starts_immediate_targeted_reconnect(qtbot, contract) -> None:
@@ -341,7 +342,7 @@ def test_disconnect_starts_immediate_targeted_reconnect(qtbot, contract) -> None
     gateway.disconnected.emit("link lost")
 
     assert gateway.reconnects == [("ble:known-device", False)]
-    assert view_model._reconnect_timer.interval() <= 500
+    assert view_model._connection.reconnect_timer.interval() <= 500
 
 
 def test_runtime_status_update_changes_mode_without_replacing_config_or_draft(
@@ -613,6 +614,488 @@ def test_lighting_preview_busy_failure_is_visible_and_stops_heartbeat(
     assert not view_model._lighting_preview_heartbeat.isActive()
 
 
+def _diagnostic_busy_error() -> BootstrapError:
+    return BootstrapError(
+        BootstrapKind.READ_FAILED,
+        "设备拒绝请求",
+        "BUSY: release all controls and exit other input owners first",
+        error_name="BUSY",
+    )
+
+
+def test_diagnostic_start_does_not_send_when_current_status_is_blocked(
+    qtbot,
+    contract,
+) -> None:
+    gateway = FakeGateway()
+    view_model = MainViewModel(gateway, contract)
+    snapshot = _power_v2_snapshot(contract, read_only=False)
+    blocked = copy.deepcopy(snapshot.status)
+    blocked.update(inputs_neutral=False, active_controls=["key.3"])
+    gateway.snapshot_ready.emit(replace(snapshot, status=blocked))
+    view_model.navigate("diagnostics")
+
+    with pytest.raises(ValueError, match="设备尚未准备好"):
+        view_model.start_diagnostic_capture()
+
+    assert not [command for command in gateway.commands if command.name == "DIAGNOSTIC_START"]
+
+
+def test_diagnostic_start_busy_waits_for_status_and_retries_only_once(
+    qtbot,
+    contract,
+) -> None:
+    gateway = FakeGateway()
+    view_model = MainViewModel(gateway, contract)
+    snapshot = _power_v2_snapshot(contract, read_only=False)
+    gateway.snapshot_ready.emit(snapshot)
+    view_model.navigate("diagnostics")
+
+    view_model.start_diagnostic_capture()
+    gateway.command_failed.emit("DIAGNOSTIC_START", _diagnostic_busy_error())
+
+    assert view_model.diagnostic_capture_pending == "waiting_ready"
+    assert view_model.diagnostic_capture_error == ""
+    assert "release all controls" in view_model.diagnostic_capture_technical
+
+    gateway.status_updated.emit(copy.deepcopy(snapshot.status))
+
+    assert [command.name for command in gateway.commands].count("DIAGNOSTIC_START") == 2
+    assert view_model.diagnostic_capture_pending == "starting"
+
+    gateway.command_failed.emit("DIAGNOSTIC_START", _diagnostic_busy_error())
+
+    assert view_model.diagnostic_capture_pending == ""
+    assert view_model.diagnostic_capture_error == "设备还在切换状态，请稍后重试。"
+    assert "BUSY:" not in view_model.diagnostic_capture_error
+    gateway.status_updated.emit(copy.deepcopy(snapshot.status))
+    assert [command.name for command in gateway.commands].count("DIAGNOSTIC_START") == 2
+
+
+def test_diagnostic_start_non_busy_failure_is_not_retried(
+    qtbot,
+    contract,
+) -> None:
+    gateway = FakeGateway()
+    view_model = MainViewModel(gateway, contract)
+    snapshot = _power_v2_snapshot(contract, read_only=False)
+    gateway.snapshot_ready.emit(snapshot)
+    view_model.navigate("diagnostics")
+
+    view_model.start_diagnostic_capture()
+    gateway.command_failed.emit(
+        "DIAGNOSTIC_START",
+        BootstrapError(
+            BootstrapKind.READ_FAILED,
+            "设备拒绝请求",
+            "INVALID_STATE: internal detail",
+            error_name="INVALID_STATE",
+        ),
+    )
+    gateway.status_updated.emit(copy.deepcopy(snapshot.status))
+
+    assert view_model.diagnostic_capture_pending == ""
+    assert view_model.diagnostic_capture_error == "未能开始设备检查，请稍后重试。"
+    assert view_model.diagnostic_capture_technical == "INVALID_STATE: internal detail"
+    assert [command.name for command in gateway.commands].count("DIAGNOSTIC_START") == 1
+
+
+def test_diagnostic_start_ack_waits_for_fresh_owned_status_before_heartbeat(
+    qtbot,
+    contract,
+) -> None:
+    gateway = FakeGateway()
+    view_model = MainViewModel(gateway, contract)
+    snapshot = _power_v2_snapshot(contract, read_only=False)
+    gateway.snapshot_ready.emit(snapshot)
+    view_model.navigate("diagnostics")
+
+    previous_owned = copy.deepcopy(snapshot.status)
+    previous_owned["action_engine"]["host_output_state"] = "diagnostic_capture"
+    previous_owned["diagnostic_capture"].update(
+        active=True,
+        event_sequence=1,
+        last_control="key.1",
+        last_pressed=True,
+    )
+    view_model.diagnostics.observe_status(
+        snapshot.status,
+        previous_owned,
+        capture_start_confirmed=True,
+    )
+    view_model.diagnostics.observe_status(previous_owned, snapshot.status)
+    assert view_model.diagnostics.tested_controls == frozenset({"key.1"})
+
+    view_model.start_diagnostic_capture()
+    gateway.command_completed.emit(
+        "DIAGNOSTIC_START",
+        {"command": "DIAGNOSTIC_START", "result": {"active": True}},
+    )
+
+    assert view_model.diagnostic_capture_pending == "awaiting_active"
+    assert not view_model._diagnostic_capture_heartbeat.isActive()
+    assert view_model._diagnostic_capture_deadline.interval() > Command(
+        "GET_STATUS", 0x13, {}
+    ).timeout_ms
+    assert view_model.diagnostics.tested_controls == frozenset({"key.1"})
+
+    optimistic = copy.deepcopy(snapshot.status)
+    optimistic["diagnostic_capture"]["active"] = True
+    gateway.status_updated.emit(optimistic)
+
+    assert view_model.diagnostic_capture_pending == "awaiting_active"
+    assert not view_model.diagnostic_capture_active
+    assert not view_model._diagnostic_capture_heartbeat.isActive()
+    assert view_model.diagnostics.tested_controls == frozenset({"key.1"})
+
+    owned = copy.deepcopy(optimistic)
+    owned["action_engine"]["host_output_state"] = "diagnostic_capture"
+    gateway.status_updated.emit(owned)
+
+    assert view_model.diagnostic_capture_pending == ""
+    assert view_model.diagnostic_capture_active
+    assert view_model._diagnostic_capture_heartbeat.isActive()
+    assert [command.name for command in gateway.commands].count("DIAGNOSTIC_START") == 2
+    assert view_model.diagnostics.tested_controls == frozenset()
+
+
+def test_diagnostic_start_equal_fresh_owned_status_resets_previous_progress(
+    qtbot,
+    contract,
+) -> None:
+    gateway = FakeGateway()
+    view_model = MainViewModel(gateway, contract)
+    snapshot = _power_v2_snapshot(contract, read_only=False)
+    previous_owned = copy.deepcopy(snapshot.status)
+    previous_owned["action_engine"]["host_output_state"] = "diagnostic_capture"
+    previous_owned["diagnostic_capture"].update(
+        active=True,
+        event_sequence=1,
+        last_control="key.1",
+        last_pressed=True,
+    )
+    view_model.diagnostics.observe_status(
+        snapshot.status,
+        previous_owned,
+        capture_start_confirmed=True,
+    )
+    view_model.diagnostics.observe_status(previous_owned, snapshot.status)
+    gateway.snapshot_ready.emit(snapshot)
+    view_model.navigate("diagnostics")
+
+    view_model.start_diagnostic_capture()
+    gateway.status_updated.emit(previous_owned)
+    assert view_model.diagnostics.tested_controls == frozenset({"key.1"})
+    gateway.command_completed.emit(
+        "DIAGNOSTIC_START",
+        {"command": "DIAGNOSTIC_START", "result": {"active": True}},
+    )
+
+    gateway.status_updated.emit(copy.deepcopy(previous_owned))
+
+    assert view_model.diagnostic_capture_active
+    assert view_model.diagnostics.tested_controls == frozenset()
+
+
+def test_diagnostic_start_timeout_and_page_exit_do_not_revive_old_intent(
+    qtbot,
+    contract,
+) -> None:
+    gateway = FakeGateway()
+    view_model = MainViewModel(gateway, contract)
+    snapshot = _power_v2_snapshot(contract, read_only=False)
+    gateway.snapshot_ready.emit(snapshot)
+    view_model.navigate("diagnostics")
+
+    view_model.start_diagnostic_capture()
+    view_model.navigate("overview")
+
+    assert [command.name for command in gateway.commands][-2:] == [
+        "DIAGNOSTIC_START",
+        "DIAGNOSTIC_STOP",
+    ]
+    assert view_model.diagnostic_capture_pending == "stopping"
+
+    gateway.command_completed.emit(
+        "DIAGNOSTIC_START",
+        {"command": "DIAGNOSTIC_START", "result": {"active": True}},
+    )
+    gateway.status_updated.emit(copy.deepcopy(snapshot.status))
+
+    assert view_model.diagnostic_capture_pending == "stopping"
+    assert [command.name for command in gateway.commands].count("DIAGNOSTIC_START") == 1
+
+
+def test_diagnostic_start_busy_page_exit_queues_one_stop(
+    qtbot,
+    contract,
+) -> None:
+    gateway = FakeGateway()
+    view_model = MainViewModel(gateway, contract)
+    snapshot = _power_v2_snapshot(contract, read_only=False)
+    gateway.snapshot_ready.emit(snapshot)
+    view_model.navigate("diagnostics")
+    view_model.start_diagnostic_capture()
+    gateway.command_failed.emit("DIAGNOSTIC_START", _diagnostic_busy_error())
+
+    view_model.navigate("overview")
+
+    assert [command.name for command in gateway.commands] == [
+        "DIAGNOSTIC_START",
+        "DIAGNOSTIC_STOP",
+    ]
+
+
+def test_diagnostic_start_disconnect_cancels_wait_without_sending_stop(
+    qtbot,
+    contract,
+) -> None:
+    gateway = FakeGateway()
+    view_model = MainViewModel(gateway, contract)
+    snapshot = _power_v2_snapshot(contract, read_only=False)
+    gateway.snapshot_ready.emit(snapshot)
+    view_model.navigate("diagnostics")
+    view_model.start_diagnostic_capture()
+    gateway.command_failed.emit("DIAGNOSTIC_START", _diagnostic_busy_error())
+
+    gateway.disconnected.emit("USB disconnected")
+    gateway.status_updated.emit(copy.deepcopy(snapshot.status))
+
+    assert view_model.diagnostic_capture_pending == ""
+    assert view_model.diagnostic_capture_error == ""
+    assert [command.name for command in gateway.commands] == ["DIAGNOSTIC_START"]
+
+
+def test_diagnostic_start_disconnect_discards_dropped_result_before_reconnect(
+    qtbot,
+    contract,
+) -> None:
+    gateway = FakeGateway()
+    view_model = MainViewModel(gateway, contract)
+    snapshot = _power_v2_snapshot(contract, read_only=False)
+    gateway.snapshot_ready.emit(snapshot)
+    view_model.navigate("diagnostics")
+    view_model.start_diagnostic_capture()
+
+    gateway.disconnected.emit("USB disconnected before command result")
+    gateway.snapshot_ready.emit(snapshot)
+    view_model.navigate("diagnostics")
+    view_model.start_diagnostic_capture()
+    gateway.command_completed.emit(
+        "DIAGNOSTIC_START",
+        {"command": "DIAGNOSTIC_START", "result": {"active": True}},
+    )
+
+    assert view_model.diagnostic_capture_pending == "awaiting_active"
+    assert len(view_model._diagnostic_start_commands) == 0
+
+
+def test_diagnostic_start_device_switch_cancels_old_intent(
+    qtbot,
+    contract,
+) -> None:
+    gateway = FakeGateway()
+    view_model = MainViewModel(gateway, contract)
+    snapshot = _power_v2_snapshot(contract, read_only=False)
+    gateway.snapshot_ready.emit(snapshot)
+    view_model.navigate("diagnostics")
+    view_model.start_diagnostic_capture()
+    gateway.command_failed.emit("DIAGNOSTIC_START", _diagnostic_busy_error())
+
+    switched = replace(
+        snapshot,
+        identity={**snapshot.identity, "serial": "CP01-NEWDEVICE"},
+        port_name="/dev/cu.usbmodem-new",
+    )
+    gateway.snapshot_ready.emit(switched)
+    gateway.status_updated.emit(copy.deepcopy(switched.status))
+
+    assert view_model.diagnostic_capture_pending == ""
+    assert view_model.diagnostic_capture_error == ""
+    assert [command.name for command in gateway.commands].count("DIAGNOSTIC_START") == 1
+
+
+def test_diagnostic_start_waiting_ready_timeout_does_not_retry_later(
+    qtbot,
+    contract,
+) -> None:
+    gateway = FakeGateway()
+    view_model = MainViewModel(gateway, contract)
+    snapshot = _power_v2_snapshot(contract, read_only=False)
+    gateway.snapshot_ready.emit(snapshot)
+    view_model.navigate("diagnostics")
+
+    view_model.start_diagnostic_capture()
+    gateway.command_failed.emit("DIAGNOSTIC_START", _diagnostic_busy_error())
+    view_model._on_diagnostic_capture_deadline()
+
+    assert view_model.diagnostic_capture_pending == ""
+    assert view_model.diagnostic_capture_error == "设备还在切换状态，请稍后重试。"
+    gateway.status_updated.emit(copy.deepcopy(snapshot.status))
+    assert [command.name for command in gateway.commands].count("DIAGNOSTIC_START") == 1
+
+
+def test_diagnostic_start_confirmation_timeout_recovers_late_owned_status(
+    qtbot,
+    contract,
+) -> None:
+    gateway = FakeGateway()
+    view_model = MainViewModel(gateway, contract)
+    snapshot = _power_v2_snapshot(contract, read_only=False)
+    gateway.snapshot_ready.emit(snapshot)
+    view_model.navigate("diagnostics")
+
+    previous_owned = copy.deepcopy(snapshot.status)
+    previous_owned["action_engine"]["host_output_state"] = "diagnostic_capture"
+    previous_owned["diagnostic_capture"].update(
+        active=True,
+        event_sequence=1,
+        last_control="key.1",
+        last_pressed=True,
+    )
+    view_model.diagnostics.observe_status(
+        snapshot.status,
+        previous_owned,
+        capture_start_confirmed=True,
+    )
+    view_model.diagnostics.observe_status(previous_owned, snapshot.status)
+
+    view_model.start_diagnostic_capture()
+    gateway.command_completed.emit(
+        "DIAGNOSTIC_START",
+        {"command": "DIAGNOSTIC_START", "result": {"active": True}},
+    )
+    view_model._on_diagnostic_capture_deadline()
+
+    late_owned = copy.deepcopy(snapshot.status)
+    late_owned["action_engine"]["host_output_state"] = "diagnostic_capture"
+    late_owned["diagnostic_capture"]["active"] = True
+    gateway.status_updated.emit(late_owned)
+
+    assert view_model.diagnostic_capture_error == ""
+    assert view_model.diagnostic_capture_active
+    assert view_model._diagnostic_capture_heartbeat.isActive()
+    assert [command.name for command in gateway.commands].count("DIAGNOSTIC_START") == 2
+    assert view_model.diagnostics.tested_controls == frozenset()
+
+
+def test_diagnostic_heartbeat_result_does_not_reenter_start_state(
+    qtbot,
+    contract,
+) -> None:
+    gateway = FakeGateway()
+    view_model = MainViewModel(gateway, contract)
+    snapshot = _power_v2_snapshot(contract, read_only=False)
+    owned = copy.deepcopy(snapshot.status)
+    owned["diagnostic_capture"]["active"] = True
+    owned["action_engine"]["host_output_state"] = "diagnostic_capture"
+    gateway.snapshot_ready.emit(replace(snapshot, status=owned))
+    view_model.navigate("diagnostics")
+    view_model._diagnostic_capture_confirmed = True
+
+    view_model._renew_diagnostic_capture()
+    gateway.command_completed.emit(
+        "DIAGNOSTIC_START",
+        {"command": "DIAGNOSTIC_START", "result": {"active": True}},
+    )
+
+    assert view_model.diagnostic_capture_pending == ""
+    view_model._renew_diagnostic_capture()
+    gateway.command_failed.emit("DIAGNOSTIC_START", _diagnostic_busy_error())
+    assert view_model.diagnostic_capture_pending == ""
+    assert view_model.diagnostic_capture_error == ""
+    assert "BUSY" in view_model.diagnostic_capture_technical
+
+
+def test_diagnostic_transport_timeout_keeps_page_exit_cleanup(
+    qtbot,
+    contract,
+) -> None:
+    gateway = FakeGateway()
+    view_model = MainViewModel(gateway, contract)
+    snapshot = _power_v2_snapshot(contract, read_only=False)
+    gateway.snapshot_ready.emit(snapshot)
+    view_model.navigate("diagnostics")
+    view_model.start_diagnostic_capture()
+    gateway.command_failed.emit(
+        "DIAGNOSTIC_START",
+        BootstrapError(
+            BootstrapKind.READ_FAILED,
+            "设备命令响应超时",
+            "DIAGNOSTIC_START 未在超时前返回",
+            error_name="TRANSPORT_TIMEOUT",
+        ),
+    )
+
+    view_model.navigate("overview")
+
+    assert [command.name for command in gateway.commands] == [
+        "DIAGNOSTIC_START",
+        "DIAGNOSTIC_STOP",
+    ]
+
+
+def test_diagnostic_stop_failure_preserves_owned_recovery(
+    qtbot,
+    contract,
+) -> None:
+    gateway = FakeGateway()
+    view_model = MainViewModel(gateway, contract)
+    snapshot = _power_v2_snapshot(contract, read_only=False)
+    owned = copy.deepcopy(snapshot.status)
+    owned["diagnostic_capture"]["active"] = True
+    owned["action_engine"]["host_output_state"] = "diagnostic_capture"
+    gateway.snapshot_ready.emit(replace(snapshot, status=owned))
+    view_model.navigate("diagnostics")
+    view_model._diagnostic_capture_confirmed = True
+
+    view_model.stop_diagnostic_capture()
+    gateway.command_failed.emit(
+        "DIAGNOSTIC_STOP",
+        BootstrapError(
+            BootstrapKind.READ_FAILED,
+            "设备命令响应超时",
+            "DIAGNOSTIC_STOP 未在超时前返回",
+            error_name="TRANSPORT_TIMEOUT",
+        ),
+    )
+
+    assert view_model.diagnostic_capture_active
+    assert view_model.diagnostic_capture_pending == ""
+    assert view_model.diagnostic_capture_error.startswith("未能结束设备检查")
+
+
+def test_diagnostic_stop_failure_after_page_exit_does_not_leak_into_next_visit(
+    qtbot,
+    contract,
+) -> None:
+    gateway = FakeGateway()
+    view_model = MainViewModel(gateway, contract)
+    snapshot = _power_v2_snapshot(contract, read_only=False)
+    owned = copy.deepcopy(snapshot.status)
+    owned["diagnostic_capture"]["active"] = True
+    owned["action_engine"]["host_output_state"] = "diagnostic_capture"
+    gateway.snapshot_ready.emit(replace(snapshot, status=owned))
+    view_model.navigate("diagnostics")
+    view_model._diagnostic_capture_confirmed = True
+
+    view_model.navigate("overview")
+    gateway.command_failed.emit(
+        "DIAGNOSTIC_STOP",
+        BootstrapError(
+            BootstrapKind.READ_FAILED,
+            "设备命令响应超时",
+            "DIAGNOSTIC_STOP 未在超时前返回",
+            error_name="TRANSPORT_TIMEOUT",
+        ),
+    )
+    view_model.navigate("diagnostics")
+
+    assert view_model.diagnostic_capture_pending == ""
+    assert view_model.diagnostic_capture_error == ""
+    assert view_model.diagnostic_capture_technical == ""
+
+
 def test_lighting_preview_is_unavailable_without_capability(qtbot, contract) -> None:
     gateway = FakeGateway()
     view_model = MainViewModel(gateway, contract)
@@ -679,13 +1162,13 @@ def test_extension_context_revision_tracks_draft_and_listener_changes(
 def test_ble_known_bad_firmware_stops_but_auth_interruption_reconnects(qtbot, contract):
     gateway = FakeGateway()
     vm = MainViewModel(gateway, contract)
-    vm._reconnect_timer.start()
+    vm._connection.reconnect_timer.start()
     gateway.failure.emit(BootstrapKind.FIRMWARE_UPDATE_REQUIRED, '请通过 USB 更新固件', 'HELLO')
     assert vm.model.state is AppState.FIRMWARE_UPDATE_REQUIRED
-    assert not vm._reconnect_timer.isActive()
+    assert not vm._connection.reconnect_timer.isActive()
     gateway.failure.emit(BootstrapKind.AUTHENTICATION_INTERRUPTED, '蓝牙认证中断', 'AUTH_CHALLENGE')
     assert vm.model.state is AppState.DISCONNECTED
-    assert vm._reconnect_timer.isActive()
+    assert vm._connection.reconnect_timer.isActive()
     qtbot.waitUntil(lambda: gateway.scan_calls == 1, timeout=1000)
     gateway.snapshot_ready.emit(_power_v2_snapshot(contract, read_only=False))
     assert vm.model.state is AppState.READY

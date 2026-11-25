@@ -4,6 +4,7 @@ import json
 import re
 import secrets
 import struct
+import threading
 import time
 import zlib
 
@@ -19,8 +20,14 @@ AUTH_GET_CERTIFICATE = 0x04
 AUTH_CHALLENGE = 0x05
 GET_CONFIG = 0x10
 GET_STATUS = 0x13
+BLE_SLOT_CLEAR = 0x16
+CALIBRATION_START = 0x20
+CALIBRATION_SAMPLE = 0x21
+CALIBRATION_CONFIRM = 0x22
+CALIBRATION_CANCEL = 0x23
 DIAGNOSTIC_START = 0x24
 DIAGNOSTIC_STOP = 0x25
+NORMAL_AGENT_BEHAVIOR_GET = 0x2A
 ACK = 0x7E
 NACK = 0x7F
 MAX_PAYLOAD = 20 * 1024
@@ -70,11 +77,19 @@ class WmpClient:
         self.port = port
         self.timeout_s = timeout_s
         self.request_id = secrets.randbelow(0xFFFFFFFF)
+        self._exchange_lock = threading.Lock()
 
     def exchange(self, message_type: int, payload: dict) -> dict:
+        with self._exchange_lock:
+            return self._exchange_locked(message_type, payload)
+
+    def _exchange_locked(self, message_type: int, payload: dict) -> dict:
         self.request_id = 1 if self.request_id == 0xFFFFFFFF else self.request_id + 1
         request_id = self.request_id
         try:
+            reset_input = getattr(self.port, "reset_input_buffer", None)
+            if callable(reset_input):
+                reset_input()
             self.port.write(encode_frame(message_type, request_id, payload))
             header = _read_exact(self.port, HEADER.size, self.timeout_s)
         except OSError as exc:
@@ -147,11 +162,8 @@ class WmpClient:
         ping = self.exchange(PING, {"nonce": nonce})
         if ping.get("result", {}).get("nonce") != nonce:
             raise VerificationError("PING nonce 不匹配")
-        config = self.exchange(GET_CONFIG, {})
-        result = config.get("result", {})
+        result = self.get_config()
         generation = result.get("generation")
-        if not isinstance(generation, int):
-            raise VerificationError("GET_CONFIG 未返回有效 generation")
         return WmpVerification(
             product_id=identity["product_id"],
             hardware_id=identity["hardware_id"],
@@ -160,6 +172,30 @@ class WmpClient:
             config_generation=generation,
         )
 
+    def get_config(self) -> dict:
+        payload = self.exchange(GET_CONFIG, {})
+        if payload.get("command") != "GET_CONFIG":
+            raise VerificationError("设备未返回 GET_CONFIG 响应")
+        result = payload.get("result")
+        if not isinstance(result, dict):
+            raise VerificationError("GET_CONFIG 未返回 result object")
+        generation = result.get("generation")
+        if not isinstance(generation, int) or isinstance(generation, bool):
+            raise VerificationError("GET_CONFIG 未返回有效 generation")
+        if not isinstance(result.get("config"), dict):
+            raise VerificationError("GET_CONFIG 未返回 config object")
+        return result
+
+    def get_capabilities(self) -> dict:
+        payload = self.exchange(CAPABILITIES, {})
+        if payload.get("command") != "CAPABILITIES":
+            raise VerificationError("设备未返回 CAPABILITIES 响应")
+        result = payload.get("result")
+        features = result.get("features") if isinstance(result, dict) else None
+        if not isinstance(features, dict):
+            raise VerificationError("CAPABILITIES 未返回 features object")
+        return result
+
     def get_status(self) -> dict:
         payload = self.exchange(GET_STATUS, {})
         if payload.get("command") != "GET_STATUS":
@@ -167,4 +203,86 @@ class WmpClient:
         result = payload.get("result")
         if not isinstance(result, dict):
             raise VerificationError("GET_STATUS 未返回 result object")
+        return result
+
+    def clear_ble_slot(self, slot: int) -> dict:
+        if slot not in {1, 2, 3}:
+            raise VerificationError("蓝牙槽位必须是 1、2 或 3")
+        previous_timeout = self.timeout_s
+        self.timeout_s = max(previous_timeout, 6.0)
+        try:
+            payload = self.exchange(BLE_SLOT_CLEAR, {"slot": slot})
+        finally:
+            self.timeout_s = previous_timeout
+        if payload.get("command") != "BLE_SLOT_CLEAR":
+            raise VerificationError("设备未返回 BLE_SLOT_CLEAR 响应")
+        result = payload.get("result")
+        if not isinstance(result, dict) or result.get("slot") != slot:
+            raise VerificationError("BLE_SLOT_CLEAR 未确认目标槽位")
+        return payload
+
+    def _calibration_exchange(
+        self,
+        message_type: int,
+        command: str,
+        request: dict,
+        *,
+        timeout_s: float,
+    ) -> dict:
+        previous_timeout = self.timeout_s
+        self.timeout_s = max(previous_timeout, timeout_s)
+        try:
+            payload = self.exchange(message_type, request)
+        finally:
+            self.timeout_s = previous_timeout
+        if payload.get("command") != command:
+            raise VerificationError(f"设备未返回 {command} 响应")
+        result = payload.get("result")
+        if not isinstance(result, dict):
+            raise VerificationError(f"{command} 未返回 result object")
+        return result
+
+    def calibration_start(self) -> dict:
+        return self._calibration_exchange(
+            CALIBRATION_START, "CALIBRATION_START", {}, timeout_s=4.0
+        )
+
+    def calibration_sample(self, session_id: int) -> dict:
+        return self._calibration_exchange(
+            CALIBRATION_SAMPLE,
+            "CALIBRATION_SAMPLE",
+            {"session_id": session_id},
+            timeout_s=2.5,
+        )
+
+    def calibration_confirm(self, session_id: int, base_generation: int) -> dict:
+        return self._calibration_exchange(
+            CALIBRATION_CONFIRM,
+            "CALIBRATION_CONFIRM",
+            {"session_id": session_id, "base_generation": base_generation},
+            timeout_s=5.0,
+        )
+
+    def calibration_cancel(self, session_id: int) -> dict:
+        return self._calibration_exchange(
+            CALIBRATION_CANCEL,
+            "CALIBRATION_CANCEL",
+            {"session_id": session_id},
+            timeout_s=4.0,
+        )
+
+    def diagnostic_start(self) -> dict:
+        result = self._calibration_exchange(
+            DIAGNOSTIC_START, "DIAGNOSTIC_START", {}, timeout_s=2.5
+        )
+        if result.get("active") is not True:
+            raise VerificationError("DIAGNOSTIC_START 未确认输入诊断已开始")
+        return result
+
+    def diagnostic_stop(self) -> dict:
+        result = self._calibration_exchange(
+            DIAGNOSTIC_STOP, "DIAGNOSTIC_STOP", {}, timeout_s=2.5
+        )
+        if result.get("active") is not False:
+            raise VerificationError("DIAGNOSTIC_STOP 未确认输入诊断已结束")
         return result

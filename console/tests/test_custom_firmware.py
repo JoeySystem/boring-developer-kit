@@ -7,7 +7,8 @@ import sys
 from zipfile import ZipFile
 
 import pytest
-from PySide6.QtWidgets import QMessageBox, QPushButton, QLabel
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox, QPushButton, QLabel, QScrollArea, QWidget
 
 from controller_config.firmware_release import load_local_firmware_package, release_is_newer, RemoteFirmwareRelease, FirmwareReleaseError
 from controller_config.firmware_update import FirmwarePackageError, FirmwareUpdateState, FirmwareUpdateTransaction
@@ -18,12 +19,13 @@ from controller_config.views.main_window import MainWindow
 from test_firmware_update import _write_package
 from test_firmware_transaction import FirmwareGateway, _package
 from test_firmware_release import _TEST_SIGNING_KEY, trust_test_signing_key
+from notice_helpers import answer_dialogs
 
 TOOL = Path(__file__).resolve().parents[2] / 'firmware/tools/pack_custom_firmware.py'
 
 
 def custom_manifest(tmp_path, contract):
-    path = _write_package(tmp_path, contract, build_id='custom-joey-20260912.01')
+    path = _write_package(tmp_path, contract, build_id='custom-demo-20260912.01')
     raw = json.loads(path.read_text())
     image = path.parent / raw['image']
     data = bytearray(image.read_bytes())
@@ -46,7 +48,7 @@ def test_packager_roundtrip_and_no_overwrite(tmp_path, contract):
     assert package.manifest['origin'] == 'custom'
     assert package.manifest['validation_state'] == 'built'
     assert 'signature' not in package.manifest
-    assert package.build_id == 'custom-joey-20260912.01'
+    assert package.build_id == 'custom-demo-20260912.01'
     original = output.read_bytes()
     assert subprocess.run(args, capture_output=True).returncode != 0
     assert output.read_bytes() == original
@@ -80,7 +82,7 @@ def test_official_import_requires_signature_and_never_falls_back(tmp_path, contr
 
 def test_custom_build_not_compared_as_official_even_with_higher_offer(contract):
     snapshot = _power_v2_snapshot(contract, read_only=False)
-    snapshot = replace(snapshot, versions={**snapshot.versions, 'build_id':'custom-joey-1'})
+    snapshot = replace(snapshot, versions={**snapshot.versions, 'build_id':'custom-demo-1'})
     release = RemoteFirmwareRelease(dict(version='999.0.0',build_id='20260912.05-gabc'), '', '')
     with pytest.raises(FirmwareReleaseError, match='自定义固件'):
         release_is_newer(release, snapshot)
@@ -92,11 +94,14 @@ def test_custom_install_needs_confirmation_and_keeps_existing_pipeline(qtbot, co
     vm = MainViewModel(gateway, contract)
     gateway.snapshot_ready.emit(_power_v2_snapshot(contract, read_only=False))
     window = MainWindow(vm)
-    qtbot.addWidget(window, before_close_func=lambda _: setattr(vm, '_firmware_update', FirmwareUpdateTransaction()))
+    qtbot.addWidget(window, before_close_func=lambda _: vm._firmware.replace_silently(FirmwareUpdateTransaction()))
     window._language_manager.set_language(language)
     package = vm.load_firmware_package(custom_manifest(tmp_path, contract), custom=True)
     assert package.source_kind == 'custom' and not gateway.commands
     vm.navigate('firmware');window.show()
+    # 高级固件选项 no longer opens by itself (design decision); the user opens it.
+    assert not window.findChild(QPushButton, 'selectCustomFirmwarePackage').isVisible()
+    window.findChild(QPushButton, 'firmwarePackageToggle').click()
     qtbot.waitUntil(lambda: window.findChild(QPushButton,'selectCustomFirmwarePackage').isVisible())
     assert window.findChild(QPushButton, 'startFirmwareUpdate').text() == {
         'zh_CN': '安装导入的自定义固件',
@@ -106,17 +111,22 @@ def test_custom_install_needs_confirmation_and_keeps_existing_pipeline(qtbot, co
     assert window.findChild(QLabel,'firmwarePackageSource').text() in (
         '自定义固件 · 未经官方验证', 'Custom firmware · Not verified by BORING', 'カスタムファームウェア · BORING 未検証')
     dialogs=[]
-    def cancel(*args): dialogs.append(args[2]); return QMessageBox.Cancel
-    monkeypatch.setattr(QMessageBox,'warning',cancel)
-    window._confirm_firmware_update()
-    assert not gateway.commands
-    assert dialogs and package.build_id in dialogs[-1]
-    assert any(word in dialogs[-1] for word in ('未经官方','not verified','未検証'))
-    monkeypatch.setattr(QMessageBox,'warning',lambda *_: QMessageBox.Yes)
-    window._confirm_firmware_update()
+    decision = ["cancel"]
+    def choose(info):
+        dialogs.append((info["text"], info["buttons"]["install"], info["buttons"]["cancel"]))
+        return decision[0]
+    answer_dialogs(monkeypatch, choose)
+    window._firmware_page.confirm_update()
+    assert not [command for command in gateway.commands if command.name != 'GET_PROMPT_EVENT']
+    assert dialogs and package.build_id in dialogs[-1][0]
+    assert any(word in dialogs[-1][0] for word in ('未经官方','not verified','未検証'))
+    assert dialogs[-1][1] in ('安装自定义固件', 'Install Custom Firmware', 'カスタムファームウェアをインストール')
+    assert dialogs[-1][2] in ('取消', 'Cancel', 'キャンセル')  # design decision: the other button is 取消
+    decision[0] = "install"
+    window._firmware_page.confirm_update()
     assert gateway.commands[-1].name == 'FW_STATUS'
     assert vm.firmware_update.state is FirmwareUpdateState.CHECKING
-    vm._firmware_update = FirmwareUpdateTransaction()
+    vm._firmware.replace_silently(FirmwareUpdateTransaction())
     vm.shutdown()
     window._language_manager.set_language('zh_CN')
 
@@ -124,14 +134,18 @@ def test_custom_install_needs_confirmation_and_keeps_existing_pipeline(qtbot, co
 def test_official_restoration_requires_confirmation(qtbot, contract, tmp_path, monkeypatch):
     gateway = FirmwareGateway();vm = MainViewModel(gateway, contract)
     snapshot = _power_v2_snapshot(contract, read_only=False)
-    gateway.snapshot_ready.emit(replace(snapshot, versions={**snapshot.versions,'build_id':'custom-joey-1'}))
+    gateway.snapshot_ready.emit(replace(snapshot, versions={**snapshot.versions,'build_id':'custom-demo-1'}))
     window = MainWindow(vm);qtbot.addWidget(window)
     vm.load_firmware_package(_package(tmp_path, contract))
     dialogs=[]
-    monkeypatch.setattr(QMessageBox,'warning',lambda *args: dialogs.append(args[2]) or QMessageBox.Cancel)
-    window._confirm_firmware_update()
-    assert '替换当前固件及自定义功能' in dialogs[-1]
-    assert not gateway.commands
+    def cancel_install(info):
+        dialogs.append((info["text"], info["buttons"]["install"], info["buttons"]["cancel"]))
+        return "cancel"
+    answer_dialogs(monkeypatch, cancel_install)
+    window._firmware_page.confirm_update()
+    assert '替换当前固件及自定义功能' in dialogs[-1][0]
+    assert dialogs[-1][1:] == ('安装官方固件', '取消')
+    assert not [command for command in gateway.commands if command.name != 'GET_PROMPT_EVENT']
     vm.shutdown()
 
 
@@ -157,7 +171,7 @@ def test_custom_device_never_shows_cached_official_current_status(qtbot, contrac
     from controller_config.firmware_release import RemoteFirmwareCheck, RemoteFirmwareState
     gateway = FirmwareGateway(); vm = MainViewModel(gateway, contract)
     snapshot = _power_v2_snapshot(contract, read_only=False)
-    gateway.snapshot_ready.emit(replace(snapshot, versions={**snapshot.versions,'build_id':'custom-joey-1'}))
+    gateway.snapshot_ready.emit(replace(snapshot, versions={**snapshot.versions,'build_id':'custom-demo-1'}))
     window = MainWindow(vm); qtbot.addWidget(window)
     vm._remote_firmware = RemoteFirmwareCheck(state=RemoteFirmwareState.CURRENT, message='已是最新版本')
     vm.navigate('firmware'); window.show()
@@ -169,18 +183,61 @@ def test_custom_device_never_shows_cached_official_current_status(qtbot, contrac
     vm.shutdown()
 
 
-def test_custom_import_button_uses_custom_loader(qtbot, contract, tmp_path, monkeypatch):
-    from PySide6.QtWidgets import QFileDialog
+def test_custom_import_dialog_is_deferred_nonblocking_and_suspends_quick_overlay(
+    qtbot, contract, tmp_path, monkeypatch
+):
     gateway = FirmwareGateway(); vm = MainViewModel(gateway, contract)
     gateway.snapshot_ready.emit(_power_v2_snapshot(contract, read_only=False))
     path = custom_manifest(tmp_path, contract)
     window = MainWindow(vm); qtbot.addWidget(window)
-    monkeypatch.setattr(QFileDialog,'getOpenFileName',lambda *_: (str(path),''))
+    class FakeQuickViewport(QWidget):
+        def setSource(self, _source):
+            pass
+
+    viewport = FakeQuickViewport(window)
+    viewport.setAttribute(Qt.WidgetAttribute.WA_AlwaysStackOnTop, True)
+    window._boring_mist_quick_viewport = viewport
+    static_calls = []
+    opened = []
+    monkeypatch.setattr(
+        QFileDialog,
+        'getOpenFileName',
+        lambda *_args, **_kwargs: static_calls.append(True) or ('', ''),
+    )
+    monkeypatch.setattr(QFileDialog, 'open', lambda dialog: opened.append(dialog))
     vm.navigate('firmware');window.show()
-    window.findChild(QPushButton,'firmwarePackageToggle').click()
+    scroll = window.findChild(QScrollArea, 'firmwareMaintenanceScroll')
+    toggle = window.findChild(QPushButton, 'firmwarePackageToggle')
+    assert toggle.text().startswith('▸ ')
+    tile = window.findChild(QWidget, 'firmwareInstallTile')
+    before = tile.size()
+    toggle.click()
+    assert toggle.text().startswith('▾ ')
+    # The options take the place of 手动安装 in the same tile; nothing grows or scrolls.
+    assert tile.size() == before and scroll.verticalScrollBar().maximum() == 0
     button = window.findChild(QPushButton,'selectCustomFirmwarePackage')
     qtbot.waitUntil(button.isVisible)
     button.click()
+    assert not static_calls
+    assert not opened
+    qtbot.waitUntil(lambda: bool(opened))
+    dialog = opened[0]
+    assert dialog.fileMode() is QFileDialog.FileMode.ExistingFile
+    assert not viewport.testAttribute(Qt.WidgetAttribute.WA_AlwaysStackOnTop)
+    dialog.done(QDialog.DialogCode.Rejected)
+    assert window._firmware_page.file_dialog is None
+    assert viewport.testAttribute(Qt.WidgetAttribute.WA_AlwaysStackOnTop)
+    assert vm.firmware_update.package is None
+
+    button.click()
+    assert len(opened) == 1
+    qtbot.waitUntil(lambda: len(opened) == 2)
+    dialog = opened[1]
+    assert not viewport.testAttribute(Qt.WidgetAttribute.WA_AlwaysStackOnTop)
+    dialog.selectFile(str(path))
+    dialog.done(QDialog.DialogCode.Accepted)
+    qtbot.waitUntil(lambda: vm.firmware_update.package is not None)
     assert vm.firmware_update.package.source_kind == 'custom'
-    assert not gateway.commands
+    assert viewport.testAttribute(Qt.WidgetAttribute.WA_AlwaysStackOnTop)
+    assert not [command for command in gateway.commands if command.name.startswith('FW_')]
     vm.shutdown()

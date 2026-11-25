@@ -9,6 +9,7 @@ from controller_config.viewmodels.main import MainViewModel
 from controller_config.views.main_window import MainWindow
 from controller_config.views.screen_icon_editor import ScreenIconDraft, ScreenIconEditor
 from controller_config.screen_icon_transfer import ScreenIconTransfer
+from notice_helpers import answer_questions, answer_warnings
 
 
 @pytest.fixture
@@ -131,14 +132,23 @@ def test_drag_and_slider_edge_have_no_hidden_pan_offset(qtbot, image_path):
 
 
 def test_window_isolates_devices_and_retains_local_icon_across_pages(qtbot, contract, image_path, monkeypatch):
-    monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.Discard)
+    answer_questions(monkeypatch, lambda *args: QMessageBox.Discard)
     vm = MainViewModel(DemoGateway(contract, "ready"), contract)
     window = MainWindow(vm)
     qtbot.addWidget(window)
+    window.show()
     vm.start()
     qtbot.waitUntil(lambda: vm.model.snapshot is not None)
+    # A first connection lets the found clip's ending play (about 1.6 s) first.
+    qtbot.waitUntil(lambda: window._connection_transition_model is None, timeout=3500)
     snapshot = vm.model.snapshot
     window._navigate("lighting")
+    qtbot.waitUntil(
+        lambda: window.findChild(QPushButton, "expandScreenIcons") is not None,
+        timeout=1000,
+    )
+    window.findChild(QPushButton, "expandScreenIcons").click()
+    qtbot.waitUntil(lambda: window.findChild(ScreenIconEditor) is not None, timeout=1000)
     editor = window.findChild(ScreenIconEditor)
     assert editor is not None
     editor.import_image(image_path)
@@ -166,12 +176,12 @@ def test_quit_cancel_keeps_image_and_discard_accepts(qtbot, contract, image_path
     editor = ScreenIconEditor(draft)
     qtbot.addWidget(editor)
     editor.import_image(image_path)
-    monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.Cancel)
+    answer_questions(monkeypatch, lambda *args: QMessageBox.Cancel)
     event = QCloseEvent()
     window.closeEvent(event)
     assert not event.isAccepted()
     assert draft.is_dirty
-    monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.Discard)
+    answer_questions(monkeypatch, lambda *args: QMessageBox.Discard)
     event = QCloseEvent()
     window.closeEvent(event)
     assert event.isAccepted()
@@ -211,8 +221,8 @@ def test_confirmation_cannot_target_reconnected_device(qtbot, contract, image_pa
     def reconnect(*args):
         transfer.attach(None)
         return QMessageBox.Yes
-    monkeypatch.setattr(QMessageBox, "question", reconnect)
-    monkeypatch.setattr(QMessageBox, "warning", lambda *args: warnings.append(args))
+    answer_questions(monkeypatch, reconnect)
+    answer_warnings(monkeypatch, lambda *args: warnings.append(args))
     getattr(editor, operation)()
     assert not requests
     assert len(warnings) == 1
@@ -222,7 +232,7 @@ def test_busy_transfer_blocks_quit_but_unknown_result_does_not(qtbot, contract, 
     vm = MainViewModel(DemoGateway(contract, "ready"), contract)
     window = MainWindow(vm)
     qtbot.addWidget(window)
-    monkeypatch.setattr(QMessageBox, "warning", lambda *args: QMessageBox.Ok)
+    answer_warnings(monkeypatch, lambda *args: QMessageBox.Ok)
     vm.screen_icon.busy = True
     event = QCloseEvent()
     window.closeEvent(event)

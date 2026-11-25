@@ -13,7 +13,14 @@ typedef enum {
     CODEX_MICRO_MODE_CLAUDE_CODE,
 } codex_micro_mode_t;
 
-/** Resolve the next volatile mode from supported features, not connection state. */
+/**
+ * Resolve the next volatile mode from supported features, not connection state.
+ *
+ * Callers pass claude_code_supported = false since 20261118.01: Claude Code is
+ * not part of the double-click cycle any more. The parameter and the
+ * CODEX_MICRO_MODE_CLAUDE_CODE value stay until the second step removes the
+ * mode code; a Claude Code current mode still resolves to Normal.
+ */
 codex_micro_mode_t codex_micro_next_mode(codex_micro_mode_t current,
                                          bool codex_supported,
                                          bool eda_supported,

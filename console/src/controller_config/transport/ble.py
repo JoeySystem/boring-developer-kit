@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sys
+import os
+import time
 from collections import deque
 
 from PySide6.QtBluetooth import (
@@ -14,9 +16,10 @@ from PySide6.QtBluetooth import (
 )
 from PySide6.QtCore import (
     QByteArray,
-    QEventLoop,
+    QMetaObject,
     QObject,
     QSettings,
+    QThread,
     QTimer,
     Qt,
     QUuid,
@@ -25,6 +28,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtSerialPort import QSerialPort
 
+from controller_config.connect_timing import TimingMark
 from controller_config.models import DEVICE_DISPLAY_NAME, PortCandidate
 from controller_config.protocol.bootstrap import BootstrapError, BootstrapKind, BootstrapSession, Command
 from controller_config.protocol.contract import Contract
@@ -67,6 +71,59 @@ if sys.platform == "darwin":
             if owner is not None:
                 owner.nativeStateChanged.emit(manager)
 
+    def _create_mac_central() -> tuple[object, object]:
+        delegate = _MacCentralDelegate.alloc().initWithOwner_(None)
+        # Quick3D can stall native main-queue callbacks after initial startup.
+        # Receive on a serial queue, and keep enumeration/Qt signals on Qt's thread.
+        queue = dispatch_queue_create(b"com.boring.console.connected", DISPATCH_QUEUE_SERIAL)
+        manager = CoreBluetooth.CBCentralManager.alloc().initWithDelegate_queue_options_(
+            delegate, queue, None
+        )
+        # The queue must outlive the manager; keep it reachable from the delegate.
+        delegate._queue = queue
+        return manager, delegate
+
+    def _mac_central_is_settled(manager: object) -> bool:
+        return manager.state() not in (
+            CoreBluetooth.CBManagerStateUnknown, CoreBluetooth.CBManagerStateResetting,
+        )
+
+
+class SharedMacCentral:
+    """A-07: one CBCentralManager for the process lifetime.
+
+    Creating a manager per reconnect scan re-initialises CoreBluetooth every
+    few hundred milliseconds. The shared delegate forwards state callbacks to
+    whichever finder currently owns it.
+    """
+
+    factory = None  # () -> (manager, delegate); tests may replace it
+    settled = None  # (manager) -> bool
+    _manager = None
+    _delegate = None
+    creations = 0
+
+    @classmethod
+    def acquire(cls, owner: object) -> tuple[object, bool]:
+        if cls._manager is None:
+            factory = cls.factory or _create_mac_central
+            cls._manager, cls._delegate = factory()
+            cls.creations += 1
+        cls._delegate._owner = owner
+        is_settled = cls.settled or _mac_central_is_settled
+        return cls._manager, bool(is_settled(cls._manager))
+
+    @classmethod
+    def release(cls, owner: object) -> None:
+        if cls._delegate is not None and getattr(cls._delegate, "_owner", None) is owner:
+            cls._delegate._owner = None
+
+    @classmethod
+    def reset_for_tests(cls) -> None:
+        cls._manager = None
+        cls._delegate = None
+        cls.creations = 0
+
 
 
 class MacConnectedDeviceFinder(QObject):
@@ -84,8 +141,6 @@ class MacConnectedDeviceFinder(QObject):
     ) -> None:
         super().__init__(parent)
         self._manager = None
-        self._delegate = None
-        self._callback_queue = None
         self.nativeStateChanged.connect(self._manager_state_changed, Qt.QueuedConnection)
         self._remembered_identifier = remembered_identifier
         self._finished = False
@@ -95,13 +150,11 @@ class MacConnectedDeviceFinder(QObject):
         if sys.platform != "darwin":
             self._finish()
             return
-        self._delegate = _MacCentralDelegate.alloc().initWithOwner_(self)
-        # Quick3D can stall native main-queue callbacks after initial startup.
-        # Receive on a serial queue, and keep enumeration/Qt signals on Qt's thread.
-        self._callback_queue = dispatch_queue_create(b"com.boring.console.connected", DISPATCH_QUEUE_SERIAL)
-        self._manager = CoreBluetooth.CBCentralManager.alloc().initWithDelegate_queue_options_(
-            self._delegate, self._callback_queue, None
-        )
+        self._manager, settled = SharedMacCentral.acquire(self)
+        if settled:
+            # A reused manager will not call centralManagerDidUpdateState_
+            # again; enumerate from its current state (queued, like a callback).
+            self.nativeStateChanged.emit(self._manager)
 
     @Slot(object)
     def _manager_state_changed(self, manager: object) -> None:
@@ -133,10 +186,8 @@ class MacConnectedDeviceFinder(QObject):
 
     def cancel(self) -> None:
         self._finished = True
-        if self._manager is not None:
-            self._manager.setDelegate_(None)
-        if self._delegate is not None:
-            self._delegate._owner = None
+        # The manager is shared (A-07); only detach this finder from it.
+        SharedMacCentral.release(self)
 
     def _finish(self) -> None:
         if self._finished:
@@ -212,26 +263,6 @@ class BleChannel(QObject):
         self._send_next_chunk()
         return len(value)
 
-    def waitForBytesWritten(self, timeout_ms: int) -> bool:
-        if not self._write_chunks and not self._write_inflight:
-            return True
-        loop = QEventLoop()
-        timer = QTimer()
-        timer.setSingleShot(True)
-        timer.timeout.connect(loop.quit)
-
-        def poll() -> None:
-            if not self._write_chunks and not self._write_inflight:
-                loop.quit()
-
-        poll_timer = QTimer()
-        poll_timer.setInterval(5)
-        poll_timer.timeout.connect(poll)
-        poll_timer.start()
-        timer.start(max(0, timeout_ms))
-        loop.exec()
-        return not self._write_chunks and not self._write_inflight
-
     def close(self) -> None:
         self._closing = True
         self._open = False
@@ -290,7 +321,10 @@ class BleChannel(QObject):
         if self._closing or characteristic != self._tx:
             return
         self._incoming.extend(bytes(value))
-        self._response_batch.start()
+        # Feed the incremental frame decoder as soon as an indication arrives.
+        # Keep the existing write-ACK gate: replies arriving during a request
+        # are drained by _on_characteristic_written after its last chunk.
+        self._flush_received()
 
     @Slot(object, object)
     def _on_characteristic_written(self, characteristic: object, _value: object) -> None:
@@ -302,7 +336,7 @@ class BleChannel(QObject):
         if not self._write_inflight and not self._write_chunks:
             self.writeCompleted.emit()
             if self._incoming:
-                self._response_batch.start()
+                self._flush_received()
 
     def _flush_received(self) -> None:
         if not self._closing and not self._write_inflight and not self._write_chunks and self._incoming:
@@ -355,8 +389,9 @@ class BleWorker(SerialWorker):
         parent: QObject | None = None,
         *,
         settings: QSettings | None = None,
+        config_cache: object | None = None,
     ) -> None:
-        super().__init__(contract, authenticator)
+        super().__init__(contract, authenticator, config_cache=config_cache)
         self.setParent(parent)
         self._settings = settings if settings is not None else QSettings()
         self._device_info_by_port: dict[str, QBluetoothDeviceInfo] = {}
@@ -368,6 +403,7 @@ class BleWorker(SerialWorker):
         self._preferred_port = ""
         self._sending = False
         self._reply_timeout_ms = 2500
+        self._reply_deadline = 0.0
         self.snapshot_ready.connect(self._remember_completed_bluetooth)
 
     @Slot()
@@ -483,6 +519,8 @@ class BleWorker(SerialWorker):
         self._closing = False
         self._port_name = port_name
         self._decoder.reset()
+        self._timing = [TimingMark("connect", time.monotonic(), "bluetooth")]
+        self.connect_step.emit("connect", "bluetooth")
         channel = MacBleChannel(info, self) if sys.platform == "darwin" else BleChannel(info, self)
         channel.readyRead.connect(self._on_ready_read)
         channel.writeProgress.connect(self._on_write_progress)
@@ -498,6 +536,14 @@ class BleWorker(SerialWorker):
     # This is a per-chunk inactivity deadline, separate from the command's
     # response budget. A large configuration may take several seconds to send.
     SEND_TIMEOUT_MS = 2500
+
+    # A reply arrives one indication at a time and each one waits for its
+    # confirmation, so the command's timeout budgets the silence between
+    # pieces, like SEND_TIMEOUT_MS for writes. A link that keeps trickling is
+    # stopped here: 60 s covers the largest reply (16 KB config, 33 packets at
+    # MTU 517) at 1.8 s per packet, 14 times the measured 127 ms. Beyond that
+    # the link cannot serve a configuration session anyway.
+    REPLY_TOTAL_TIMEOUT_MS = 60_000
 
     def _send_command(self, command: Command, request_id: int) -> None:
         self._sending = True
@@ -515,8 +561,16 @@ class BleWorker(SerialWorker):
         if not self._sending or self._closing:
             return
         self._sending = False
+        self._reply_deadline = time.monotonic() + self.REPLY_TOTAL_TIMEOUT_MS / 1000
         if self._request_timer is not None:
             self._request_timer.start(self._reply_timeout_ms)
+
+    def _note_incoming(self, data: bytes) -> None:
+        timer = self._request_timer
+        if not data or self._sending or self._closing or timer is None or not timer.isActive():
+            return
+        remaining_ms = int((self._reply_deadline - time.monotonic()) * 1000)
+        timer.start(max(0, min(self._reply_timeout_ms, remaining_ms)))
 
     @Slot()
     def _on_request_timeout(self) -> None:
@@ -572,6 +626,32 @@ class BleWorker(SerialWorker):
         # miss an already-connected HID peripheral between advertisements.
         return
 
+    def _flush_before_close(self, serial: object) -> None:
+        # A-05: never spin a nested event loop while closing a GATT link. The
+        # best-effort CLEAR is queued on the channel; the device lease expires
+        # if it does not complete before disconnect.
+        return
+
+    @Slot(str)
+    def scan_preferred(self, preferred_port: str) -> None:
+        self.scan(preferred_port=preferred_port or None)
+
+    @Slot(str)
+    def connect_requested(self, port_name: str) -> None:
+        # The gateway's signal must connect to this, not to connect_port.
+        # PySide 6.11 calls a @Slot that overrides a base class @Slot directly
+        # on the emitting thread, even with Qt.QueuedConnection. That put the
+        # channel and the session timers on the GUI thread, where the worker
+        # could not start them: no request timeouts and no GET_STATUS polling.
+        self.connect_port(port_name)
+
+    link_closed = Signal(int)
+
+    @Slot(int)
+    def close_for_handoff(self, token: int) -> None:
+        self.close()
+        self.link_closed.emit(token)
+
     @Slot()
     def close(self) -> None:
         self._sending = False
@@ -587,50 +667,120 @@ class BleWorker(SerialWorker):
             channel.close()
 
 
+def ble_worker_thread_enabled() -> bool:
+    """A-05: BLE runs on its own QThread. ``BORING_BLE_WORKER_THREAD=0`` keeps
+    the previous GUI-thread worker as an acceptance-time fallback."""
+
+    return os.environ.get("BORING_BLE_WORKER_THREAD", "1").strip() not in {"0", "false", "no"}
+
+
 class BleGateway(QObject):
+    """GUI-thread facade; the BleWorker, its GATT channel, timers and protocol
+    sessions live on a dedicated thread and are reached only through queued
+    signals (A-05)."""
+
     agent_status_completed = Signal(object, object)
     agent_status_failed = Signal(object, object)
     candidates_found = Signal(object)
     progress = Signal(str)
+    connect_step = Signal(str, str)
     snapshot_ready = Signal(object)
     status_updated = Signal(object)
     command_completed = Signal(str, object)
     command_failed = Signal(str, object)
     failure = Signal(object, str, str)
     disconnected = Signal(str)
+    link_warning = Signal(str, str)
+
+    _scan_requested = Signal(str)
+    _stop_scan_requested = Signal()
+    _connect_requested = Signal(str)
+    _command_requested = Signal(object)
+    _status_interval_requested = Signal(int)
+    _close_requested = Signal(int)
 
     def __init__(
         self,
         contract: Contract,
         authenticator: DeviceAuthenticator | None = None,
         parent: QObject | None = None,
+        *,
+        threaded: bool | None = None,
+        config_cache: object | None = None,
     ) -> None:
         super().__init__(parent)
-        self._worker = BleWorker(contract, authenticator, self)
+        use_thread = ble_worker_thread_enabled() if threaded is None else threaded
+        self._worker = BleWorker(contract, authenticator, config_cache=config_cache)
+        self._thread: QThread | None = None
+        if use_thread:
+            self._thread = QThread(self)
+            self._thread.setObjectName("boring-ble-worker")
+            self._worker.moveToThread(self._thread)
+            self._thread.finished.connect(self._worker.deleteLater)
+        else:
+            self._worker.setParent(self)
+        self._scan_requested.connect(self._worker.scan_preferred)
+        self._stop_scan_requested.connect(self._worker.stop_scan)
+        self._connect_requested.connect(self._worker.connect_requested)
+        self._command_requested.connect(self._worker.execute_command)
+        self._status_interval_requested.connect(self._worker.set_status_poll_interval)
+        self._close_requested.connect(self._worker.close_for_handoff)
         for name in (
             "agent_status_completed", "agent_status_failed", "candidates_found",
-            "progress", "snapshot_ready", "status_updated", "command_completed",
-            "command_failed", "failure", "disconnected",
+            "progress", "connect_step", "snapshot_ready", "status_updated", "command_completed",
+            "command_failed", "failure", "disconnected", "link_warning",
         ):
             getattr(self._worker, name).connect(getattr(self, name))
+        self._worker.link_closed.connect(self._on_link_closed)
+        self._close_token = 0
+        self._after_close: dict[int, object] = {}
+        if self._thread is not None:
+            self._thread.start()
+
+    @property
+    def threaded(self) -> bool:
+        return self._thread is not None
 
     def scan(self, *, preferred_port: str | None = None) -> None:
-        self._worker.scan(preferred_port=preferred_port)
+        self._scan_requested.emit(preferred_port or "")
 
     def stop_scan(self) -> None:
-        self._worker.stop_scan()
+        self._stop_scan_requested.emit()
 
     def connect_port(self, port_name: str) -> None:
-        self._worker.connect_port(port_name)
+        self._connect_requested.emit(port_name)
 
     def execute_command(self, command: object) -> None:
-        self._worker.execute_command(command)
+        self._command_requested.emit(command)
 
     def set_status_poll_interval(self, interval_ms: int) -> None:
-        self._worker.set_status_poll_interval(interval_ms)
+        self._status_interval_requested.emit(interval_ms)
+
+    def close_link(self, then: object | None = None) -> None:
+        """Release the BLE link without blocking the GUI thread; ``then`` runs
+        on the GUI thread once the worker has closed (e.g. a USB handoff)."""
+
+        self._close_token += 1
+        if callable(then):
+            self._after_close[self._close_token] = then
+        self._close_requested.emit(self._close_token)
+
+    @Slot(int)
+    def _on_link_closed(self, token: int) -> None:
+        callback = self._after_close.pop(token, None)
+        if callable(callback):
+            callback()
 
     def shutdown(self) -> None:
-        self._worker.close()
+        self._after_close.clear()
+        if self._thread is None:
+            self._worker.close()
+            return
+        if not self._thread.isRunning():
+            return
+        QMetaObject.invokeMethod(self._worker, "close", Qt.BlockingQueuedConnection)
+        self._thread.quit()
+        self._thread.wait(3000)
 
 
 def split_att_payload(data: bytes, mtu: int) -> tuple[bytes, ...]:

@@ -5,3 +5,7 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+# Written by the native build scripts (tools/stage_device_trust_policy.py) into
+# their staging copies only. A copy in the source tree would make a source run
+# use the production trust policy and makes the stager refuse.
+src/controller_config/assets/device-trust-policy.json

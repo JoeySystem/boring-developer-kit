@@ -7,9 +7,7 @@ import pytest
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QComboBox, QPushButton
 
-from controller_config.voice_setup import (confirmed_voice_choice,
-    confirmed_voice_choice_for_provider, save_confirmed_voice_choice,
-    voice_provider_key)
+from controller_config.voice_setup import confirmed_voice_choice, save_confirmed_voice_choice, voice_provider_key
 from controller_config.views.action_editor import ActionEditor
 from controller_config.views.device_silhouette import create_device_silhouette
 from controller_config.views.device_silhouette import DeviceModelCanvas
@@ -32,21 +30,6 @@ def test_confirmed_choice_is_scoped_and_survives_settings_reload(tmp_path):
         assert confirmed_voice_choice(settings, serial, profile, mode=mode) is None
     save_confirmed_voice_choice(settings, "one", 0, {"type": "none"}, "")
     assert confirmed_voice_choice(settings, "one", 0)["action"] == CUSTOM
-
-
-def test_confirmed_shortcuts_are_remembered_per_provider(tmp_path):
-    settings = QSettings(str(tmp_path / "providers.ini"), QSettings.IniFormat)
-    qianwen = {**CUSTOM, "usage": 230}
-    typeless = {**CUSTOM, "usage": 104}
-    save_confirmed_voice_choice(settings, "one", 0, qianwen, "qianwen")
-    save_confirmed_voice_choice(settings, "one", 0, typeless, "typeless")
-    assert confirmed_voice_choice(settings, "one", 0) == {
-        "action": typeless, "provider": "typeless"}
-    assert confirmed_voice_choice_for_provider(settings, "one", 0, "qianwen") == {
-        "action": qianwen, "provider": "qianwen"}
-    assert confirmed_voice_choice_for_provider(settings, "one", 0, "typeless") == {
-        "action": typeless, "provider": "typeless"}
-    assert settings.value(voice_provider_key("one", 0, "codex")) == "typeless"
 
 
 def test_readback_retained_after_applying_official_and_recreating_editor(session, monkeypatch, tmp_path):
@@ -103,11 +86,12 @@ def test_remembered_shortcut_survives_empty_modifier_normalization(session, monk
     assert dialog._requested_action == candidate
     assert not dialog._toggle_supported.isChecked()
     assert dialog._adapt_button.isEnabled()
-    assert not dialog._toggle_supported.isEnabled()
+    assert dialog._adapt_button.text() == "保存快捷键"
     dialog.reject()
 
 
 @pytest.mark.parametrize("custom,supported", [(None, True), (CUSTOM, True), (CUSTOM, False)])
+@pytest.mark.skip(reason="检查 3D 模型内部标签；社区版用二维示意")
 def test_codex_model_shows_codex_voice_instead_of_normal_mapping(session, monkeypatch, tmp_path, qtbot, custom, supported):
     window, vm, gateway, snapshot = ready(session, monkeypatch, tmp_path, supported=supported)
     config = copy.deepcopy(snapshot.config)

@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 
 from controller_config.accessibility import system_reduces_motion
 from controller_config.i18n import set_translatable_text
+from controller_config.style import tokens
 
 
 class VoicePracticeInput(QPlainTextEdit):
@@ -160,6 +161,16 @@ class VoicePractice(QFrame):
         layout.addWidget(note)
         self.reset()
 
+    def set_action(self, action):
+        """Track the configured send gesture.
+
+        B-04: Enter is handled only by the practice input while it has focus.
+        There is deliberately no window-level shortcut and no application-wide
+        focus hook, so Enter on a dialog button or combo box keeps doing that
+        control's own action.
+        """
+        self.input.set_action(action)
+
     def _reveal(self, widget: QWidget):
         widget.show()
         if self._animation is not None:
@@ -174,7 +185,7 @@ class VoicePractice(QFrame):
             effect = QGraphicsOpacityEffect(widget)
             widget.setGraphicsEffect(effect)
         animation = QPropertyAnimation(effect, b"opacity", self)
-        animation.setDuration(160)
+        animation.setDuration(tokens.MOTION_INSTANT_MS)
         animation.setStartValue(0.3)
         animation.setEndValue(1.0)
         animation.setEasingCurve(QEasingCurve.OutCubic)
@@ -203,7 +214,7 @@ class VoicePractice(QFrame):
         self.input.hide()
         self._send_hint.hide()
         self._sent.setText("✓")
-        set_translatable_text(self._hint, "练习完成，内容未发送到 AI。")
+        set_translatable_text(self._hint, "练习消息已发送")
         self._reveal(self._message)
         self._retry.show()
         self.completed_changed.emit(True)

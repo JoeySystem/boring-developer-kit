@@ -162,29 +162,45 @@ def test_build_stage_rejects_invalid_origin(tmp_path, origin):
         stage_build(assets, origin)
 
 
-def test_native_packaging_defaults_to_distinct_custom_install_identity():
-    project = Path(__file__).resolve().parents[1]
-    macos = (project / 'deploy/build_macos.sh').read_text()
-    windows = (project / 'deploy/build_windows.ps1').read_text()
-    installer = (project / 'deploy/boring-console.iss').read_text()
-    assert 'BORING Console Community' in macos
-    assert 'com.boring.console.community' in macos
-    assert '--origin custom' in macos
-    assert 'stage_app_build.py' in windows and "'custom'" in windows
-    assert 'BORING Console Community' in installer
-    assert 'A6A26BC2-8D59-43BB-84C6-7B62C89EAD90' in installer
-    assert '7D499724-C0AE-438B-93C1-59E2D01785D7' not in installer
-
-
-def test_mac_dmg_is_a_drag_to_applications_installer():
+def test_packages_declare_the_qt_minimum_system_versions():
+    # Qt 6.11: macOS 13 or later; Windows 10 1809 (build 17763) or later, x86_64.
     project = Path(__file__).resolve().parents[1]
     macos = (project / 'deploy/build_macos.sh').read_text(encoding='utf-8')
+    installer = (project / 'deploy/boring-console.iss').read_text(encoding='utf-8')
 
-    assert 'ln -s /Applications "$DMG_ROOT/Applications"' in macos
-    assert 'set position of item appName to {175, 190}' in macos
-    assert 'set position of item "Applications" to {465, 190}' in macos
-    assert '[ ! -s "$VERIFY_MOUNT/.DS_Store" ]' in macos
-    assert 'readlink "$VERIFY_MOUNT/Applications"' in macos
+    assert ':LSMinimumSystemVersion string 13.0' in macos
+    assert 'MinVersion=10.0.17763' in installer
+    assert 'ArchitecturesAllowed=x64compatible' in installer
+
+
+@pytest.mark.skip(reason="社区版打包脚本固定生成社区版，没有官方 / DIY 切换")
+def test_native_packaging_defaults_to_distinct_custom_install_identity():
+    project = Path(__file__).resolve().parents[1]
+    macos = (project / 'deploy/build_macos.sh').read_text(encoding='utf-8')
+    windows = (project / 'deploy/build_windows.ps1').read_text(encoding='utf-8')
+    installer = (project / 'deploy/boring-console.iss').read_text(encoding='utf-8')
+
+    assert 'BUILD_ORIGIN=${BORING_CONSOLE_BUILD_ORIGIN:-custom}' in macos
+    assert 'BORING Console DIY' in macos
+    assert 'com.boring.console.diy' in macos
+    assert 'BORING-Console-DIY-macOS-unsigned' in macos
+    assert 'build/macos/$BUILD_ORIGIN' in macos
+    assert 'stage_app_build.py' in macos
+    assert '--origin "$BUILD_ORIGIN"' in macos
+
+    assert "else { 'custom' }" in windows
+    assert 'BORING Console DIY.exe' in windows
+    assert 'BORING-Console-DIY-Setup' in windows
+    assert 'BORING-Console-DIY-Windows-portable.zip' in windows
+    assert '84F4E74C-2C59-4DE5-9AA5-FAE7A21EF3E2' in windows
+    assert '7D499724-C0AE-438B-93C1-59E2D01785D7' in windows
+    assert 'build\\windows\\$BuildOrigin' in windows
+    assert 'stage_app_build.py' in windows
+    assert "'--build-origin', $BuildOrigin" in windows
+
+    for setting in ('AppId', 'AppName', 'AppExeName', 'OutputBaseFilename'):
+        assert f'#ifndef {setting}' in installer
+        assert f'{{#{setting}}}' in installer
 
 
 @pytest.mark.parametrize('setting,value,reason', [
