@@ -2,7 +2,7 @@
 
 让用户通过扩展、设备协议、控制台与固件源码，定义自己的 BORING 使用方式。
 
-**MIST 需要恢复或重新校准？** [下载 20261118.01 固件更新与校准工具（Apple 芯片 Mac / Windows 64 位）](https://github.com/JoeySystem/boring-developer-kit/releases/tag/mist-recovery-20261118.01) · [使用说明](recovery-tool/README.md) · [交给 AI 的提示词](recovery-tool/AI-RECOVERY-PROMPT.md)。工具会写入官方签名固件、**清空三个蓝牙槽位**（之后需重新配对）、把出厂 Profile 的第 8 键设为单击说话双击发送，并重新校准摇杆。工具内置固件是 20261118.01，之后可在 Console 里升到 20261123.01。需要设备能正常开机并响应 USB 通信，不能替代硬件维修。
+**MIST 需要恢复或重新校准？** 新版固件更新与校准工具（内置固件 20261123.01，Apple 芯片 Mac / Windows 64 位）正在准备公开发布，发布后会放在这里。在此之前：设备能正常开机、连上 Console 的，直接在 Console 0.3.0 的固件页在线升级；无法正常启动但仍能通过 USB 通信的，Apple 芯片 Mac 可先用[旧版 USB 恢复工具 20261007.01](https://github.com/JoeySystem/boring-developer-kit/releases/tag/mist-recovery-20261007.01)（只写入官方固件，不清蓝牙、不校准摇杆），恢复后再在 Console 里升到 20261123.01。 · [使用说明](recovery-tool/README.md) · [交给 AI 的提示词](recovery-tool/AI-RECOVERY-PROMPT.md)
 
 **固件源码已公开：[编译入口](firmware/README.md) · [DIY 可改、慎改与禁止改动范围](firmware/DIY-GUIDE.md) · [维护包格式与导入条件](firmware/PACKAGE-FORMAT.md)。USB、认证、更新、启动、分区、电源和存储底层坚决不要改。只有设备仍可正常连接、认证和更新时，才具备控制台恢复官方固件的前提。**
 
@@ -48,7 +48,7 @@ SDK/API 1.1 增加电脑端任务事件，兼容 1.0 提示词槽位、绑定动
 
 ## 下载与维护
 
-源码开发包、SDK 和扩展在 [preview.11 Release](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.11)；官方签名固件 20261123.01 与完整固件包在[固件 Release](https://github.com/JoeySystem/boring-developer-kit/releases/tag/firmware-20261123.01)；固件更新与校准工具在[工具 Release](https://github.com/JoeySystem/boring-developer-kit/releases/tag/mist-recovery-20261118.01)；Console 安装包在 [console-v0.3.0](https://github.com/JoeySystem/boring-developer-kit/releases/tag/console-v0.3.0)。历史版本保留在原有 Release。GitHub 的 **Code → Download ZIP** 是仓库源码快照，不可直接当固件维护包导入。
+源码开发包、SDK 和扩展在 [preview.11 Release](https://github.com/JoeySystem/boring-developer-kit/releases/tag/v0.1.0-preview.11)；官方签名固件 20261123.01 与完整固件包在[固件 Release](https://github.com/JoeySystem/boring-developer-kit/releases/tag/firmware-20261123.01)；新版固件更新与校准工具正在准备公开发布（旧版 USB 恢复工具见 [20261007.01](https://github.com/JoeySystem/boring-developer-kit/releases/tag/mist-recovery-20261007.01)）；Console 安装包在 [console-v0.3.0](https://github.com/JoeySystem/boring-developer-kit/releases/tag/console-v0.3.0)。历史版本保留在原有 Release。GitHub 的 **Code → Download ZIP** 是仓库源码快照，不可直接当固件维护包导入。
 
 包括本轮控制台代码在内的原创内容采用 **PolyForm Noncommercial 1.0.0**，商业复用另行书面授权。保留 NOTICE 与第三方许可，具体范围见 [LICENSING](LICENSING.md)。
 

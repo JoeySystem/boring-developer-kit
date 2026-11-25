@@ -2,7 +2,7 @@
 
 适用于 WMP-S3-MATRIX12-POWER-V2（BORING MIST）。官方打包版（run37）内置签名固件 **20261118.01-gf1f54815**，有 Apple 芯片 Mac 和 Windows 64 位两个版本。目前没有内置 20261123.01 的新打包；用完工具后可在 Console 0.3.0 的固件页升到 20261123.01（只多 SETTINGS 文字截断修复）。
 
-[下载 Mac / Windows 版](https://github.com/JoeySystem/boring-developer-kit/releases/tag/mist-recovery-20261118.01) · [故障排查](TROUBLESHOOTING.md) · [交给 AI 的提示词](AI-RECOVERY-PROMPT.md)
+新版 Mac / Windows 工具正在准备公开发布（内置 20261123.01），发布后链接放在这里；急用请先看[旧版 USB 恢复工具 20261007.01](https://github.com/JoeySystem/boring-developer-kit/releases/tag/mist-recovery-20261007.01)（仅 Apple 芯片 Mac，只写入固件） · [故障排查](TROUBLESHOOTING.md) · [交给 AI 的提示词](AI-RECOVERY-PROMPT.md)
 
 ## 它会做什么
 
